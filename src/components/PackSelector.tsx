@@ -25,11 +25,11 @@ export default function PackSelector({ id, nombre, capacidad, precio }: PackProp
 
     // Helper para obtener la imagen según capacidad
     const getImage = (qty: number) => {
-        if (qty === 6) return "/pack-6.jpg";
-        if (qty === 8) return "/pack-8.jpg";
-        if (qty === 12) return "/pack-12.jpg";
-        if (qty === 24) return "/pack-24.jpg";
-        return "/pack-default.jpg";
+        if (qty === 6) return "/pack-6.JPG";
+        if (qty === 8) return "/pack-8.JPG";
+        if (qty === 12) return "/pack-12.JPG";
+        if (qty === 24) return "/pack-24.JPG";
+        return "/pack-default.JPG";
     };
 
     const cambiarCantidad = (sabor: string, delta: number) => {

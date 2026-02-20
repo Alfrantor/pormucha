@@ -23,7 +23,7 @@ export default async function HomePage() {
 
         {/* IMAGEN DE FONDO */}
         <div className="absolute inset-0 z-0">
-          <div className="w-full h-full bg-[url('/hero-bg.jpg')] bg-cover bg-center brightness-[0.85]" />
+          <div className="w-full h-full bg-[url('/hero-bg.JPG')] bg-cover bg-center brightness-[0.85]" />
         </div>
 
         {/* CONTENIDO PRINCIPAL */}
@@ -188,7 +188,7 @@ export default async function HomePage() {
       <section className="bg-white py-24">
         <div className="max-w-6xl mx-auto px-6 grid md:grid-cols-2 gap-16 items-center">
           <div className="hidden md:block relative h-[600px] bg-gray-100 rounded-lg overflow-hidden shadow-xl">
-            <div className="absolute inset-0 bg-[url('/flavors-side.jpg')] bg-cover bg-center" />
+            <div className="absolute inset-0 bg-[url('/flavors-side.JPG')] bg-cover bg-center" />
           </div>
           <div>
             <h2 className="text-5xl font-serif mb-12 underline decoration-[#8B3A18] decoration-2 underline-offset-8">
