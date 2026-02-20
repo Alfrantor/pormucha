@@ -46,9 +46,9 @@ export async function POST(request: Request) {
         // --- CAMBIO AQUÍ: URLs ESCRITAS DIRECTAMENTE ---
         // Esto elimina cualquier error de variables "undefined"
         back_urls: {
-          success: "http://localhost:3000/success",
-          failure: "http://localhost:3000/checkout",
-          pending: "http://localhost:3000/checkout",
+          success: "https://pormucha.vercel.app/success", // o el dominio que te dé Vercel
+          failure: "https://pormucha.vercel.app/checkout",
+          pending: "https://pormucha.vercel.app/checkout",
         },
         // auto_return: "approved",
         external_reference: `order-${Date.now()}`,
