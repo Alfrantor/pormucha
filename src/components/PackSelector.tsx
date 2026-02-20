@@ -51,7 +51,7 @@ export default function PackSelector({ id, nombre, capacidad, precio }: PackProp
             price: precio,
             flavors: seleccion,
             quantity: 1,
-            packSize: capacidad
+
         });
         toast.success(`Pack de ${capacidad} agregado`, {
             description: "Tu selección ha sido guardada en el carrito"
