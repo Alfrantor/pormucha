@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 
-const client = new MercadoPagoConfig({ 
-  accessToken: process.env.MP_ACCESS_TOKEN || "" 
+const client = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN || ""
 });
 
 export async function POST(request: Request) {
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
           address: {
             zip_code: String(customerAddress.zip),
             street_name: `${customerAddress.street}, Col. ${customerAddress.neighborhood}`,
-            city_name: customerAddress.city 
+
           }
         },
         // --- CAMBIO AQUÍ: URLs ESCRITAS DIRECTAMENTE ---
@@ -58,9 +58,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ id: preference.id });
   } catch (error: any) {
     console.error("Error Mercado Pago:", error);
-    return NextResponse.json({ 
-      error: "Error al crear el pago", 
-      details: error.cause || error.message 
+    return NextResponse.json({
+      error: "Error al crear el pago",
+      details: error.cause || error.message
     }, { status: 500 });
   }
 }
