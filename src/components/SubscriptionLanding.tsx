@@ -52,7 +52,7 @@ export default function SubscriptionLanding() {
         <section className="bg-[#EAE7DD] py-20 px-6 overflow-hidden border-y border-[#8B3A18]/10">
             <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
 
-                {/* TEXTO PERSUASIVO */}
+                {/* TEXTO PERSUASIVO ACTUALIZADO */}
                 <motion.div
                     initial={{ opacity: 0, x: -50 }}
                     whileInView={{ opacity: 1, x: 0 }}
@@ -60,15 +60,21 @@ export default function SubscriptionLanding() {
                     transition={{ duration: 0.8 }}
                     className="space-y-6"
                 >
-                    <h2 className="font-serif text-5xl md:text-6xl text-[#1A1A1A] leading-tight">
-                        Únete <br />
-                        <span className="text-[#8B3A18] italic">Pormucha Comunidad</span>
+                    <h2 className="font-serif text-[3.5rem] md:text-[5rem] lg:text-[6rem] leading-[0.85] tracking-tight text-[#1A1A1A]">
+                        Únete<br />
+                        <span className="block mt-2">
+                            P<span className="italic font-light">o</span>rmucha
+                        </span>
+                        <span className="font-light text-[2.2rem] md:text-[3.5rem] lg:text-[4rem] text-[#8B3A18] block">
+                            C<span className="italic font-light">o</span>munidad
+                        </span>
                     </h2>
-                    <p className="text-lg text-gray-700 font-light max-w-md italic">
+
+                    <p className="text-lg text-gray-700 font-light max-w-md italic mt-8">
                         "Pormuchos momentos compartidos"
                     </p>
                     <p className="text-base text-gray-600 font-light max-w-md">
-                        Sé el primero en enterarte de nuevos sabores estacionales, beneficios para la salud y promociones exclusivas.
+                        Únete a los más de 300 clientes y sé el primero en enterarte de nuevos sabores estacionales, beneficios para la salud y promociones exclusivas.
                     </p>
                 </motion.div>
 
