@@ -199,3 +199,12 @@ model PosSaleItem {
   // Opcional: Si vendes Packs en físico, podrías querer guardar la selección de sabores aquí también
   // flavorSelection Json? 
 }
+
+// Agregar a tu schema.prisma
+model Lead {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  createdAt DateTime @default(now())
+}

@@ -1,249 +1,148 @@
-import { db } from "@/lib/db";
-import PackSelector from "@/components/PackSelector";
-import Navbar from "@/components/Navbar";
-import { Leaf, Waves, Sun } from "lucide-react";
+"use client";
+import { useRef } from "react";
+import SubscriptionLanding from "@/components/SubscriptionLanding";
+import { motion, useScroll, useTransform } from "framer-motion";
+import { Instagram } from "lucide-react";
 
-export default async function HomePage() {
-  const packs = await db.product.findMany({
-    where: { isArchived: false },
-    orderBy: { price: 'asc' }
-  });
+export default function ComingSoonPage() {
+    const ref = useRef(null);
 
-  return (
-    <main className="min-h-screen bg-[#F5F2EB] selection:bg-[#8B3A28] selection:text-white font-sans">
+    const { scrollYProgress } = useScroll({
+        target: ref,
+        offset: ["start start", "end end"]
+    });
 
-      <div className="absolute top-0 w-full z-50">
-        <Navbar />
-      </div>
+    // --- TRANSFORMACIONES MAGICAS ---
 
-      {/* ========================================= */}
-      {/* HERO SECTION */}
-      {/* ========================================= */}
-      <section className="relative h-screen w-full overflow-hidden text-[#F5F2EB]">
+    // El video sube un 20% de su posición original
+    const videoY = useTransform(scrollYProgress, [0, 1], ["0%", "20%"]);
 
-        {/* IMAGEN DE FONDO */}
-        <div className="absolute inset-0 z-0">
-          <div className="w-full h-full bg-[url('/hero-bg.JPG')] bg-cover bg-center brightness-[0.85]" />
-        </div>
+    // El texto se mueve un poco más lento (efecto profundidad)
+    const contentY = useTransform(scrollYProgress, [0, 0.5], ["0%", "-5%"]);
 
-        {/* CONTENIDO PRINCIPAL */}
-        {/* CAMBIO: Quitamos 'max-w-[1400px] mx-auto' y ajustamos el padding (lg:px-20) para que esté a la izquierda */}
-        <div className="relative z-10 w-full h-full flex flex-col justify-between px-6 md:px-12 lg:px-20 py-12 md:py-24">
+    // Desvanecimiento suave del contenido principal al bajar
+    const contentOpacity = useTransform(scrollYProgress, [0, 0.4], [1, 0]);
 
-          {/* BLOQUE SUPERIOR (IZQUIERDA): Título + Texto */}
-          <div className="flex flex-col justify-center h-full max-w-4xl items-start md:ml-64 transition-all">
-            {/* TÍTULO */}
-            <div className="text-left mb-8">
-              {/* CONTROL DE TAMAÑO DE "PORMUCHA":
-                  - text-[4rem]  -> Tamaño en Celular (puedes poner 3rem, 5rem, etc.)
-                  - md:text-[12rem] -> Tamaño en PC (puedes poner 8rem, 10rem, 12rem, 15rem...)
-              */}
-              <h1 className="font-serif text-[4rem] md:text-[5rem] leading-[0.85] tracking-tight text-[#EBDAAB]">
-                P<span className="italic font-light">o</span>rmucha <br />
+    return (
+        <main ref={ref} className="relative min-h-[140vh] bg-[#F5F2EB] selection:bg-[#8B3A28] selection:text-white overflow-x-hidden">
 
-                {/* CONTROL DE TAMAÑO DE "KOMBUCHA":
-                    - text-[3rem]  -> Tamaño en Celular
-                    - md:text-[9rem] -> Tamaño en PC
-                */}
-                <span className="font-light text-[3rem] md:text-[3rem]">
-                  K<span className="italic font-light">o</span>mbucha
-                </span>
-              </h1>
-            </div>
+            {/* ========================================= */}
+            {/* SECCIÓN HERO CINEMATOGRÁFICA (50/50) */}
+            {/* ========================================= */}
+            <section className="relative h-screen w-full flex items-center z-10">
 
-            {/* TEXTO */}
-            <div className="text-left pl-2">
-              <p className="text-xl md:text-[2rem] font-roboto leading-relaxed text-[#909186] max-w-3xl">
-                Bebida fermentada naturalmente con probióticos vivos, ligera y refrescante.
-              </p>
-            </div>
-          </div>
+                {/* CONTENEDOR DEL VIDEO: Mitad Izquierda */}
+                <motion.div
+                    style={{ y: videoY }}
+                    className="absolute inset-y-0 left-0 w-full md:w-3/5 z-0"
+                >
+                    <div className="relative w-full h-full overflow-hidden">
+                        <video
+                            src="/video-hero.mp4"
+                            autoPlay
+                            loop
+                            muted
+                            playsInline
+                            className="w-full h-full object-cover brightness-[0.85] grayscale-[0.1]"
+                        />
+                        {/* DEGRADADO MAESTRO: Transición fluida al fondo crema */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent/10 to-[#F5F2EB] z-10" />
 
-          {/* BLOQUE INFERIOR (DERECHA): Botón + Datos */}
-          {/* Este bloque usa 'ml-auto' para forzarse a la derecha, creando la diagonal visual */}
-          <div className="flex flex-col items-center md:items-end gap-10 ml-auto">
-            {/* Aumenté el gap de 8 a 10 para dar más aire */}
+                        {/* Degradado inferior para móviles */}
+                        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#F5F2EB] md:hidden z-10" />
+                    </div>
+                </motion.div>
 
-            {/* DATOS TÉCNICOS - Texto más grande */}
-            {/* CAMBIO: De text-xs a text-sm md:text-base (más grande en PC) */}
-            <div className="hidden md:block font-mono text-[1rem] tracking-[0.2em] space-y-3 text-[#909186] uppercase text-right font-bold">
-              <div className="flex justify-end gap-12 border-b border-white/20 pb-3 mb-3">
-                <span>100% Fresco</span>
-                <span>&</span>
-                <span>Natural</span>
-              </div>
-              <div className="flex justify-end gap-12">
-                <span>Vida en Equilibrio</span>
-                <span>MX</span>
-              </div>
-              <p className="opacity-80 pt-2 tracking-[0.15em]">Pormuchos momentos compartidos</p>
-            </div>
+                {/* CONTENIDO TEXTUAL: Mitad Derecha */}
+                <div className="relative z-20 w-full max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 px-6">
+                    {/* Espacio reservado para el video */}
+                    <div className="hidden md:block pointer-events-none" />
 
-            {/* BOTÓN - Más grande */}
-            {/* CAMBIOS: 
-                - px-10 py-5  -> px-14 py-6 (Más relleno)
-                - text-lg     -> text-xl md:text-2xl (Texto más grande)
-            */}
-            <a href="#packs" className="bg-[#8B3A18] text-[#BBBFA8] px-14 py-6 rounded-lg text-[2rem] md:text-2xl font-sans font-bold tracking-widest hover:bg-[#722f20] transition-transform hover:scale-105 shadow-2xl border border-white/10">
-              ARMA TU PAQUETE
-            </a>
-          </div>
-        </div>
-      </section>
-      {/* ========================================= */}
-      {/* SECCIÓN 2: FILOSOFÍA CON VIDEOS (ESTILO REELS) */}
-      {/* ========================================= */}
-      <section className="bg-[#EAE7DD] py-24 px-6 md:px-12 text-[#1A1A1A]">
+                    <motion.div
+                        style={{ opacity: contentOpacity, y: contentY }}
+                        className="flex flex-col justify-center items-start md:pl-16 space-y-6"
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, x: 30 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 1.2, ease: "easeOut" }}
+                        >
+                            <h2 className="font-mono text-[10px] tracking-[0.6em] text-[#8B3A18] uppercase mb-6 font-bold">
+                                Campeche • México
+                            </h2>
 
-        {/* ENCABEZADO */}
-        <div className="text-center mb-16 space-y-4">
-          <h2 className="font-serif text-6xl md:text-7xl">Pormucha<span className="text-sm align-top">®</span></h2>
-          <p className="text-xl md:text-2xl font-light tracking-wide text-gray-800">
-            Fermentación real. Bienestar cotidiano
-          </p>
-        </div>
+                            <h1 className="font-serif text-[4.5rem] md:text-[7rem] lg:text-[8.5rem] leading-[0.8] tracking-tight text-[#1A1A1A]">
+                                P<span className="italic font-light">o</span>rmucha <br />
+                                <span className="font-light text-[3rem] md:text-[4.5rem] lg:text-[5.5rem] text-[#8B3A18]">
+                                    K<span className="italic font-light">o</span>mbucha
+                                </span>
+                            </h1>
 
-        {/* GRID DE 3 VIDEOS */}
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12">
+                            <div className="h-[1px] w-28 bg-[#8B3A18] my-10 opacity-30" />
 
-          {/* VIDEO 1: HECHA CON TIEMPO */}
-          <a
-            href="https://www.instagram.com/reel/DIt89b9J5vD/?igsh=NWd3ZTRna2trczh1"
-            target="_blank"
-            className="group flex flex-col text-center"
-          >
-            {/* Contenedor de Video (Aspecto Cuadrado o Vertical según prefieras) */}
-            {/* aspect-[4/5] es el tamaño típico de Instagram (verticalito), aspect-square es cuadrado */}
-            <div className="aspect-[4/5] bg-gray-300 overflow-hidden mb-8 relative rounded-lg shadow-lg">
-              <video
-                src="/reel-1.mp4"       // Tu archivo de video
-                autoPlay
-                loop
-                muted
-                playsInline             // Importante para que funcione en iPhone
-                className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-105"
-              />
-              {/* Capa oscura al pasar el mouse para efecto elegante */}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-            </div>
+                            <p className="text-xl md:text-2xl font-light leading-relaxed text-gray-700 max-w-md italic border-l-2 border-[#8B3A18]/20 pl-6">
+                                "Estamos fermentando algo increíble. La frescura viva ahora en línea."
+                            </p>
+                        </motion.div>
+                    </motion.div>
+                </div>
 
-            <h3 className="font-sans text-xl tracking-[0.2em] uppercase mb-4 font-bold">
-              HECHA CON TIEMPO
-            </h3>
-            <p className="text-gray-600 font-light leading-relaxed px-4">
-              Pequeños lotes, procesos reales y respeto por la fermentación.
-            </p>
-          </a>
+                {/* INDICADOR DE SCROLL */}
+                <motion.div
+                    className="absolute bottom-10 right-10 flex flex-col items-center gap-4 opacity-20"
+                    animate={{ y: [0, 10, 0] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                >
+                    <span className="font-mono text-[8px] uppercase tracking-[0.5em] rotate-90 mb-12 text-[#1A1A1A]">Desliza</span>
+                    <div className="w-[1px] h-20 bg-[#1A1A1A]" />
+                </motion.div>
+            </section>
 
-          {/* VIDEO 2: VIVA POR DENTRO */}
-          <a
-            href="https://www.instagram.com/reel/DNloDrzJpvU/?igsh=MW1paHEwZDlmaHMwNw=="
-            target="_blank"
-            className="group flex flex-col text-center"
-          >
-            <div className="aspect-[4/5] bg-gray-300 overflow-hidden mb-8 relative rounded-lg shadow-lg">
-              <video
-                src="/reel-2.mp4"
-                autoPlay loop muted playsInline
-                className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-            </div>
+            {/* ========================================= */}
+            {/* BLOQUE DE VALOR: EL GANCHO PSICOLÓGICO */}
+            {/* ========================================= */}
+            <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                className="text-center py-20 bg-[#F5F2EB] px-6"
+            >
+                <span className="font-mono text-[10px] tracking-[0.4em] text-[#8B3A18] uppercase font-bold">Beneficio de Lanzamiento</span>
+                <h3 className="font-serif text-4xl md:text-5xl text-[#1A1A1A] mt-6 max-w-3xl mx-auto leading-tight">
+                    Queremos que seas el primero en probar la frescura.
+                </h3>
+                <p className="text-gray-600 mt-4 text-lg font-light max-w-xl mx-auto leading-relaxed">
+                    Registra tus datos y obtén un <strong className="text-[#8B3A18] font-bold">descuento especial</strong> el día de nuestra apertura en línea oficial.
+                </p>
+            </motion.div>
 
-            <h3 className="font-sans text-xl tracking-[0.2em] uppercase mb-4 font-bold">
-              VIVA POR DENTRO
-            </h3>
-            <p className="text-gray-600 font-light leading-relaxed px-4">
-              Fermentada naturalmente con cultivos vivos que acompañan tu digestión.
-            </p>
-          </a>
+            {/* SECCIÓN SUSCRIPCIÓN */}
+            <section className="relative z-30 bg-[#F5F2EB] pb-20">
+                <SubscriptionLanding />
+            </section>
 
-          {/* VIDEO 3: LIGERA Y REFRESCANTE */}
-          <a
-            href="https://www.instagram.com/reel/DTLXJWWgCj8/?igsh=MTFjbG5ranllZzV2YQ=="
-            target="_blank"
-            className="group flex flex-col text-center"
-          >
-            <div className="aspect-[4/5] bg-gray-300 overflow-hidden mb-8 relative rounded-lg shadow-lg">
-              <video
-                src="/reel-3.mp4"
-                autoPlay loop muted playsInline
-                className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-            </div>
+            {/* ========================================= */}
+            {/* FOOTER */}
+            {/* ========================================= */}
+            <footer className="relative z-30 py-16 px-8 bg-[#F5F2EB] border-t border-[#8B3A18]/10">
+                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+                    <p className="opacity-40 font-mono text-[9px] tracking-[0.5em] uppercase text-[#1A1A1A] text-center">
+                        © 2026 PORMUCHA KOMBUCHA — FERMENTACIÓN REAL
+                    </p>
 
-            <h3 className="font-sans text-xl tracking-[0.2em] uppercase mb-4 font-bold">
-              LIGERA Y REFRESCANTE
-            </h3>
-            <p className="text-gray-600 font-light leading-relaxed px-4">
-              Bebida burbujeante, libre de sellos, sin azúcar añadida.
-            </p>
-          </a>
-
-        </div>
-      </section>
-
-      {/* SECCIÓN SABORES */}
-      <section className="bg-white py-24">
-        <div className="max-w-6xl mx-auto px-6 grid md:grid-cols-2 gap-16 items-center">
-          <div className="hidden md:block relative h-[600px] bg-gray-100 rounded-lg overflow-hidden shadow-xl">
-            <div className="absolute inset-0 bg-[url('/flavors-side.JPG')] bg-cover bg-center" />
-          </div>
-          <div>
-            <h2 className="text-5xl font-serif mb-12 underline decoration-[#8B3A18] decoration-2 underline-offset-8">
-              Sabores
-            </h2>
-            <div className="space-y-12">
-              <div className="flex gap-5 group">
-                <div className="pt-1 text-[#8B3A18] transition-transform group-hover:scale-110"><Waves size={36} strokeWidth={1.5} /></div>
-                <div><h3 className="text-2xl font-serif mb-1 text-gray-900 group-hover:text-[#8B3A18] transition-colors">Jamaica</h3><p className="text-gray-500 font-light text-sm leading-relaxed max-w-sm">Vibrante y refrescante. El sabor floral que amamos con el boost de probióticos.</p></div>
-              </div>
-              <div className="flex gap-5 group">
-                <div className="pt-1 text-[#7D8B28] transition-transform group-hover:scale-110"><Leaf size={36} strokeWidth={1.5} /></div>
-                <div><h3 className="text-2xl font-serif mb-1 text-gray-900 group-hover:text-[#7D8B28] transition-colors">Té Verde</h3><p className="text-gray-500 font-light text-sm leading-relaxed max-w-sm">Antioxidantes poderosos en cada sorbo. Suave, refrescante y lleno de beneficios.</p></div>
-              </div>
-              <div className="flex gap-5 group">
-                <div className="pt-1 text-[#E6B800] transition-transform group-hover:scale-110"><Sun size={36} strokeWidth={1.5} /></div>
-                <div><h3 className="text-2xl font-serif mb-1 text-gray-900 group-hover:text-[#E6B800] transition-colors">Piña</h3><p className="text-gray-500 font-light text-sm leading-relaxed max-w-sm">Tropical y dulce natural. El sabor del paraíso en una botella fermentada con maestría.</p></div>
-              </div>
-              <div className="flex gap-5 group">
-                <div className="pt-1 text-[#2C2C2C] transition-transform group-hover:scale-110"><Leaf size={36} strokeWidth={1.5} /></div>
-                <div><h3 className="text-2xl font-serif mb-1 text-gray-900 group-hover:text-[#2C2C2C] transition-colors">Té Negro</h3><p className="text-gray-500 font-light text-sm leading-relaxed max-w-sm">Intenso y tradicional. Para los que buscan un sabor robusto con toda la potencia.</p></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* SECCIÓN PACKS */}
-      <section id="packs" className="max-w-7xl mx-auto px-6 py-24">
-        <div className="text-center mb-16">
-          <h2 className="font-mono text-sm tracking-[0.3em] text-gray-500 uppercase mb-4">La Tienda</h2>
-          <h3 className="font-serif text-4xl md:text-5xl text-[#1A1A1A]">Selecciona tu paquete</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {packs.map((pack) => (
-            <PackSelector
-              key={pack.id}
-              id={pack.id}
-              nombre={pack.name}
-              capacidad={pack.quantity}
-              precio={Number(pack.price)}
-            />
-          ))}
-        </div>
-      </section>
-
-
-
-      <footer className="bg-[#1A1A1A] text-[#F5F2EB] py-12 text-center border-t border-white/10">
-        <h2 className="text-4xl font-serif mb-6">Pormucha.</h2>
-        <p className="font-mono text-xs tracking-widest opacity-60">
-          © 2026 HECHO EN MÉXICO
-        </p>
-      </footer>
-
-    </main>
-  );
+                    <a
+                        href="https://www.instagram.com/pormucha.mx/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex items-center gap-4 text-[#1A1A1A] no-underline"
+                    >
+                        <span className="font-mono text-[10px] uppercase tracking-[0.2em] opacity-50 group-hover:opacity-100 transition-opacity">Nuestra Comunidad</span>
+                        <div className="p-3 rounded-full border border-[#1A1A1A]/10 group-hover:bg-[#8B3A18] group-hover:border-[#8B3A18] transition-all duration-500">
+                            <Instagram size={18} className="group-hover:text-white transition-colors" />
+                        </div>
+                    </a>
+                </div>
+            </footer>
+        </main>
+    );
 }
