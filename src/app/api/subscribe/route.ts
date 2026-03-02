@@ -19,10 +19,10 @@ export async function POST(req: Request) {
             to: email,
             subject: '🌿 ¡Bienvenido a Pormucha!',
             html: `
-                    <div style="background-color: #fdfaf5; padding: 40px 20px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+                    <div style="background-color: #f4f1e9; padding: 40px 20px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
                         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; overflow: hidden; shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #e6e6e6;">
                             
-                            <div style="background-color: #2d4a3e; padding: 40px; text-align: center;">
+                            <div style="background-color: #d7d7c6ff; padding: 40px; text-align: center;">
                                 <img src="https://pormuchakombucha.com/logo-white.png" alt="Pormucha Logo" style="width: 150px; height: auto;">
                             </div>
 
@@ -31,7 +31,7 @@ export async function POST(req: Request) {
                                     ¡Hola ${name}!
                                 </h1>
                                 
-                                <p style="color: #4a5d4e; font-size: 18px; line-height: 1.6; margin-bottom: 30px;">
+                                <p style="color: #868677ff; font-size: 18px; line-height: 1.6; margin-bottom: 30px;">
                                     Es un gusto darte la bienvenida a nuestra comunidad. Estamos fermentando algo increíble y tú eres de los primeros en asegurar su lugar en el lanzamiento.
                                 </p>
 
