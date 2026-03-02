@@ -2,11 +2,13 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation"; // <--- 1. IMPORTANTE: Agregamos esto
+import { useRouter } from "next/navigation";
+import { Turnstile } from "@marsidev/react-turnstile";
 
 export default function SubscriptionLanding() {
-    const router = useRouter(); // <--- 2. IMPORTANTE: Inicializamos el router
+    const router = useRouter();
     const [loading, setLoading] = useState(false);
+    const [turnstileToken, setTurnstileToken] = useState<string>(""); // <--- ESTADO DE SEGURIDAD
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -15,13 +17,23 @@ export default function SubscriptionLanding() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // --- 1. VALIDACIÓN PREVIA ---
+        if (!turnstileToken) {
+            toast.error("Verificación en proceso", {
+                description: "Por favor, espera un segundo mientras comprobamos la seguridad de la red."
+            });
+            return;
+        }
+
         setLoading(true);
 
         try {
             const response = await fetch("/api/subscribe", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData),
+                // --- 2. ENVIAMOS EL TOKEN AL BACKEND ---
+                body: JSON.stringify({ ...formData, turnstileToken }),
             });
 
             if (response.ok) {
@@ -29,19 +41,20 @@ export default function SubscriptionLanding() {
                     description: "Te has suscrito correctamente.",
                 });
 
-                setFormData({ name: "", email: "", phone: "" }); // Limpiar formulario
+                setFormData({ name: "", email: "", phone: "" });
 
-                // 3. REDIRECCIÓN: Esperamos 1.5s para que lean el mensaje y redirigimos
                 setTimeout(() => {
                     router.push("/thanks");
                 }, 1500);
 
             } else {
-                throw new Error();
+                // Si el backend responde con error (ej. correo duplicado o bot detectado)
+                const data = await response.json();
+                throw new Error(data.error || "Error al procesar la solicitud");
             }
-        } catch (error) {
-            toast.error("Hubo un error", {
-                description: "No pudimos procesar tu suscripción. Intenta de nuevo.",
+        } catch (error: any) {
+            toast.error("Aviso", {
+                description: error.message || "No pudimos procesar tu suscripción. Intenta de nuevo.",
             });
         } finally {
             setLoading(false);
@@ -52,7 +65,7 @@ export default function SubscriptionLanding() {
         <section className="bg-[#EAE7DD] py-20 px-6 overflow-hidden border-y border-[#8B3A18]/10">
             <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
 
-                {/* TEXTO PERSUASIVO ACTUALIZADO */}
+                {/* TEXTO PERSUASIVO */}
                 <motion.div
                     initial={{ opacity: 0, x: -50 }}
                     whileInView={{ opacity: 1, x: 0 }}
@@ -61,7 +74,7 @@ export default function SubscriptionLanding() {
                     className="space-y-6"
                 >
                     <h2 className="font-serif text-[3.5rem] md:text-[5rem] lg:text-[6rem] leading-[0.85] tracking-tight text-[#1A1A1A]">
-                        Únete<br />
+                        Únete a<br />
                         <span className="block mt-2">
                             P<span className="italic font-light">o</span>rmucha
                         </span>
@@ -122,6 +135,14 @@ export default function SubscriptionLanding() {
                                     className="w-full bg-[#F5F2EB] border-none rounded-lg p-4 focus:ring-2 focus:ring-[#8B3A28] outline-none text-sm"
                                 />
                             </div>
+                        </div>
+
+                        {/* --- 3. WIDGET DE CLOUDFLARE TURNSTILE --- */}
+                        <div className="flex justify-center py-2">
+                            <Turnstile
+                                siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+                                onSuccess={(token) => setTurnstileToken(token)}
+                            />
                         </div>
 
                         <button

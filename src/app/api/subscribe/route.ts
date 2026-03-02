@@ -6,14 +6,37 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: Request) {
     try {
-        const { name, email, phone } = await req.json();
+        // 1. Recibimos los datos + el token de Turnstile
+        const { name, email, phone, turnstileToken } = await req.json();
 
-        // 1. Intentar crear el lead en Neon
+        // 2. VALIDACIÓN ANTISPAM: Verificamos que el token exista
+        if (!turnstileToken) {
+            return NextResponse.json({ error: "Falta el token de seguridad." }, { status: 400 });
+        }
+
+        // 3. Preguntamos a Cloudflare si es un humano o un bot
+        const verifyResponse = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `secret=${process.env.TURNSTILE_SECRET_KEY}&response=${turnstileToken}`,
+        });
+
+        const verifyData = await verifyResponse.json();
+
+        // Si Cloudflare rechaza la validación, bloqueamos el proceso aquí mismo
+        if (!verifyData.success) {
+            console.error("Bot detectado por Cloudflare:", verifyData);
+            return NextResponse.json({ error: "No se pudo verificar la seguridad. Por favor recarga la página." }, { status: 403 });
+        }
+
+        // --- SI PASA LA PRUEBA, CONTINÚA CON EL FLUJO NORMAL ---
+
+        // 4. Intentar crear el lead en Neon
         const subscriber = await db.lead.create({
             data: { name, email, phone }
         });
 
-        // 2. Si se creó con éxito, enviar correo de bienvenida
+        // 5. Si se creó con éxito, enviar tu correo de bienvenida personalizado
         await resend.emails.send({
             from: 'Equipo Pormucha <ventas@pormuchakombucha.com>',
             to: email,
@@ -61,7 +84,7 @@ export async function POST(req: Request) {
         return NextResponse.json(subscriber);
 
     } catch (error: any) {
-        // 3. Manejar el error de correo duplicado (Código P2002 de Prisma)
+        // 6. Manejar el error de correo duplicado (Código P2002 de Prisma)
         if (error.code === 'P2002') {
             return NextResponse.json(
                 { error: "Este correo ya está registrado con nosotros." },
