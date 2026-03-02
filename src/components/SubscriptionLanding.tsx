@@ -52,8 +52,8 @@ export default function SubscriptionLanding() {
                     className="space-y-6"
                 >
                     <h2 className="font-serif text-5xl md:text-6xl text-[#1A1A1A] leading-tight">
-                        Únete a la <br />
-                        <span className="text-[#8B3A18] italic">Comunidad Viva</span>
+                        Únete <br />
+                        <span className="text-[#8B3A18] italic">Pormucha Comunidad</span>
                     </h2>
                     <p className="text-lg text-gray-700 font-light max-w-md italic">
                         "Pormuchos momentos compartidos"

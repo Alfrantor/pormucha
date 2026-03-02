@@ -68,7 +68,7 @@ export default function ComingSoonPage() {
                             transition={{ duration: 1.2, ease: "easeOut" }}
                         >
                             <h2 className="font-mono text-[10px] tracking-[0.6em] text-[#8B3A18] uppercase mb-6 font-bold">
-                                Campeche • México
+
                             </h2>
 
                             <h1 className="font-serif text-[4.5rem] md:text-[7rem] lg:text-[8.5rem] leading-[0.8] tracking-tight text-[#1A1A1A]">
@@ -131,7 +131,7 @@ export default function ComingSoonPage() {
                     </p>
 
                     <a
-                        href="https://www.instagram.com/pormucha.mx/"
+                        href="https://www.instagram.com/pormuchakombucha/"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="group flex items-center gap-4 text-[#1A1A1A] no-underline"
