@@ -2,8 +2,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation"; // <--- 1. IMPORTANTE: Agregamos esto
 
 export default function SubscriptionLanding() {
+    const router = useRouter(); // <--- 2. IMPORTANTE: Inicializamos el router
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         name: "",
@@ -26,7 +28,14 @@ export default function SubscriptionLanding() {
                 toast.success("¡Bienvenido a la Comunidad Viva!", {
                     description: "Te has suscrito correctamente.",
                 });
+
                 setFormData({ name: "", email: "", phone: "" }); // Limpiar formulario
+
+                // 3. REDIRECCIÓN: Esperamos 1.5s para que lean el mensaje y redirigimos
+                setTimeout(() => {
+                    router.push("/thanks");
+                }, 1500);
+
             } else {
                 throw new Error();
             }
