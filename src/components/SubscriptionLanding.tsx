@@ -102,9 +102,9 @@ export default function SubscriptionLanding() {
                         Si es tu primera vez probando Pormucha y no fue lo que esperabas, te damos un reembolso.
                     </p>
                     <ul className="text-sm text-gray-600 space-y-2 font-light max-w-md mt-4">
-                        <li><span className="text-[#8B3A18] mr-2">✔</span> Válido en tu primera compra</li>
-                        <li><span className="text-[#8B3A18] mr-2">✔</span> Máximo una garantía por cliente</li>
-                        <li><span className="text-[#8B3A18] mr-2">✔</span> Aplica en botellas individuales o pack degustación</li>
+                        <li><span className="text-[#8B3A18] mr-2">✔</span> Válido en tu primera compra.</li>
+                        <li><span className="text-[#8B3A18] mr-2">✔</span> Máximo una garantía por cliente.</li>
+                        <li><span className="text-[#8B3A18] mr-2">✔</span> Aplica en pack de 6 botellas.</li>
                     </ul>
                 </motion.div>
 
