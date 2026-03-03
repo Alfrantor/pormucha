@@ -41,7 +41,7 @@ export default function SubscriptionLanding() {
                     description: "Te has suscrito correctamente.",
                 });
 
-                setFormData({ name: "", email: "", phone: "" });
+                setFormData({ name: "", email: "", phone: "" }); // Limpiar formulario
 
                 setTimeout(() => {
                     router.push("/thanks");
@@ -62,10 +62,20 @@ export default function SubscriptionLanding() {
     };
 
     return (
-        <section className="bg-[#EAE7DD] py-20 px-6 overflow-hidden border-y border-[#8B3A18]/10">
+        // Agregamos relative a la sección principal para posicionar la cinta
+        <section className="bg-[#EAE7DD] py-20 px-6 overflow-hidden border-y border-[#8B3A18]/10 relative">
+
+            {/* NUEVA CINTA DE GARANTÍA DIAGONAL (Rojo y Oro) */}
+            <div className="absolute top-0 left-0 w-48 h-48 overflow-hidden pointer-events-none z-10">
+                <div className="absolute top-7 left-[-60px] w-[220px] h-14 bg-red-800 text-white font-bold text-center flex flex-col justify-center rotate-[-45deg] shadow-xl border-b-2 border-yellow-400">
+                    <span className="text-[0.6rem] uppercase tracking-[0.1em] opacity-90">Garantía de</span>
+                    <span className="text-xs uppercase tracking-wider">100% SATISFACCIÓN</span>
+                </div>
+            </div>
+
             <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
 
-                {/* TEXTO PERSUASIVO */}
+                {/* TEXTO PERSUASIVO ACTUALIZADO */}
                 <motion.div
                     initial={{ opacity: 0, x: -50 }}
                     whileInView={{ opacity: 1, x: 0 }}
@@ -89,15 +99,25 @@ export default function SubscriptionLanding() {
                     <p className="text-base text-gray-600 font-light max-w-md">
                         Únete a los más de 300 clientes y sé el primero en enterarte de nuevos sabores estacionales, beneficios para la salud y promociones exclusivas.
                     </p>
+
+                    {/* NUEVO BLOQUE DE TEXTO DE GARANTÍA ACTUALIZADO */}
+                    <p className="text-base text-gray-700 font-medium max-w-md mt-6 pt-6 border-t border-[#8B3A18]/10">
+                        Si es tu primera vez probando Pormucha y no fue lo que esperabas, te damos un reembolso.
+                    </p>
+                    <ul className="text-sm text-gray-600 space-y-2 font-light max-w-md mt-4">
+                        <li><span className="text-[#8B3A18] mr-2">✔</span> Válido en tu primera compra</li>
+                        <li><span className="text-[#8B3A18] mr-2">✔</span> Máximo una garantía por cliente</li>
+                        <li><span className="text-[#8B3A18] mr-2">✔</span> Aplica en botellas individuales o pack degustación</li>
+                    </ul>
                 </motion.div>
 
-                {/* FORMULARIO */}
+                {/* FORMULARIO (Se mantiene igual) */}
                 <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     whileInView={{ opacity: 1, scale: 1 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.6 }}
-                    className="bg-white p-8 md:p-10 rounded-2xl shadow-2xl border border-[#8B3A18]/10"
+                    className="bg-white p-8 md:p-10 rounded-2xl shadow-2xl border border-[#8B3A18]/10 relative z-10"
                 >
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div>
@@ -137,12 +157,8 @@ export default function SubscriptionLanding() {
                             </div>
                         </div>
 
-                        {/* --- 3. WIDGET DE CLOUDFLARE TURNSTILE --- */}
                         <div className="flex justify-center py-2">
-                            <Turnstile
-                                siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
-                                onSuccess={(token) => setTurnstileToken(token)}
-                            />
+                            <Turnstile siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!} onSuccess={(token) => setTurnstileToken(token)} />
                         </div>
 
                         <button
@@ -151,7 +167,7 @@ export default function SubscriptionLanding() {
                             className="w-full bg-[#1A1A1A] text-white py-5 rounded-lg font-bold tracking-[0.2em] hover:bg-[#8B3A18] transition-all duration-500 transform hover:scale-[1.02] shadow-xl mt-4 disabled:opacity-50"
                         >
                             {loading ? "PROCESANDO..." : "SUSCRIBIRME AHORA"}
-                        </button>
+                            0 0 0 0 0 </button>
                         <p className="text-[10px] text-center text-gray-400 mt-4 uppercase tracking-tighter">
                             Al suscribirte aceptas recibir noticias de Pormucha Kombucha.
                         </p>
