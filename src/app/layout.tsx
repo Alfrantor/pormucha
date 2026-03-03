@@ -1,10 +1,10 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
-import { Playfair_Display, Inter } from "next/font/google"; // Importamos las nuevas fuentes
+import { Playfair_Display, Inter } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from '@clerk/nextjs'
 import { CartProvider } from "@/context/CartContext";
-import { Toaster } from "sonner"; // Importamos el Toaster para las notificaciones
+import { Toaster } from "sonner";
 
 // Configuración de la fuente Serif (Títulos elegantes)
 const playfair = Playfair_Display({
@@ -20,9 +20,33 @@ const inter = Inter({
   display: "swap",
 });
 
+// --- METADATA SEO Y OPEN GRAPH ---
 export const metadata: Metadata = {
-  title: "Pormucha Kombucha - Bebida Fermentada Artesanal",
-  description: "Bebida fermentada artesanal con probióticos naturales. Elige tu paquete y personaliza tus sabores favoritos.",
+  metadataBase: new URL('https://pormuchakombucha.com'), // Base para las URLs absolutas
+  title: "Pormucha Kombucha | Fermentación Real",
+  description: "Bebida fermentada artesanal con probióticos naturales. Únete a nuestra comunidad y sé el primero en probar la frescura viva.",
+  openGraph: {
+    title: "Pormucha Kombucha | Fermentación Real",
+    description: "Únete a nuestra comunidad y sé el primero en probar la frescura viva. Bebida fermentada artesanal.",
+    url: 'https://pormuchakombucha.com',
+    siteName: 'Pormucha Kombucha',
+    images: [
+      {
+        url: '/og-image.jpg', // <-- Imagen para compartir (1200x630px)
+        width: 1200,
+        height: 630,
+        alt: 'Pormucha Kombucha - Botella y Frescura',
+      },
+    ],
+    locale: 'es_MX',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: "Pormucha Kombucha | Fermentación Real",
+    description: "Únete a nuestra comunidad y sé el primero en probar la frescura viva.",
+    images: ['/og-image.jpg'], // Mismo enlace de la imagen
+  },
 };
 
 export default function RootLayout({
