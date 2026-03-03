@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     siteName: 'Pormucha Kombucha',
     images: [
       {
-        url: '/og-image.jpg', // <-- Imagen para compartir (1200x630px)
+        url: '/og-image.png', // <-- Imagen para compartir (1200x630px)
         width: 1200,
         height: 630,
         alt: 'Pormucha Kombucha - Botella y Frescura',
