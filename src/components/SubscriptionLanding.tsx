@@ -8,7 +8,7 @@ import { Turnstile } from "@marsidev/react-turnstile";
 export default function SubscriptionLanding() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
-    const [turnstileToken, setTurnstileToken] = useState<string>(""); // <--- ESTADO DE SEGURIDAD
+    const [turnstileToken, setTurnstileToken] = useState<string>("");
     const [formData, setFormData] = useState({
         name: "",
         email: "",
@@ -18,7 +18,6 @@ export default function SubscriptionLanding() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // --- 1. VALIDACIÓN PREVIA ---
         if (!turnstileToken) {
             toast.error("Verificación en proceso", {
                 description: "Por favor, espera un segundo mientras comprobamos la seguridad de la red."
@@ -32,7 +31,6 @@ export default function SubscriptionLanding() {
             const response = await fetch("/api/subscribe", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                // --- 2. ENVIAMOS EL TOKEN AL BACKEND ---
                 body: JSON.stringify({ ...formData, turnstileToken }),
             });
 
@@ -41,14 +39,13 @@ export default function SubscriptionLanding() {
                     description: "Te has suscrito correctamente.",
                 });
 
-                setFormData({ name: "", email: "", phone: "" }); // Limpiar formulario
+                setFormData({ name: "", email: "", phone: "" });
 
                 setTimeout(() => {
                     router.push("/thanks");
                 }, 1500);
 
             } else {
-                // Si el backend responde con error (ej. correo duplicado o bot detectado)
                 const data = await response.json();
                 throw new Error(data.error || "Error al procesar la solicitud");
             }
@@ -62,10 +59,9 @@ export default function SubscriptionLanding() {
     };
 
     return (
-        // Agregamos relative a la sección principal para posicionar la cinta
         <section className="bg-[#EAE7DD] py-20 px-6 overflow-hidden border-y border-[#8B3A18]/10 relative">
 
-            {/* NUEVA CINTA DE GARANTÍA DIAGONAL (Rojo y Oro) */}
+            {/* CINTA DE GARANTÍA DIAGONAL */}
             <div className="absolute top-0 left-0 w-48 h-48 overflow-hidden pointer-events-none z-10">
                 <div className="absolute top-7 left-[-60px] w-[220px] h-14 bg-red-800 text-white font-bold text-center flex flex-col justify-center rotate-[-45deg] shadow-xl border-b-2 border-yellow-400">
                     <span className="text-[0.6rem] uppercase tracking-[0.1em] opacity-90">Garantía de</span>
@@ -75,13 +71,14 @@ export default function SubscriptionLanding() {
 
             <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
 
-                {/* TEXTO PERSUASIVO ACTUALIZADO */}
+                {/* TEXTO PERSUASIVO ACTUALIZADO CON AJUSTES DE ESPACIADO */}
                 <motion.div
                     initial={{ opacity: 0, x: -50 }}
                     whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.8 }}
-                    className="space-y-6"
+                    /* AJUSTE CLAVE AQUÍ: pl y pt para empujar el texto en móviles/tablets sin afectar PC (lg) */
+                    className="space-y-6 pt-6 pl-4 sm:pt-8 sm:pl-6 md:pt-10 md:pl-10 lg:pt-0 lg:pl-0"
                 >
                     <h2 className="font-serif text-[3.5rem] md:text-[5rem] lg:text-[6rem] leading-[0.85] tracking-tight text-[#1A1A1A]">
                         Únete a<br />
@@ -100,7 +97,7 @@ export default function SubscriptionLanding() {
                         Únete a los más de 300 clientes y sé el primero en enterarte de nuevos sabores estacionales, beneficios para la salud y promociones exclusivas.
                     </p>
 
-                    {/* NUEVO BLOQUE DE TEXTO DE GARANTÍA ACTUALIZADO */}
+                    {/* BLOQUE DE TEXTO DE GARANTÍA */}
                     <p className="text-base text-gray-700 font-medium max-w-md mt-6 pt-6 border-t border-[#8B3A18]/10">
                         Si es tu primera vez probando Pormucha y no fue lo que esperabas, te damos un reembolso.
                     </p>
@@ -111,7 +108,7 @@ export default function SubscriptionLanding() {
                     </ul>
                 </motion.div>
 
-                {/* FORMULARIO (Se mantiene igual) */}
+                {/* FORMULARIO */}
                 <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     whileInView={{ opacity: 1, scale: 1 }}
@@ -157,17 +154,22 @@ export default function SubscriptionLanding() {
                             </div>
                         </div>
 
+                        {/* WIDGET DE SEGURIDAD */}
                         <div className="flex justify-center py-2">
-                            <Turnstile siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!} onSuccess={(token) => setTurnstileToken(token)} />
+                            <Turnstile
+                                siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+                                onSuccess={(token) => setTurnstileToken(token)}
+                            />
                         </div>
 
+                        {/* BOTÓN CON TEXTO LIMPIO Y CORREGIDO */}
                         <button
                             disabled={loading}
                             type="submit"
                             className="w-full bg-[#1A1A1A] text-white py-5 rounded-lg font-bold tracking-[0.2em] hover:bg-[#8B3A18] transition-all duration-500 transform hover:scale-[1.02] shadow-xl mt-4 disabled:opacity-50"
                         >
                             {loading ? "PROCESANDO..." : "SUSCRIBIRME AHORA"}
-                            0 0 0 0 0 </button>
+                        </button>
                         <p className="text-[10px] text-center text-gray-400 mt-4 uppercase tracking-tighter">
                             Al suscribirte aceptas recibir noticias de Pormucha Kombucha.
                         </p>
