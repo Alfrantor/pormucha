@@ -62,12 +62,12 @@ export default function SubscriptionLanding() {
         <section className="bg-[#EAE7DD] py-20 px-6 overflow-hidden border-y border-[#8B3A18]/10 relative">
 
             {/* CINTA DE GARANTÍA DIAGONAL */}
-            <div className="absolute top-0 left-0 w-48 h-48 overflow-hidden pointer-events-none z-10">
+            {/* <div className="absolute top-0 left-0 w-48 h-48 overflow-hidden pointer-events-none z-10">
                 <div className="absolute top-7 left-[-60px] w-[220px] h-14 bg-red-800 text-white font-bold text-center flex flex-col justify-center rotate-[-45deg] shadow-xl border-b-2 border-yellow-400">
                     <span className="text-[0.6rem] uppercase tracking-[0.1em] opacity-90">Garantía de</span>
                     <span className="text-xs uppercase tracking-wider">100% SATISFACCIÓN</span>
                 </div>
-            </div>
+            </div> */}
 
             <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
 
@@ -98,7 +98,7 @@ export default function SubscriptionLanding() {
                     </p>
 
                     {/* BLOQUE DE TEXTO DE GARANTÍA */}
-                    <p className="text-base text-gray-700 font-medium max-w-md mt-6 pt-6 border-t border-[#8B3A18]/10">
+                    {/* <p className="text-base text-gray-700 font-medium max-w-md mt-6 pt-6 border-t border-[#8B3A18]/10">
                         Si es tu primera vez probando Pormucha y no fue lo que esperabas, te damos un reembolso.
                     </p>
                     <ul className="text-sm text-gray-600 space-y-2 font-light max-w-md mt-4">
@@ -106,6 +106,7 @@ export default function SubscriptionLanding() {
                         <li><span className="text-[#8B3A18] mr-2">✔</span> Máximo una garantía por cliente.</li>
                         <li><span className="text-[#8B3A18] mr-2">✔</span> Aplica en pack de 6 botellas.</li>
                     </ul>
+                    */}
                 </motion.div>
 
                 {/* FORMULARIO */}
