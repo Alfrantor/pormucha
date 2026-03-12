@@ -134,9 +134,12 @@ model Order {
   userId    String   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt 
-  status    String   @default("PENDING") 
-  paymentId String?  
-  total     Decimal
+  status    String   @default("PENDING")
+
+  // --- PAGOS (STRIPE) ---
+  paymentId       String?   // Aquí guardaremos el PaymentIntent de Stripe
+  stripeSessionId String?   @unique // CLAVE: Para conectar el webhook de Stripe con esta orden específica
+  total           Decimal
 
   // Datos de Envío
   fullName     String
@@ -149,8 +152,12 @@ model Order {
   state        String
   neighborhood String? 
   reference    String? 
-  shippingId   String? 
-  shippingCost Decimal? 
+
+  // --- LOGÍSTICA (SKYDROPX) ---
+  shippingCost    Decimal? 
+  shippingId      String?  // ID del envío en Skydropx
+  trackingNumber  String?  // Número de guía (ej. DHL, FedEx) para el cliente
+  trackingUrl     String?  // Link directo para rastrear el paquete
 
   orderItems   OrderItem[]
 }
