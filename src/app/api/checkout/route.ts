@@ -81,7 +81,7 @@ export async function POST(request: Request) {
 
     // 4. CREAR LA SESIÓN DE PAGO EN STRIPE
     // Usamos variables de entorno para la URL, con localhost como respaldo
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
