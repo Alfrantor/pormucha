@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     // 1. Stripe manda el cuerpo de la petición como texto (raw), no como JSON
     const body = await req.text();
     // 2. Stripe manda una firma criptográfica para comprobar que son ellos
-    const signature = headers().get("Stripe-Signature") as string;
+    const signature = (await headers()).get("stripe-signature") as string;
 
     let event: Stripe.Event;
 
