@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react"; // Añadimos Suspense
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
 
-export default function ThanksPage() {
+// 1. Envolvemos toda tu lógica actual en un componente interno
+function ThanksContent() {
     const searchParams = useSearchParams();
     const sessionId = searchParams.get("session_id");
     const [status, setStatus] = useState<string>("loading");
@@ -35,7 +36,6 @@ export default function ThanksPage() {
 
     return (
         <div className="min-h-screen bg-[#fdfaf5] grid md:grid-cols-2 items-center overflow-hidden">
-            {/* ... Rest of components ... */}
             <div className="hidden md:flex relative w-full h-full items-center justify-center p-12 bg-[#f4f1e9]">
                 <div className="relative w-[80%] h-[80%] aspect-[1/2]">
                     <Image
@@ -104,8 +104,8 @@ export default function ThanksPage() {
                     <Link
                         href="/"
                         className={`inline-block px-10 py-4 font-bold tracking-widest transition-all duration-500 ${status === "verified"
-                                ? "text-gray-400 hover:text-[#8B3A18] text-sm"
-                                : "bg-[#1A1A1A] text-white rounded-full shadow-xl hover:scale-105"
+                            ? "text-gray-400 hover:text-[#8B3A18] text-sm"
+                            : "bg-[#1A1A1A] text-white rounded-full shadow-xl hover:scale-105"
                             }`}
                     >
                         VOLVER AL INICIO
@@ -122,5 +122,18 @@ export default function ThanksPage() {
                 </div>
             </motion.div>
         </div>
+    );
+}
+
+// 2. Exportamos la página principal envuelta en Suspense
+export default function ThanksPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-[#fdfaf5] flex items-center justify-center font-serif text-2xl text-gray-400">
+                Verificando tu orden...
+            </div>
+        }>
+            <ThanksContent />
+        </Suspense>
     );
 }
