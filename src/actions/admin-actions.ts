@@ -162,7 +162,7 @@ export async function createProduct(formData: FormData) {
   const price = parseFloat(formData.get("price") as string);
   const quantity = parseInt(formData.get("quantity") as string);
   const clubDiscountPercent = parseInt(formData.get("clubDiscountPercent") as string) || 0;
-  
+
   const weight = parseFloat(formData.get("weight") as string) || 1.5;
   const height = parseFloat(formData.get("height") as string) || 20;
   const width = parseFloat(formData.get("width") as string) || 20;
@@ -186,8 +186,42 @@ export async function createFlavor(formData: FormData) {
   const name = formData.get("name") as string;
   const slug = formData.get("slug") as string;
   const price = parseFloat(formData.get("price") as string);
-  const stock = parseInt(formData.get("stock") as string);
-  await db.flavor.create({ data: { name, slug, price, stock } });
+  const initialStock = parseInt(formData.get("stock") as string) || 0;
+  const adminEmail = formData.get("adminEmail") as string || "system";
+
+  // 1. Buscamos la ubicación predeterminada (donde entrará el stock inicial)
+  const defaultLocation = await db.location.findFirst({
+    where: { isDefault: true }
+  }) || await db.location.findFirst(); // Si no hay default, agarra la primera que encuentre
+
+  // 2. Creamos el sabor
+  const newFlavor = await db.flavor.create({
+    data: { name, slug, price }
+  });
+
+  // 3. Si mandaste un stock inicial, lo registramos en la ubicación encontrada
+  if (initialStock > 0 && defaultLocation) {
+    await db.stock.create({
+      data: {
+        flavorId: newFlavor.id,
+        locationId: defaultLocation.id,
+        quantity: initialStock
+      }
+    });
+
+    // 4. Dejamos rastro en el historial de movimientos
+    await db.inventoryMovement.create({
+      data: {
+        flavorId: newFlavor.id,
+        locationId: defaultLocation.id,
+        type: "IN",
+        quantity: initialStock,
+        reason: "Stock inicial al crear sabor",
+        userId: adminEmail
+      }
+    });
+  }
+
   revalidatePath("/admin");
 }
 
