@@ -32,22 +32,117 @@ export async function POST(req: Request) {
 
     // 4. SI EL PAGO FUE EXITOSO...
     if (event.type === "checkout.session.completed") {
-        // Recuperamos el ID de la orden que guardamos antes en "metadata"
+
+        // --- INICIO BLOQUE PARA SUSCRIPCIONES ---
+        if (session.mode === "subscription") {
+            const planId = session.metadata?.planId;
+            const customerEmail = session.customer_details?.email;
+            const customerName = session.customer_details?.name;
+
+            if (customerEmail && planId) {
+                // 1. Buscamos o creamos al Cliente en tu tabla 'client'
+                const client = await db.client.upsert({
+                    where: { email: customerEmail },
+                    update: {}, // Si ya existe, no cambiamos nada por ahora
+                    create: {
+                        email: customerEmail,
+                        fullName: customerName || "Cliente Nuevo",
+                    }
+                });
+
+                // 2. Creamos la Suscripción vinculada al cliente
+                await db.subscription.create({
+                    data: {
+                        clientId: client.id,
+                        planId: planId,
+                        stripeSubscriptionId: session.subscription as string,
+                        stripeCustomerId: session.customer as string,
+                        status: "active",
+                        // Convertimos el timestamp de Stripe a objeto Date de JS
+                        currentPeriodEnd: new Date(session.expires_at ? session.expires_at * 1000 : Date.now() + 30 * 24 * 60 * 60 * 1000),
+                    }
+                });
+
+                console.log(`✅ Suscripción creada para: ${customerEmail}`);
+                return new NextResponse(null, { status: 200 }); // Terminamos proceso para suscripción
+            }
+        }
+        // --- FIN BLOQUE PARA SUSCRIPCIONES ---
+
+
+        // --- TU LÓGICA ORIGINAL PARA VENTAS ÚNICAS ---
         const orderId = session.metadata?.orderId;
 
         if (orderId) {
-            // MAGIA: Actualizamos la base de datos a PAGADO
-            await db.order.update({
-                where: { id: orderId },
-                data: { status: "PAID" },
+            // Buscamos la orden para ver si ya fue procesada (Idempotencia)
+            const existingOrder = await db.order.findUnique({
+                where: { id: orderId }
             });
 
-            console.log(`✅ ¡Orden ${orderId} pagada y actualizada en Neon!`);
+            if (existingOrder?.status === "PAID") {
+                console.log(`ℹ️ La orden ${orderId} ya estaba marcada como pagada. Ignorando.`);
+                return new NextResponse(null, { status: 200 });
+            }
 
-            // 👉 [AQUÍ CONECTAREMOS SKYDROPX Y RESEND EN EL SIGUIENTE PASO]
+            // 1. Buscamos la ubicación predeterminada (Bodega Campeche)
+            const defaultLocation = await db.location.findFirst({
+                where: { isDefault: true, isArchived: false }
+            });
+
+            if (!defaultLocation) {
+                console.error("❌ Error Crítico: No hay una bodega marcada como Default para ventas online.");
+                return new NextResponse("Configuración de bodega faltante", { status: 500 });
+            }
+
+            // 2. Actualizamos la orden a PAGADA
+            const order = await db.order.update({
+                where: { id: orderId },
+                data: {
+                    status: "PAID",
+                    paymentId: session.payment_intent as string,
+                },
+                include: {
+                    orderItems: { include: { flavor: true } }
+                }
+            });
+
+            console.log(`✅ ¡Orden ${orderId} pagada! Procesando inventario...`);
+
+            // 3. 📦 PROCESAR CADA ITEM
+            for (const item of order.orderItems) {
+                if (item.flavorId && item.quantity > 0) {
+                    await db.stock.upsert({
+                        where: {
+                            flavorId_locationId: {
+                                flavorId: item.flavorId,
+                                locationId: defaultLocation.id,
+                            }
+                        },
+                        update: {
+                            quantity: { decrement: item.quantity }
+                        },
+                        create: {
+                            flavorId: item.flavorId,
+                            locationId: defaultLocation.id,
+                            quantity: -item.quantity
+                        }
+                    });
+
+                    await db.inventoryMovement.create({
+                        data: {
+                            flavorId: item.flavorId,
+                            locationId: defaultLocation.id,
+                            type: "OUT",
+                            quantity: item.quantity,
+                            reason: `Venta Online #${orderId.substring(0, 8)}`,
+                            userId: "stripe-webhook",
+                        }
+                    });
+                }
+            }
         }
     }
 
-    // Le respondemos a Stripe con un 200 OK para que sepa que recibimos el mensaje
+    // Le respondemos a Stripe con un 200 OK
     return new NextResponse(null, { status: 200 });
 }

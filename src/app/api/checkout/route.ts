@@ -22,15 +22,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Faltan datos de envío" }, { status: 400 });
     }
 
+    // Obtenemos todos los sabores para mapear los nombres del frontend con sus IDs
+    const allFlavors = await db.flavor.findMany();
+
+    // Calcular total
+    const subtotal = items.reduce((sum: number, item: any) => sum + (Number(item.price) * (item.quantity || 1)), 0);
+    const total = subtotal + Number(shippingCost || 0);
+
     // 1. GUARDAR LA ORDEN EN LA BASE DE DATOS (NEON)
-    // Se guarda como PENDING. Se actualizará a PAID cuando Stripe confirme el pago
     const order = await db.order.create({
       data: {
-        userId: "invitado", // Después lo podemos atar al ID de Clerk
+        channel: "WEB",
         status: "PENDING",
-        total: items.reduce((sum: number, item: any) => sum + (Number(item.price) * (item.quantity || 1)), 0) + Number(shippingCost || 0),
+        total,
+        subtotal,
 
-        // Datos de envío del cliente (Mapeados a tu schema)
+        // Datos de envío del cliente
         fullName: customerAddress.name || "Sin nombre",
         email: customerAddress.email || "sin@correo.com",
         phone: String(customerAddress.phone || ""),
@@ -40,14 +47,41 @@ export async function POST(request: Request) {
         state: customerAddress.state || "Estado",
         neighborhood: customerAddress.neighborhood || "",
         shippingCost: Number(shippingCost || 0),
+        paymentMethod: "STRIPE",
 
-        // Guardamos los items que compró
+        // Guardamos los items
         orderItems: {
-          create: items.map((item: any) => ({
-            productId: item.id || "producto-desconocido",
-            price: Number(item.price),
-            flavorSelection: item.flavorSelection || {} // Aquí guardamos qué sabores eligieron en el pack
-          }))
+          create: items.flatMap((item: any) => {
+            // El pack principal
+            const packItem = {
+              productId: item.id || null,
+              productName: item.name || item.title || "Producto Pormucha",
+              quantity: Number(item.quantity) || 1,
+              unitPrice: Number(item.price),
+              subtotal: Number(item.price) * (Number(item.quantity) || 1),
+            };
+
+            // Los sabores individuales dentro del pack
+            const flavorItems = Object.entries(item.flavors || {})
+              .filter(([_, qty]) => Number(qty) > 0)
+              .map(([flavorName, qty]) => {
+                const fname = flavorName.toLowerCase();
+                const matchedFlavor = allFlavors.find(f =>
+                  f.name.toLowerCase().includes(fname) ||
+                  f.slug.toLowerCase().includes(fname) ||
+                  fname.includes(f.slug.toLowerCase())
+                );
+                return {
+                  flavorId: matchedFlavor?.id || null,
+                  productName: matchedFlavor?.name || flavorName,
+                  quantity: Number(qty),
+                  unitPrice: 0, // Incluidos en el precio del pack
+                  subtotal: 0,
+                };
+              }).filter(si => si.flavorId !== null);
+
+            return [packItem, ...flavorItems];
+          })
         }
       }
     });
@@ -59,7 +93,6 @@ export async function POST(request: Request) {
         product_data: {
           name: item.name || item.title || "Producto Pormucha",
         },
-        // STRIPE COBRA EN CENTAVOS: Multiplicamos por 100 y redondeamos
         unit_amount: Math.round(Number(item.price) * 100),
       },
       quantity: item.quantity || 1,
@@ -80,18 +113,17 @@ export async function POST(request: Request) {
     }
 
     // 4. CREAR LA SESIÓN DE PAGO EN STRIPE
-    // Usamos variables de entorno para la URL, con localhost como respaldo
     const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3000";
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items,
       mode: "payment",
-      customer_email: customerAddress.email, // Autocompleta el correo del cliente en la pantalla de pago
+      customer_email: customerAddress.email,
       success_url: `${baseUrl}/thanks?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/checkout`,
       metadata: {
-        orderId: order.id, // VITAL: Le pasamos a Stripe el ID de Neon para que nos lo devuelva en el Webhook
+        orderId: order.id,
       },
     });
 

@@ -5,6 +5,7 @@ import "./globals.css";
 import { ClerkProvider } from '@clerk/nextjs'
 import { CartProvider } from "@/context/CartContext";
 import { Toaster } from "sonner";
+import FloatingCart from "@/components/FloatingCart";
 
 // Configuración de la fuente Serif (Títulos elegantes)
 const playfair = Playfair_Display({
@@ -20,19 +21,29 @@ const inter = Inter({
   display: "swap",
 });
 
-// --- METADATA SEO Y OPEN GRAPH ---
+// --- METADATA SEO Y OPEN GRAPH ACTUALIZADOS ---
 export const metadata: Metadata = {
-  metadataBase: new URL('https://pormuchakombucha.com'), // Base para las URLs absolutas
-  title: "Pormucha Kombucha | Fermentación Real",
-  description: "Bebida fermentada artesanal con probióticos naturales. Únete a nuestra comunidad y sé el primero en probar la frescura viva.",
+  metadataBase: new URL('https://pormuchakombucha.com'), // Excelente práctica tener esto
+  title: 'Pormucha Kombucha | Fermentación Real y Bienestar',
+  description: 'Bebida fermentada naturalmente con probióticos vivos. 100% fresca, natural, ligera y refrescante. Cuidamos tu centro desde Campeche con envíos a todo México.',
+  keywords: [
+    'kombucha',
+    'probióticos',
+    'bebida natural',
+    'salud digestiva',
+    'Pormucha',
+    'fermentación',
+    'kombucha en México',
+    'kombucha Campeche'
+  ],
   openGraph: {
-    title: "Pormucha Kombucha | Fermentación Real",
-    description: "Únete a nuestra comunidad y sé el primero en probar la frescura viva. Bebida fermentada artesanal.",
+    title: 'Pormucha Kombucha | Fermentación Real',
+    description: 'Bebida fermentada naturalmente con probióticos vivos, ligera y refrescante. Cuidamos tu centro desde Campeche para todo México.',
     url: 'https://pormuchakombucha.com',
     siteName: 'Pormucha Kombucha',
     images: [
       {
-        url: '/og-image.png', // <-- Imagen para compartir (1200x630px)
+        url: '/og-image.png', // Debe coincidir con el nombre de tu imagen en la carpeta public
         width: 1200,
         height: 630,
         alt: 'Pormucha Kombucha - Botella y Frescura',
@@ -44,9 +55,13 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: "Pormucha Kombucha | Fermentación Real",
-    description: "Únete a nuestra comunidad y sé el primero en probar la frescura viva.",
-    images: ['/og-image.jpg'], // Mismo enlace de la imagen
+    description: "Bebida fermentada naturalmente con probióticos vivos. Envíos a todo México.",
+    images: ['/og-image.png'],
   },
+  robots: {
+    index: true,
+    follow: true,
+  }
 };
 
 export default function RootLayout({
@@ -60,6 +75,7 @@ export default function RootLayout({
         <html lang="es" className={`${playfair.variable} ${inter.variable}`}>
           <body className="antialiased font-sans bg-[#F5F2EB] text-[#1A1A1A]">
             {children}
+            <FloatingCart />
             <Toaster richColors position="top-center" />
           </body>
         </html>

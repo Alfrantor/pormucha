@@ -7,7 +7,7 @@ interface PosSaleData {
   locationId: string;
   cart: any[];
   total: number;
-  method: string; // "CASH" | "CARD"
+  method: string; // "CASH" | "CARD" | "TRANSFER"
   userEmail: string;
 }
 
@@ -21,38 +21,37 @@ export async function processPosSale(data: PosSaleData) {
   // Usamos una transacción para asegurar que si falla algo, no se cobre ni se descuente inventario a medias.
   await db.$transaction(async (tx) => {
     
-    // 1. Crear el Registro de la Venta (Cabecera)
-    const sale = await tx.posSale.create({
+    // 1. Crear el Registro de la Venta como Order unificada con channel POS
+    const order = await tx.order.create({
       data: {
-        locationId,
+        channel: "POS",
+        status: "PAID",
         total,
+        subtotal: total,
         paymentMethod: method,
-        status: "COMPLETED",
-        userId: userEmail,
+        locationId,
+        sellerId: userEmail,
+        // Items de la venta
+        orderItems: {
+          create: cart.map((item) => ({
+            productName: item.name,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            subtotal: item.price * item.quantity,
+            // Si es botella, conectar con el flavor
+            flavorId: item.type === "BOTTLE" ? item.id : null,
+            // Si es pack, conectar con el product  
+            productId: item.type === "PACK" ? item.id : null,
+          })),
+        },
       },
     });
 
-    // 2. Procesar cada ítem del carrito
+    // 2. Descontar Inventario (SOLO SI ES BOTELLA/SABOR INDIVIDUAL)
     for (const item of cart) {
-      
-      // A. Guardar el detalle de venta (Item)
-      await tx.posSaleItem.create({
-        data: {
-          saleId: sale.id,
-          productName: item.name,
-          quantity: item.quantity,
-          price: item.price,
-          subtotal: item.price * item.quantity,
-        },
-      });
-
-      // B. Descontar Inventario (SOLO SI ES BOTELLA/SABOR INDIVIDUAL)
-      // Si vendes Packs, por ahora solo registramos la venta sin descontar botellas 
-      // (a menos que quieras agregar lógica compleja de desglose de packs).
       if (item.type === "BOTTLE") {
         await tx.stock.update({
           where: {
-            // Buscamos el stock específico de ese sabor en ESA tienda
             flavorId_locationId: {
               flavorId: item.id,
               locationId: locationId,
@@ -61,6 +60,17 @@ export async function processPosSale(data: PosSaleData) {
           data: {
             quantity: { decrement: item.quantity },
           },
+        });
+
+        await tx.inventoryMovement.create({
+          data: {
+            flavorId: item.id,
+            locationId: locationId,
+            type: "OUT",
+            quantity: item.quantity,
+            reason: "Venta en POS",
+            userId: userEmail,
+          }
         });
       }
     }

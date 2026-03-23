@@ -1,217 +1,227 @@
-// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model Client {
+  id            String         @id @default(cuid())
+  clerkUserId   String?        @unique
+  fullName      String
+  email         String         @unique
+  phone         String?
+  street        String?
+  number        String?
+  zipCode       String?
+  city          String?
+  state         String?
+  neighborhood  String?
+  reference     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  orders        Order[]
+  subscriptions Subscription[]
 }
 
-// ========================================================
-// 1. GESTIÓN DE UBICACIONES (MULTIALMACÉN)
-// ========================================================
 model Location {
-  id        String   @id @default(cuid())
-  name      String   // Ej: "Bodega Central", "Sucursal Plaza", "Camioneta Reparto"
-  address   String?
-  isDefault Boolean  @default(false) // True = Tu almacén principal para ventas Online
-  
-  // NUEVO: Para deshabilitar sucursales sin borrar historial
-  isArchived Boolean @default(false) 
-  
-  stocks    Stock[]  // Inventario disponible en esta ubicación
-  posSales  PosSale[] // Ventas realizadas en esta ubicación
-  movements InventoryMovement[] // Historial de movimientos de esta ubicación
+  id            String              @id @default(cuid())
+  name          String
+  address       String?
+  isDefault     Boolean             @default(false)
+  isArchived    Boolean             @default(false)
+  movements     InventoryMovement[]
+  orders        Order[]
+  stocks        Stock[]
+  transfersFrom Transfer[]          @relation("TransferFrom")
+  transfersTo   Transfer[]          @relation("TransferTo")
 }
 
-// ========================================================
-// 2. STOCK POR UBICACIÓN (PIVOTE)
-// ========================================================
-// Esta tabla dice: "En la Sucursal X hay 40 botellas de Piña"
 model Stock {
   id         String   @id @default(cuid())
-  
   flavorId   String
-  flavor     Flavor   @relation(fields: [flavorId], references: [id])
-  
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-  
-  quantity   Int      @default(0) // La cantidad REAL en esa ubicación
-
-  @@unique([flavorId, locationId]) // Evita duplicados (un sabor solo aparece una vez por tienda)
-}
-
-// ========================================================
-// 3. INVENTARIO REAL (BOTELLAS / SABORES)
-// ========================================================
-model Flavor {
-  id    String @id @default(cuid())
-  name  String // Ej: "Bebida de Piña 355ml"
-  slug  String @unique // Clave para el frontend: "pina", "jamaica"
-  image String? 
-  
-  // PRECIO UNITARIO (Para valoración de inventario y venta suelta)
-  price Decimal @default(0) 
-
-  // STOCK GLOBAL/LEGACY (Para compatibilidad con tu E-commerce actual)
-  stock Int    @default(0) 
-
-  // NUEVO: Para deshabilitar sabores que ya no produces
-  isArchived Boolean @default(false)
-
-  // RELACIONES
-  locationStocks Stock[]             // Stock detallado por sucursal
-  movements      InventoryMovement[] // Kardex de E/S
-  priceHistory   PriceHistory[]      // Historial de cambios de precio
-}
-
-// ========================================================
-// 4. KARDEX DE INVENTARIO (HISTORIAL DE MOVIMIENTOS)
-// ========================================================
-model InventoryMovement {
-  id         String   @id @default(cuid())
-  
-  flavorId   String
+  quantity   Int      @default(0)
   flavor     Flavor   @relation(fields: [flavorId], references: [id])
-  
-  locationId String?  // ¿En qué almacén ocurrió el movimiento?
-  location   Location? @relation(fields: [locationId], references: [id])
-  
-  type       String   // "IN" (Entrada), "OUT" (Salida), "TRANSFER_IN", "TRANSFER_OUT"
-  quantity   Int      
-  reason     String   // "Compra", "Venta POS", "Merma", "Traspaso..."
-  
-  userId     String?  // Quién hizo el movimiento
-  createdAt  DateTime @default(now())
+  location   Location @relation(fields: [locationId], references: [id])
+
+  @@unique([flavorId, locationId])
 }
 
-// ========================================================
-// 5. KARDEX DE PRECIOS (HISTORIAL ECONÓMICO)
-// ========================================================
-model PriceHistory {
+model Flavor {
+  id             String               @id @default(cuid())
+  name           String
+  slug           String               @unique
+  image          String?
+  price          Decimal              @default(0)
+  isArchived     Boolean              @default(false)
+  priceHistory   FlavorPriceHistory[]
+  movements      InventoryMovement[]
+  orderItems     OrderItem[]
+  locationStocks Stock[]
+  transfers      Transfer[]
+  unitCount     Int      @default(6)
+}
+
+model InventoryMovement {
+  id         String    @id @default(cuid())
+  flavorId   String
+  locationId String?
+  type       String
+  quantity   Int
+  reason     String
+  userId     String?
+  createdAt  DateTime  @default(now())
+  flavor     Flavor    @relation(fields: [flavorId], references: [id])
+  location   Location? @relation(fields: [locationId], references: [id])
+}
+
+model FlavorPriceHistory {
   id        String   @id @default(cuid())
-  
-  // Puede ser cambio en un Pack (Product) O en una Botella (Flavor)
-  productId String?
-  product   Product? @relation(fields: [productId], references: [id])
-  
-  flavorId  String?
-  flavor    Flavor?  @relation(fields: [flavorId], references: [id])
-  
+  flavorId  String
   oldPrice  Decimal
   newPrice  Decimal
-  
   userId    String?
   createdAt DateTime @default(now())
+  flavor    Flavor   @relation(fields: [flavorId], references: [id])
 }
 
-// ========================================================
-// 6. PRODUCTO COMERCIAL (PACKS PARA E-COMMERCE)
-// ========================================================
 model Product {
-  id          String   @id @default(cuid())
-  name        String   // "Pack de 6"
-  description String?
-  price       Decimal  // Precio de venta al público
-  quantity    Int      // Cuántas botellas incluye
-  stock       Int      @default(0) // (Opcional) Stock de cajas de cartón
-  
-  // NUEVO: Para deshabilitar Packs antiguos
-  isArchived  Boolean  @default(false) 
-  
-  orderItems   OrderItem[]
-  priceHistory PriceHistory[]
+  id                  String                @id @default(cuid())
+  name                String
+  description         String?
+  price               Decimal
+  clubDiscountPercent Int                   @default(10)
+  quantity            Int
+  isArchived          Boolean               @default(false)
+  weight              Decimal               @default(1)
+  height              Decimal               @default(10)
+  width               Decimal               @default(10)
+  length              Decimal               @default(10)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  orderItems          OrderItem[]
+  plans               Plan[]
+  priceHistory        ProductPriceHistory[]
 }
 
-// ========================================================
-// 7. E-COMMERCE: PEDIDOS ONLINE
-// ========================================================
-model Order {
+model ProductPriceHistory {
   id        String   @id @default(cuid())
-  userId    String   
+  productId String
+  oldPrice  Decimal
+  newPrice  Decimal
+  userId    String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt 
-  status    String   @default("PENDING")
+  product   Product  @relation(fields: [productId], references: [id])
+}
 
-  // --- PAGOS (STRIPE) ---
-  paymentId       String?   // Aquí guardaremos el PaymentIntent de Stripe
-  stripeSessionId String?   @unique // CLAVE: Para conectar el webhook de Stripe con esta orden específica
+model Plan {
+  id            String         @id @default(cuid())
+  name          String
+  description   String?
+  price         Decimal
+  stripePriceId String?        @unique
+  interval      String         @default("month")
+  intervalCount Int            @default(1)
+  productId     String?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  unitCount     Int      @default(6)
+  product       Product?       @relation(fields: [productId], references: [id])
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                   String   @id @default(cuid())
+  clientId             String
+  planId               String
+  status               String
+  stripeCustomerId     String?
+  stripeSubscriptionId String?  @unique
+  currentPeriodEnd     DateTime
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  orders               Order[]
+  client               Client   @relation(fields: [clientId], references: [id])
+  plan                 Plan     @relation(fields: [planId], references: [id])
+  selectedFlavors   Json?
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  channel         String
+  status          String        @default("PENDING")
+  clientId        String?
+  paymentMethod   String?
+  paymentId       String?
+  stripeSessionId String?       @unique
   total           Decimal
-
-  // Datos de Envío
-  fullName     String
-  email        String  
-  phone        String  
-  street       String
-  number       String? 
-  zipCode      String
-  city         String
-  state        String
-  neighborhood String? 
-  reference    String? 
-
-  // --- LOGÍSTICA (SKYDROPX) ---
-  shippingCost    Decimal? 
-  shippingId      String?  // ID del envío en Skydropx
-  trackingNumber  String?  // Número de guía (ej. DHL, FedEx) para el cliente
-  trackingUrl     String?  // Link directo para rastrear el paquete
-
-  orderItems   OrderItem[]
+  subtotal        Decimal?
+  fullName        String?
+  email           String?
+  phone           String?
+  street          String?
+  number          String?
+  zipCode         String?
+  city            String?
+  state           String?
+  neighborhood    String?
+  reference       String?
+  shippingCost    Decimal?
+  shippingId      String?
+  trackingNumber  String?
+  trackingUrl     String?
+  locationId      String?
+  sellerId        String?
+  subscriptionId  String?
+  notes           String?
+  client          Client?       @relation(fields: [clientId], references: [id])
+  location        Location?     @relation(fields: [locationId], references: [id])
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id])
+  orderItems      OrderItem[]
 }
 
 model OrderItem {
-  id        String  @id @default(cuid())
-  orderId   String
-  order     Order   @relation(fields: [orderId], references: [id])
-  
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-  price     Decimal 
-  
-  // { "pina": 2, "jamaica": 4 }
-  flavorSelection Json      
-}
-
-// ========================================================
-// 8. POS: VENTAS FÍSICAS
-// ========================================================
-model PosSale {
-  id            String   @id @default(cuid())
-  createdAt     DateTime @default(now())
-  
-  locationId    String
-  location      Location @relation(fields: [locationId], references: [id])
-  
-  total         Decimal
-  status        String   @default("COMPLETED") // COMPLETED, CANCELLED
-  paymentMethod String   // "CASH", "CARD", "TRANSFER"
-  
-  items         PosSaleItem[]
-  userId        String?  // Vendedor
-}
-
-model PosSaleItem {
-  id          String  @id @default(cuid())
-  saleId      String
-  sale        PosSale @relation(fields: [saleId], references: [id])
-  
-  productName String  // Guardamos el nombre "Pack 6" o "Bebida Piña"
+  id          String   @id @default(cuid())
+  orderId     String
+  flavorId    String?
+  productId   String?
+  productName String
   quantity    Int
-  price       Decimal
+  unitPrice   Decimal
   subtotal    Decimal
-  
-  // Opcional: Si vendes Packs en físico, podrías querer guardar la selección de sabores aquí también
-  // flavorSelection Json? 
+  flavor      Flavor?  @relation(fields: [flavorId], references: [id])
+  order       Order    @relation(fields: [orderId], references: [id])
+  product     Product? @relation(fields: [productId], references: [id])
 }
 
-// Agregar a tu schema.prisma
 model Lead {
   id        String   @id @default(cuid())
   name      String
   email     String   @unique
   phone     String?
   createdAt DateTime @default(now())
+}
+
+model Transfer {
+  id               String   @id @default(cuid())
+  flavorId         String
+  fromLocationId   String
+  toLocationId     String
+  status           String   @default("PENDING")
+  quantitySent     Int
+  quantityReceived Int?
+  senderEmail      String
+  receiverEmail    String?
+  observations     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  flavor           Flavor   @relation(fields: [flavorId], references: [id])
+  fromLocation     Location @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocation       Location @relation("TransferTo", fields: [toLocationId], references: [id])
 }

@@ -1,14 +1,27 @@
 import { db } from "@/lib/db";
-import PackSelector from "@/components/PackSelector";
+import StoreGrid from "@/components/StoreGrid";
 import Navbar from "@/components/Navbar";
-import { Leaf, Waves, Sun } from "lucide-react";
-import SubscriptionLanding from "@/components/SubscriptionLanding";
+import TiendaHero from "@/components/TiendaHero";
+import Footer from "@/components/Footer";
+import { Info, CheckCircle2 } from "lucide-react";
+import FAQItem from "@/components/FAQItem";
 
 export default async function TiendaPage() {
   const packs = await db.product.findMany({
     where: { isArchived: false },
     orderBy: { price: 'asc' }
   });
+
+  const rawFlavors = await db.flavor.findMany({
+    where: { isArchived: false },
+    include: { locationStocks: true }
+  });
+
+  const flavors = rawFlavors.map(f => ({
+    id: f.id,
+    name: f.name,
+    stock: f.locationStocks.reduce((sum, s) => sum + s.quantity, 0)
+  }));
 
   return (
     <main className="min-h-screen bg-[#F5F2EB] selection:bg-[#8B3A28] selection:text-white font-sans">
@@ -17,240 +30,111 @@ export default async function TiendaPage() {
         <Navbar />
       </div>
 
-      {/* ========================================= */}
-      {/* HERO SECTION */}
-      {/* ========================================= */}
-      <section className="relative h-screen w-full overflow-hidden text-[#F5F2EB]">
+      <TiendaHero />
 
-        {/* IMAGEN DE FONDO */}
-        <div className="absolute inset-0 z-0">
-          <div className="w-full h-full bg-[url('/hero-bg.JPG')] bg-cover bg-center brightness-[0.85]" />
+      <StoreGrid 
+        packs={packs.map(pack => ({
+          id: pack.id,
+          name: pack.name,
+          quantity: pack.quantity,
+          price: Number(pack.price),
+          clubDiscountPercent: pack.clubDiscountPercent
+        }))} 
+        flavors={flavors}
+      />
+
+      {/* ============================================== */}
+      {/* SECCIÓN DE GARANTÍA */}
+      {/* ============================================== */}
+      <section className="bg-[#EAE7DD] py-20 px-6 border-t border-[#8B3A18]/20 relative overflow-hidden">
+        {/* Banner decorativo tipo listón en desktop */}
+        <div className="absolute top-10 -left-16 w-64 bg-[#9B1C1C] text-white text-xs font-bold tracking-[0.2em] transform -rotate-45 text-center py-2 shadow-2xl border-b-4 border-[#EBDAAB] z-10 hidden lg:block">
+          GARANTÍA DE <br/>100% SATISFACCIÓN
         </div>
-
-        {/* CONTENIDO PRINCIPAL */}
-        {/* CAMBIO: Quitamos 'max-w-[1400px] mx-auto' y ajustamos el padding (lg:px-20) para que esté a la izquierda */}
-        <div className="relative z-10 w-full h-full flex flex-col justify-between px-6 md:px-12 lg:px-20 py-12 md:py-24">
-
-          {/* BLOQUE SUPERIOR (IZQUIERDA): Título + Texto */}
-          <div className="flex flex-col justify-center h-full max-w-4xl items-start md:ml-64 transition-all">
-            {/* TÍTULO */}
-            <div className="text-left mb-8">
-              {/* CONTROL DE TAMAÑO DE "PORMUCHA":
-                  - text-[4rem]  -> Tamaño en Celular (puedes poner 3rem, 5rem, etc.)
-                  - md:text-[12rem] -> Tamaño en PC (puedes poner 8rem, 10rem, 12rem, 15rem...)
-              */}
-              <h1 className="font-serif text-[4rem] md:text-[5rem] leading-[0.85] tracking-tight text-[#EBDAAB]">
-                P<span className="italic font-light">o</span>rmucha <br />
-
-                {/* CONTROL DE TAMAÑO DE "KOMBUCHA":
-                    - text-[3rem]  -> Tamaño en Celular
-                    - md:text-[9rem] -> Tamaño en PC
-                */}
-                <span className="font-light text-[3rem] md:text-[3rem]">
-                  K<span className="italic font-light">o</span>mbucha
-                </span>
-              </h1>
-            </div>
-
-            {/* TEXTO */}
-            <div className="text-left pl-2">
-              <p className="text-xl md:text-[2rem] font-roboto leading-relaxed text-[#909186] max-w-3xl">
-                Bebida fermentada naturalmente con probióticos vivos, ligera y refrescante.
-              </p>
-            </div>
-          </div>
-
-          {/* BLOQUE INFERIOR (DERECHA): Botón + Datos */}
-          {/* Este bloque usa 'ml-auto' para forzarse a la derecha, creando la diagonal visual */}
-          <div className="flex flex-col items-center md:items-end gap-10 ml-auto">
-            {/* Aumenté el gap de 8 a 10 para dar más aire */}
-
-            {/* DATOS TÉCNICOS - Texto más grande */}
-            {/* CAMBIO: De text-xs a text-sm md:text-base (más grande en PC) */}
-            <div className="hidden md:block font-mono text-[1rem] tracking-[0.2em] space-y-3 text-[#909186] uppercase text-right font-bold">
-              <div className="flex justify-end gap-12 border-b border-white/20 pb-3 mb-3">
-                <span>100% Fresco</span>
-                <span>&</span>
-                <span>Natural</span>
+        
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-12 lg:gap-20 relative z-20">
+          
+          {/* Sello visual de garantía */}
+          <div className="md:w-1/3 flex justify-center">
+            <div className="w-56 h-56 rounded-full border border-[#8B3A18]/20 flex flex-col items-center justify-center bg-white shadow-[0_20px_40px_rgba(139,58,24,0.15)] relative">
+              <div className="w-52 h-52 rounded-full border border-dashed border-[#8B3A18]/40 flex flex-col items-center justify-center bg-[#F5F2EB]">
+                 <span className="text-[#8B3A18] font-serif text-[4rem] leading-none mb-1">100%</span>
+                 <span className="font-mono text-[10px] uppercase tracking-widest text-[#1A1A1A] font-bold">Satisfacción</span>
               </div>
-              <div className="flex justify-end gap-12">
-                <span>Vida en Equilibrio</span>
-                <span>MX</span>
+              <div className="absolute -bottom-4 bg-[#1A1A1A] text-[#EBDAAB] font-sans text-xs tracking-[0.25em] font-bold uppercase px-6 py-2 rounded-full shadow-lg">
+                REEMBOLSO
               </div>
-              <p className="opacity-80 pt-2 tracking-[0.15em]">Pormuchos momentos compartidos</p>
             </div>
-
-            {/* BOTÓN - Más grande */}
-            {/* CAMBIOS: 
-                - px-10 py-5  -> px-14 py-6 (Más relleno)
-                - text-lg     -> text-xl md:text-2xl (Texto más grande)
-            */}
-            <a href="#packs" className="bg-[#8B3A18] text-[#BBBFA8] px-14 py-6 rounded-lg text-[2rem] md:text-2xl font-sans font-bold tracking-widest hover:bg-[#722f20] transition-transform hover:scale-105 shadow-2xl border border-white/10">
-              ARMA TU PAQUETE
-            </a>
           </div>
-        </div>
-      </section>
-      {/* ========================================= */}
-      {/* SECCIÓN 2: FILOSOFÍA CON VIDEOS (ESTILO REELS) */}
-      {/* ========================================= */}
-      <section className="bg-[#EAE7DD] py-24 px-6 md:px-12 text-[#1A1A1A]">
 
-        {/* ENCABEZADO */}
-        <div className="text-center mb-16 space-y-4">
-          <h2 className="font-serif text-6xl md:text-7xl">Pormucha<span className="text-sm align-top">®</span></h2>
-          <p className="text-xl md:text-2xl font-light tracking-wide text-gray-800">
-            Fermentación real. Bienestar cotidiano
-          </p>
-        </div>
-
-        {/* GRID DE 3 VIDEOS */}
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12">
-
-          {/* VIDEO 1: HECHA CON TIEMPO */}
-          <a
-            href="https://www.instagram.com/reel/DIt89b9J5vD/?igsh=NWd3ZTRna2trczh1"
-            target="_blank"
-            className="group flex flex-col text-center"
-          >
-            {/* Contenedor de Video (Aspecto Cuadrado o Vertical según prefieras) */}
-            {/* aspect-[4/5] es el tamaño típico de Instagram (verticalito), aspect-square es cuadrado */}
-            <div className="aspect-[4/5] bg-gray-300 overflow-hidden mb-8 relative rounded-lg shadow-lg">
-              <video
-                src="/reel-1.mp4"       // Tu archivo de video
-                autoPlay
-                loop
-                muted
-                playsInline             // Importante para que funcione en iPhone
-                className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-105"
-              />
-              {/* Capa oscura al pasar el mouse para efecto elegante */}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-            </div>
-
-            <h3 className="font-sans text-xl tracking-[0.2em] uppercase mb-4 font-bold">
-              HECHA CON TIEMPO
-            </h3>
-            <p className="text-gray-600 font-light leading-relaxed px-4">
-              Pequeños lotes, procesos reales y respeto por la fermentación.
-            </p>
-          </a>
-
-          {/* VIDEO 2: VIVA POR DENTRO */}
-          <a
-            href="https://www.instagram.com/reel/DNloDrzJpvU/?igsh=MW1paHEwZDlmaHMwNw=="
-            target="_blank"
-            className="group flex flex-col text-center"
-          >
-            <div className="aspect-[4/5] bg-gray-300 overflow-hidden mb-8 relative rounded-lg shadow-lg">
-              <video
-                src="/reel-2.mp4"
-                autoPlay loop muted playsInline
-                className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-            </div>
-
-            <h3 className="font-sans text-xl tracking-[0.2em] uppercase mb-4 font-bold">
-              VIVA POR DENTRO
-            </h3>
-            <p className="text-gray-600 font-light leading-relaxed px-4">
-              Fermentada naturalmente con cultivos vivos que acompañan tu digestión.
-            </p>
-          </a>
-
-          {/* VIDEO 3: LIGERA Y REFRESCANTE */}
-          <a
-            href="https://www.instagram.com/reel/DTLXJWWgCj8/?igsh=MTFjbG5ranllZzV2YQ=="
-            target="_blank"
-            className="group flex flex-col text-center"
-          >
-            <div className="aspect-[4/5] bg-gray-300 overflow-hidden mb-8 relative rounded-lg shadow-lg">
-              <video
-                src="/reel-3.mp4"
-                autoPlay loop muted playsInline
-                className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
-            </div>
-
-            <h3 className="font-sans text-xl tracking-[0.2em] uppercase mb-4 font-bold">
-              LIGERA Y REFRESCANTE
-            </h3>
-            <p className="text-gray-600 font-light leading-relaxed px-4">
-              Bebida burbujeante, libre de sellos, sin azúcar añadida.
-            </p>
-          </a>
-
-        </div>
-      </section>
-
-      {/* SECCIÓN SABORES */}
-      <section className="bg-white py-24">
-        <div className="max-w-6xl mx-auto px-6 grid md:grid-cols-2 gap-16 items-center">
-          <div className="hidden md:block relative h-[600px] bg-gray-100 rounded-lg overflow-hidden shadow-xl">
-            <div className="absolute inset-0 bg-[url('/flavors-side.JPG')] bg-cover bg-center" />
-          </div>
-          <div>
-            <h2 className="text-5xl font-serif mb-12 underline decoration-[#8B3A18] decoration-2 underline-offset-8">
-              Sabores
+          {/* Texto de garantía */}
+          <div className="md:w-2/3 text-center md:text-left flex flex-col items-center md:items-start">
+            <span className="font-mono text-[10px] tracking-[0.4em] text-[#8B3A18] uppercase font-bold mb-3">Comunidad Pormucha</span>
+            <h2 className="font-serif text-4xl md:text-5xl text-[#1A1A1A] leading-tight mb-4">
+              Garantía Pormucha
             </h2>
-            <div className="space-y-12">
-              <div className="flex gap-5 group">
-                <div className="pt-1 text-[#8B3A18] transition-transform group-hover:scale-110"><Waves size={36} strokeWidth={1.5} /></div>
-                <div><h3 className="text-2xl font-serif mb-1 text-gray-900 group-hover:text-[#8B3A18] transition-colors">Jamaica</h3><p className="text-gray-500 font-light text-sm leading-relaxed max-w-sm">Vibrante y refrescante. El sabor floral que amamos con el boost de probióticos.</p></div>
-              </div>
-              <div className="flex gap-5 group">
-                <div className="pt-1 text-[#7D8B28] transition-transform group-hover:scale-110"><Leaf size={36} strokeWidth={1.5} /></div>
-                <div><h3 className="text-2xl font-serif mb-1 text-gray-900 group-hover:text-[#7D8B28] transition-colors">Té Verde</h3><p className="text-gray-500 font-light text-sm leading-relaxed max-w-sm">Antioxidantes poderosos en cada sorbo. Suave, refrescante y lleno de beneficios.</p></div>
-              </div>
-              <div className="flex gap-5 group">
-                <div className="pt-1 text-[#E6B800] transition-transform group-hover:scale-110"><Sun size={36} strokeWidth={1.5} /></div>
-                <div><h3 className="text-2xl font-serif mb-1 text-gray-900 group-hover:text-[#E6B800] transition-colors">Piña</h3><p className="text-gray-500 font-light text-sm leading-relaxed max-w-sm">Tropical y dulce natural. El sabor del paraíso en una botella fermentada con maestría.</p></div>
-              </div>
-              <div className="flex gap-5 group">
-                <div className="pt-1 text-[#2C2C2C] transition-transform group-hover:scale-110"><Leaf size={36} strokeWidth={1.5} /></div>
-                <div><h3 className="text-2xl font-serif mb-1 text-gray-900 group-hover:text-[#2C2C2C] transition-colors">Té Negro</h3><p className="text-gray-500 font-light text-sm leading-relaxed max-w-sm">Intenso y tradicional. Para los que buscan un sabor robusto con toda la potencia.</p></div>
-              </div>
-            </div>
+            <p className="text-lg md:text-xl text-gray-500 font-light italic mb-6">
+              "Pormuchos momentos compartidos"
+            </p>
+            <p className="text-gray-700 font-light leading-relaxed mb-10 md:text-lg max-w-xl">
+              Únete a nuestros clientes frecuentes. Si es tu primera vez probando Pormucha y no fue lo que esperabas, <strong className="font-bold text-[#8B3A18]">te damos un reembolso total.</strong>
+            </p>
+
+            <ul className="space-y-4 text-left w-full max-w-md">
+              <li className="flex items-start gap-4">
+                <CheckCircle2 className="text-[#7D8B28] mt-0.5 flex-shrink-0" size={20} strokeWidth={2.5} />
+                <span className="text-gray-800 font-light">Válido en tu primera compra.</span>
+              </li>
+              <li className="flex items-start gap-4">
+                <CheckCircle2 className="text-[#7D8B28] mt-0.5 flex-shrink-0" size={20} strokeWidth={2.5} />
+                <span className="text-gray-800 font-light">Máximo una garantía por cliente registrado.</span>
+              </li>
+              <li className="flex items-start gap-4">
+                <CheckCircle2 className="text-[#7D8B28] mt-0.5 flex-shrink-0" size={20} strokeWidth={2.5} />
+                <span className="text-gray-800 font-light">Aplica únicamente en el Pack de 6 (Degustación).</span>
+              </li>
+            </ul>
           </div>
         </div>
       </section>
 
-      {/* ========================================= */}
-      {/* NUEVA SECCIÓN: LANDING DE SUSCRIPCIÓN */}
-      {/* ========================================= */}
-      {/*<SubscriptionLanding />*/}
+      {/* FAQ SECTION */}
+      <section className="bg-white py-24 px-6 border-t border-[#8B3A18]/10">
+        <div className="max-w-4xl mx-auto">
+          <div className="mb-16 md:flex md:justify-between md:items-end border-b pb-8">
+            <div>
+              <span className="font-mono text-[10px] tracking-[0.4em] text-[#8B3A18] uppercase font-bold">Resuelve tus dudas</span>
+              <h2 className="font-serif text-4xl md:text-5xl text-[#1A1A1A] mt-4">
+                Sobre tu Orden
+              </h2>
+            </div>
+            <div className="mt-6 md:mt-0 text-[#8B3A18]">
+              <Info size={40} strokeWidth={1} />
+            </div>
+          </div>
 
-      {/* SECCIÓN PACKS */}
-      <section id="packs" className="max-w-7xl mx-auto px-6 py-24">
-        <div className="text-center mb-16">
-          <h2 className="font-mono text-sm tracking-[0.3em] text-gray-500 uppercase mb-4">La Tienda</h2>
-          <h3 className="font-serif text-4xl md:text-5xl text-[#1A1A1A]">Selecciona tu paquete</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {packs.map((pack) => (
-            <PackSelector
-              key={pack.id}
-              id={pack.id}
-              nombre={pack.name}
-              capacidad={pack.quantity}
-              // USAMOS Number() o parseFloat() para asegurar que viaje como número
-              precio={Number(pack.price)}
+          <div className="space-y-6">
+            <FAQItem 
+              question="¿Puedo elegír los sabores de mi caja?"
+              answer="¡Claro que sí! Nuestros packs son 100% personalizables. Solo haz clic en la opción de tu pack preferido y arma tu combinación ideal (Piña, Jamaica, Té Verde o Té Negro) antes de agregarlo en tu carrito."
             />
-          ))}
+            <FAQItem 
+              question="¿A dónde hacen envíos?"
+              answer="Enviamos a toda la República y podrás seleccionar en la pantalla de pago qué paquetería te conviene más (DHL, Redpack, FedEx, etc.) gracias a la red logística de Skydropx."
+            />
+            <FAQItem 
+              question="¿Tengo que refrigerar mis bebidas al llegar?"
+              answer="Sí. Al ser una bebida viva y natural, es muy importante que en cuanto las recibas en la puerta de tu casa las metas a refrigeración para detener la fermentación y disfrutarlas bien frías."
+            />
+            <FAQItem 
+              question="¿Cómo funciona la garantía de satisfacción?"
+              answer="La garantía de devolución aplica únicamente una vez por cliente."
+            />
+          </div>
         </div>
       </section>
 
-
-
-      <footer className="bg-[#1A1A1A] text-[#F5F2EB] py-12 text-center border-t border-white/10">
-        <h2 className="text-4xl font-serif mb-6">Pormucha.</h2>
-        <p className="font-mono text-xs tracking-widest opacity-60">
-          © 2026 HECHO EN MÉXICO
-        </p>
-      </footer>
-
+      <Footer />
     </main>
   );
 }

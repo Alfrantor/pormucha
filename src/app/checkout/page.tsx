@@ -9,7 +9,10 @@ export default function CheckoutPage() {
   // Estados para el formulario y logística
   const [shippingCost, setShippingCost] = useState(0);
   const [loadingShipping, setLoadingShipping] = useState(false);
-  const [loadingPayment, setLoadingPayment] = useState(false); // NUEVO: Para bloquear el botón al pagar
+  const [loadingPayment, setLoadingPayment] = useState(false); 
+  
+  const [shippingOptions, setShippingOptions] = useState<any[]>([]);
+  const [selectedShipping, setSelectedShipping] = useState<any>(null);
 
   // Estado de dirección con todos los campos obligatorios solicitados
   const [address, setAddress] = useState({
@@ -34,16 +37,25 @@ export default function CheckoutPage() {
       const res = await fetch("/api/shipping/quote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zip: address.zip }),
+        body: JSON.stringify({
+          zip: address.zip,
+          productIds: cart.map(item => item.id),
+        }),
       });
       const data = await res.json();
 
-      // Actualizamos el costo de envío
-      setShippingCost(data.rate || 150);
+      if (data.rates && data.rates.length > 0) {
+        setShippingOptions(data.rates);
+        setSelectedShipping(data.rates[0]);
+        setShippingCost(data.rates[0].rate);
+      } else {
+        alert("No se encontraron tarifas de paquetería para este código postal.");
+        setShippingCost(0);
+      }
     } catch (error) {
       console.error("Error cotizando envío:", error);
-      alert("No se pudo obtener la cotización. Usando tarifa estándar.");
-      setShippingCost(150);
+      alert("Error al contactar con aduanas de paquetería.");
+      setShippingCost(0);
     } finally {
       setLoadingShipping(false);
     }
@@ -170,6 +182,38 @@ export default function CheckoutPage() {
             >
               {loadingShipping ? "OBTENIENDO TARIFAS..." : "COTIZAR ENVÍO"}
             </button>
+
+            {/* SELECCIÓN DE PAQUETERÍA (SKYDROPX RADIOS) */}
+            {shippingOptions.length > 0 && (
+              <div className="flex flex-col gap-3 mt-4 border-t pt-6 border-gray-100">
+                <label className="text-[10px] items-center flex justify-between font-black uppercase text-gray-400">
+                  <span>Selecciona tu envío</span>
+                  <span className="text-blue-500 bg-blue-50 px-2 py-1 rounded">Skydropx</span>
+                </label>
+                
+                {shippingOptions.map((opt) => (
+                  <div 
+                    key={opt.id} 
+                    onClick={() => {
+                      setSelectedShipping(opt);
+                      setShippingCost(opt.rate);
+                    }}
+                    className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedShipping?.id === opt.id ? 'border-blue-600 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-blue-300'}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedShipping?.id === opt.id ? 'border-blue-600' : 'border-gray-300'}`}>
+                        {selectedShipping?.id === opt.id && <div className="w-2.5 h-2.5 bg-blue-600 rounded-full" />}
+                      </div>
+                      <div className="flex flex-col">
+                        <span className={`font-bold ${selectedShipping?.id === opt.id ? 'text-blue-900' : 'text-gray-900'}`}>{opt.provider}</span>
+                        <span className="text-xs text-gray-500 font-medium">Entrega estimada: {opt.days} días</span>
+                      </div>
+                    </div>
+                    <span className="font-black text-blue-700 text-lg">${opt.rate}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </form>
         </section>
 

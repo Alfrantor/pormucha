@@ -2,6 +2,7 @@
 "use client";
 import { useCart } from "@/context/CartContext";
 import Link from "next/link";
+import Image from "next/image"; // <-- 1. Importamos Image de Next.js
 import { UserButton } from "@clerk/nextjs";
 import { ShoppingCart } from "lucide-react";
 
@@ -9,26 +10,42 @@ export default function Navbar() {
   const { cart } = useCart();
 
   return (
-    // Puedes quitar 'bg-[#F5F2EB]/80' si quieres que sea totalmente transparente al inicio,
-    // o dejarlo así para que tenga ese fondo semitransparente siempre.
+    // Nota sobre el fondo: bg-[#F5F2EB]/80 es un color crema claro.
     <nav className="sticky top-0 z-50 bg-[#F5F2EB]/80 backdrop-blur-md px-6 py-4">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
 
-        {/* Logo minimalista alineado a la izquierda */}
-        <Link href="/" className="text-xl font-serif tracking-widest hover:opacity-70 transition text-[#1A1A1A]">
-          PORMUCHA KOMBUCHA
+        {/* 2. Logo con Imagen + Texto alineado a la izquierda */}
+        <Link href="/" className="flex items-center gap-3 hover:opacity-70 transition">
+          <Image
+            src="/logo-white.png"
+            alt="Logo Pormucha"
+            width={150} // Puedes ajustar este ancho si lo quieres más grande o pequeño
+            height={40}
+            priority // Carga la imagen de inmediato porque es el logo (LCP)
+            className="h-8 w-auto object-contain" // h-8 asegura que no rompa el diseño del navbar
+          />
         </Link>
 
         <div className="flex items-center gap-8 text-sm font-sans tracking-widest font-bold text-gray-800">
 
-          {/* LINK INICIO: Lleva al tope de la página home */}
           <Link href="/" className="hidden md:block hover:text-[#8B3A28] transition-colors">
             INICIO
           </Link>
 
-          {/* LINK TIENDA: Lleva a la sección con id="packs" en la home */}
-          <Link href="/#packs" className="hidden md:block hover:text-[#8B3A28] transition-colors">
+          <Link href="/nosotros" className="hidden md:block hover:text-[#8B3A28] transition-colors">
+            NOSOTROS
+          </Link>
+
+          <Link href="/tienda" className="hidden md:block hover:text-[#8B3A28] transition-colors">
             TIENDA
+          </Link>
+
+          <Link href="/suscripciones" className="hidden md:block hover:text-[#8B3A28] transition-colors">
+            CLUB PORMUCHA
+          </Link>
+
+          <Link href="/contacto" className="hidden md:block hover:text-[#8B3A28] transition-colors">
+            CONTACTO
           </Link>
 
           {/* Separador */}

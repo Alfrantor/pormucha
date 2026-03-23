@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 
 export async function toggleStatus(formData: FormData) {
   const id = formData.get("id") as string;
-  const model = formData.get("model") as "location" | "flavor" | "product";
+  const model = formData.get("model") as "location" | "flavor" | "product" | "plan";
   const currentStatus = formData.get("currentStatus") === "true"; // Viene como string
 
   const newStatus = !currentStatus; // Invertimos el valor
@@ -25,6 +25,11 @@ export async function toggleStatus(formData: FormData) {
     
     else if (model === "product") {
       await db.product.update({ where: { id }, data: { isArchived: newStatus } });
+    }
+    
+    else if (model === "plan") {
+      // Para Plan usamos isActive, que es el inverso lógico de isArchived
+      await db.plan.update({ where: { id }, data: { isActive: !newStatus } });
     }
 
     revalidatePath("/admin");

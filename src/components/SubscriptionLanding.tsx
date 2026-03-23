@@ -81,7 +81,7 @@ export default function SubscriptionLanding() {
                     className="space-y-6 pt-6 pl-4 sm:pt-8 sm:pl-6 md:pt-10 md:pl-10 lg:pt-0 lg:pl-0"
                 >
                     <h2 className="font-serif text-[3.5rem] md:text-[5rem] lg:text-[6rem] leading-[0.85] tracking-tight text-[#1A1A1A]">
-                        Únete a<br />
+                        Suscríbete a<br />
                         <span className="block mt-2">
                             P<span className="italic font-light">o</span>rmucha
                         </span>
@@ -94,7 +94,7 @@ export default function SubscriptionLanding() {
                         "Pormuchos momentos compartidos"
                     </p>
                     <p className="text-base text-gray-600 font-light max-w-md">
-                        Únete a los más de 300 clientes y sé el primero en enterarte de nuevos sabores estacionales, beneficios para la salud y promociones exclusivas.
+                        Sé el primero en enterarte de nuevos sabores estacionales, beneficios para la salud y promociones exclusivas.
                     </p>
 
                     {/* BLOQUE DE TEXTO DE GARANTÍA */}
