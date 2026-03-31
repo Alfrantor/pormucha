@@ -5,7 +5,9 @@ import ManageSubscriptionButton from "@/components/ManageSubscriptionButton";
 import { DireccionForm } from "@/components/Perfil/DireccionForm";
 import FlavorSelector from "@/components/Perfil/FlavorSelector";
 import Link from "next/link";
-import { ShoppingBag, CreditCard as CreditCardIcon, RefreshCw } from "lucide-react";
+import { ShoppingBag, CreditCard as CreditCardIcon, RefreshCw, Box, MapPin } from "lucide-react";
+
+export const revalidate = 0;
 
 export default async function PerfilPage() {
     const user = await currentUser();
@@ -16,26 +18,28 @@ export default async function PerfilPage() {
     const userEmail = user.emailAddresses[0].emailAddress;
 
     const cliente = await db.client.findUnique({
-        where: { email: userEmail }
+        where: { clerkUserId: userId } // Búsqueda perfecta y exacta por ID
     });
 
-    const subscription = await db.subscription.findFirst({
-        where: { client: { email: userEmail }, status: "active" },
+    const subscriptions = cliente ? await db.subscription.findMany({
+        where: {
+            clientId: cliente.id, // Ya no usamos el signo de interrogación
+            status: "active"
+        },
         include: { plan: true }
-    });
+    }) : []; // Si no hay cliente, devuelve un arreglo vacío
 
-    // 1. Traemos los sabores de la DB
     const rawFlavors = await db.flavor.findMany();
-
-    // 2. Los convertimos a objetos planos para evitar el error de Decimal
     const allFlavors = rawFlavors.map(flavor => ({
         ...flavor,
         price: flavor.price ? Number(flavor.price) : 0,
     }));
 
+    // NUEVA CONDICIÓN MÁS SIMPLE: Si tiene calle, asumimos que tiene dirección
+    const hasAddress = Boolean(cliente?.street);
+
     return (
-        <div className="max-w-5xl mx-auto p-6 pt-24 min-h-screen bg-[#FDFCF9]">
-            {/* 1. Header de Bienvenida */}
+        <div className="max-w-7xl mx-auto p-6 pt-24 min-h-screen bg-[#FDFCF9]">
             <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-4">
                 <div>
                     <p className="text-[#8B3A28] font-bold uppercase tracking-widest text-sm mb-2">Panel de Miembro</p>
@@ -53,40 +57,39 @@ export default async function PerfilPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* COLUMNA IZQUIERDA: Suscripción, Sabores y Dirección */}
                 <div className="lg:col-span-2 space-y-8">
-                    {subscription ? (
-                        <div className="bg-white rounded-3xl p-8 border border-green-100 shadow-sm relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-4 opacity-10">
-                                <RefreshCw size={120} className="text-green-600" />
-                            </div>
-
-                            <div className="relative z-10">
-                                <div className="flex items-center gap-3 mb-6">
-                                    <span className="bg-green-100 text-green-700 text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-tighter">
-                                        Membresía Activa
-                                    </span>
+                    {subscriptions.length > 0 ? (
+                        subscriptions.map((sub, index) => (
+                            <div key={sub.id} className="bg-white rounded-3xl p-8 border border-green-100 shadow-sm relative overflow-hidden mb-8">
+                                <div className="absolute top-0 right-0 p-4 opacity-5">
+                                    <Box size={120} className="text-green-800" />
                                 </div>
-
-                                <h2 className="text-3xl font-serif text-gray-800 mb-2">
-                                    {subscription.plan.name} 🌿
-                                </h2>
-                                <p className="text-gray-500 mb-8 max-w-md">
-                                    Tu próxima caja de bienestar llegará después del <b>{subscription.currentPeriodEnd.toLocaleDateString()}</b>.
-                                </p>
-
-                                <div className="flex flex-wrap gap-4 pt-6 border-t border-gray-100">
-                                    <ManageSubscriptionButton />
-                                    <Link
-                                        href="/suscripciones"
-                                        className="flex items-center gap-2 border border-[#8B3A28] text-[#8B3A28] px-6 py-2.5 rounded-full font-bold hover:bg-[#8B3A28]/5 transition"
-                                    >
-                                        <CreditCardIcon size={18} />
-                                        Cambiar Plan
-                                    </Link>
+                                <div className="relative z-10">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <span className="bg-green-100 text-green-700 text-xs font-black px-4 py-1.5 rounded-full uppercase tracking-tighter">
+                                            Pack #{index + 1} Activo
+                                        </span>
+                                    </div>
+                                    <h2 className="text-3xl font-serif text-gray-800 mb-2">
+                                        {sub.plan.name} 🌿
+                                    </h2>
+                                    <p className="text-gray-500 mb-8 max-w-md">
+                                        Tu próxima caja llegará después del <b>{sub.currentPeriodEnd.toLocaleDateString()}</b>.
+                                    </p>
+                                    <div className="mb-8 border-t border-gray-100 pt-8">
+                                        <FlavorSelector
+                                            subscriptionId={sub.id}
+                                            unitCount={sub.plan.unitCount}
+                                            flavors={allFlavors}
+                                            currentSelection={sub.selectedFlavors}
+                                        />
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row items-center gap-4 pt-6 border-t border-gray-100">
+                                        <ManageSubscriptionButton subscriptionId={sub.id} />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        ))
                     ) : (
                         <div className="bg-[#F4EFEA] rounded-3xl p-10 text-center border-2 border-dashed border-[#D1C7BD]">
                             <h2 className="text-2xl font-serif text-[#8B3A28] mb-4">Aún no eres parte del Club</h2>
@@ -97,23 +100,11 @@ export default async function PerfilPage() {
                         </div>
                     )}
 
-                    {/* 3. SELECTOR DE SABORES */}
-                    {subscription && (
-                        <FlavorSelector
-                            subscriptionId={subscription.id}
-                            unitCount={subscription.plan.unitCount}
-                            flavors={allFlavors}
-                            currentSelection={subscription.selectedFlavors}
-                        />
-                    )}
-
-                    {/* Formulario de Dirección Integrado */}
-                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden mt-8">
                         <DireccionForm cliente={cliente} />
                     </div>
                 </div>
 
-                {/* COLUMNA DERECHA: Resumen de Usuario / Status */}
                 <div className="space-y-6">
                     <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
                         <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -122,22 +113,42 @@ export default async function PerfilPage() {
                         </h3>
                         <div className="space-y-4">
                             <div className="flex gap-4 items-start">
-                                <div className="bg-orange-100 p-2 rounded-lg text-orange-600 font-bold text-xs italic">
-                                    PASO 1
+                                <div className="bg-green-100 p-2 rounded-lg text-green-700 font-bold text-xs">
+                                    OK
                                 </div>
                                 <p className="text-sm text-gray-600 leading-tight">
-                                    Pago verificado con éxito.
-                                </p>
-                            </div>
-                            <div className="flex gap-4 items-start opacity-50">
-                                <div className="bg-gray-100 p-2 rounded-lg text-gray-600 font-bold text-xs">
-                                    PASO 2
-                                </div>
-                                <p className="text-sm text-gray-600 leading-tight">
-                                    Selección de sabores recibida.
+                                    Tus packs activos están programados.
                                 </p>
                             </div>
                         </div>
+                    </div>
+
+                    <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
+                        <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <MapPin size={20} className="text-[#8B3A28]" />
+                            Dirección de Envío
+                        </h3>
+                        {hasAddress ? (
+                            <div className="text-sm text-gray-700 space-y-2 bg-[#FDFCF9] p-5 rounded-2xl border border-gray-100">
+                                <p className="font-bold text-gray-900 text-base">{user.firstName} {user.lastName}</p>
+                                {/* LEEMOS DIRECTAMENTE DE LOS CAMPOS INDIVIDUALES */}
+                                <p>{cliente?.street} {cliente?.number}</p>
+                                <p>{cliente?.neighborhood}</p>
+                                <p>{cliente?.city}, {cliente?.state}</p>
+                                <p>C.P. {cliente?.zipCode}</p>
+                                {cliente?.reference && <p className="text-gray-500 italic mt-2">Ref: {cliente.reference}</p>}
+                                <div className="mt-4 pt-3 border-t border-gray-200">
+                                    <p className="font-medium bg-gray-100 inline-block px-3 py-1.5 rounded-lg text-xs tracking-widest uppercase">
+                                        📞 {cliente?.phone || "Sin teléfono"}
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="bg-orange-50 text-orange-700 p-5 rounded-2xl text-sm border border-orange-100">
+                                <strong>¡Aviso importante!</strong><br />
+                                Aún no has registrado una dirección de envío completa. Por favor, llena el formulario de la izquierda.
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

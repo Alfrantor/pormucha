@@ -63,6 +63,7 @@ model Flavor {
   locationStocks Stock[]
   transfers      Transfer[]
   unitCount     Int      @default(6)
+  orderItemCompositions OrderItemComposition[]
 }
 
 model InventoryMovement {
@@ -189,15 +190,32 @@ model Order {
 model OrderItem {
   id          String   @id @default(cuid())
   orderId     String
-  flavorId    String?
+  order       Order         @relation(fields: [orderId], references: [id])
+  
+  // Si es un Pack (Venta WEB/POS)
   productId   String?
+  product     Product?      @relation(fields: [productId], references: [id])
+  
+  // Si es una Venta de Sabores Individuales (Delivery/POS)
+  flavorId    String?
+  flavor      Flavor?       @relation(fields: [flavorId], references: [id])
+
   productName String
   quantity    Int
   unitPrice   Decimal
   subtotal    Decimal
-  flavor      Flavor?  @relation(fields: [flavorId], references: [id])
-  order       Order    @relation(fields: [orderId], references: [id])
-  product     Product? @relation(fields: [productId], references: [id])
+  composition OrderItemComposition[]
+}
+
+model OrderItemComposition {
+  id          String    @id @default(cuid())
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  
+  flavorId    String    // El sabor real que saldrá de stock
+  flavor      Flavor    @relation(fields: [flavorId], references: [id])
+  
+  quantity    Int       // Cantidad de botellas de este sabor en este item
 }
 
 model Lead {

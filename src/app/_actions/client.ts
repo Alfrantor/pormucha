@@ -13,13 +13,12 @@ export async function updateClientAddress(formData: any) {
     // Obtenemos el email del usuario logueado en Clerk
     const userEmail = user.emailAddresses[0].emailAddress;
 
-    // Usamos UPSERT: 
-    // Si encuentra el correo, actualiza los datos e INCLUYE el clerkUserId.
-    // Si no existiera el correo, crea un cliente nuevo.
+    // Usamos UPSERT pero buscando directamente por el ID de Clerk (infalible)
     await db.client.upsert({
-        where: { email: userEmail },
+        where: { clerkUserId: userId }, // <-- CAMBIO CLAVE: Búsqueda perfecta
         update: {
-            clerkUserId: userId, // <-- AQUÍ SE HACE LA VINCULACIÓN
+            // Actualizamos el email por si el usuario lo cambió en Clerk
+            email: userEmail,
             phone: formData.phone,
             street: formData.street,
             number: formData.number,
@@ -30,8 +29,8 @@ export async function updateClientAddress(formData: any) {
             reference: formData.reference,
         },
         create: {
-            email: userEmail,
             clerkUserId: userId,
+            email: userEmail,
             fullName: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
             phone: formData.phone,
             street: formData.street,

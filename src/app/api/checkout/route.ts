@@ -8,15 +8,17 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
 });
 
 export async function POST(request: Request) {
+
   try {
     const body = await request.json();
     const { items, shippingCost, customerAddress } = body;
-
+    console.log("📦 CONTENIDO DEL CARRITO RECIBIDO:", JSON.stringify(items, null, 2));
     // VALIDACIÓN 1: Carrito vacío
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "El carrito está vacío" }, { status: 400 });
     }
 
+    console.log("🔍 SERVER: Items recibidos:", JSON.stringify(items, null, 2));
     // VALIDACIÓN 2: Dirección faltante
     if (!customerAddress) {
       return NextResponse.json({ error: "Faltan datos de envío" }, { status: 400 });
@@ -49,39 +51,22 @@ export async function POST(request: Request) {
         shippingCost: Number(shippingCost || 0),
         paymentMethod: "STRIPE",
 
-        // Guardamos los items
         orderItems: {
-          create: items.flatMap((item: any) => {
-            // El pack principal
-            const packItem = {
-              productId: item.id || null,
-              productName: item.name || item.title || "Producto Pormucha",
-              quantity: Number(item.quantity) || 1,
-              unitPrice: Number(item.price),
-              subtotal: Number(item.price) * (Number(item.quantity) || 1),
-            };
+          create: items.map((item: any) => ({
+            productId: item.id || null,
+            productName: item.name || "Pack Pormucha",
+            quantity: Number(item.quantity) || 1,
+            unitPrice: Number(item.price),
+            subtotal: Number(item.price) * (Number(item.quantity) || 1),
 
-            // Los sabores individuales dentro del pack
-            const flavorItems = Object.entries(item.flavors || {})
-              .filter(([_, qty]) => Number(qty) > 0)
-              .map(([flavorName, qty]) => {
-                const fname = flavorName.toLowerCase();
-                const matchedFlavor = allFlavors.find(f =>
-                  f.name.toLowerCase().includes(fname) ||
-                  f.slug.toLowerCase().includes(fname) ||
-                  fname.includes(f.slug.toLowerCase())
-                );
-                return {
-                  flavorId: matchedFlavor?.id || null,
-                  productName: matchedFlavor?.name || flavorName,
-                  quantity: Number(qty),
-                  unitPrice: 0, // Incluidos en el precio del pack
-                  subtotal: 0,
-                };
-              }).filter(si => si.flavorId !== null);
-
-            return [packItem, ...flavorItems];
-          })
+            // Aquí es donde se registra qué sabores lleva el pack para el inventario
+            composition: {
+              create: (item.composition || []).map((comp: any) => ({
+                flavorId: comp.flavorId,       // ID real directo de la DB
+                quantity: Number(comp.quantity), // Cuántas botellas de ese sabor
+              }))
+            }
+          }))
         }
       }
     });

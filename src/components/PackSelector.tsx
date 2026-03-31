@@ -10,8 +10,8 @@ interface PackProps {
     nombre: string;
     capacidad: number;
     precio: number;
-    clubDiscountPercent?: number; 
-    isSubscriptionMode?: boolean; 
+    clubDiscountPercent?: number;
+    isSubscriptionMode?: boolean;
     flavors: { id: string, name: string, stock: number }[];
 }
 
@@ -56,8 +56,8 @@ export default function PackSelector({ id, nombre, capacidad, precio, clubDiscou
         }
     };
 
-    const displayPrice = isSubscriptionMode && clubDiscountPercent > 0 
-        ? precio * (1 - clubDiscountPercent / 100) 
+    const displayPrice = isSubscriptionMode && clubDiscountPercent > 0
+        ? precio * (1 - clubDiscountPercent / 100)
         : precio;
 
     const handleAddToCart = (e: React.MouseEvent) => {
@@ -65,22 +65,51 @@ export default function PackSelector({ id, nombre, capacidad, precio, clubDiscou
         if (totalActual !== capacidad) return;
 
         if (isSubscriptionMode) {
-            // Redirect to subscriptions landing if they're in subscription mode
             window.location.href = "/suscripciones";
             return;
         }
 
-        addToCart({
+        // --- NUEVA LÓGICA DE DESGLOSE ---
+        // Convertimos el Record<nombre, cantidad> en un array de {flavorId, quantity}
+        const composition = Object.entries(seleccion)
+            .filter(([_, qty]) => qty > 0) // Solo los sabores elegidos
+            .map(([name, qty]) => {
+                const flavorData = flavors.find(f => f.name === name);
+                return {
+                    flavorId: flavorData?.id,
+                    name: name, // Lo guardamos también para mostrarlo en el carrito
+                    quantity: qty
+                };
+            });
+        console.log("📦 Enviando al carrito:", {
             id,
             name: nombre,
             price: displayPrice,
-            flavors: seleccion,
             quantity: 1,
+            composition: composition,
+            flavors: seleccion,
         });
+
+        addToCart({
+            id, // ID del Product (Pack)
+            name: nombre,
+            price: displayPrice,
+            quantity: 1,
+            // Enviamos la composición detallada para Prisma
+            composition: composition,
+            // Mantenemos flavors por compatibilidad si lo usas en el resumen visual del carrito
+            flavors: seleccion,
+        });
+
         toast.success(`Hecho. Pack de ${capacidad} en tu carrito`, {
             description: "¡Estás a un paso de la fermentación real!"
         });
-        setSeleccion({ "Piña": 0, "Té Negro": 0, "Té Verde": 0, "Jamaica": 0 });
+
+        // Reset (Opcional: puedes dejar los nombres fijos o dinámicos)
+        const resetSeleccion: Record<string, number> = {};
+        flavors.forEach(f => resetSeleccion[f.name] = 0);
+        setSeleccion(resetSeleccion);
+
         setIsExpanded(false);
     };
 
@@ -124,7 +153,7 @@ export default function PackSelector({ id, nombre, capacidad, precio, clubDiscou
                                 <Sparkles size={12} fill="currentColor" className="text-white absolute top-[40%] right-[15%] animate-pulse" style={{ animationDuration: '3s' }} />
                                 <Sparkles size={14} fill="currentColor" className="text-yellow-600 absolute bottom-[35%] left-[25%] animate-pulse" style={{ animationDuration: '2.5s' }} />
                                 <Sparkles size={24} fill="currentColor" className="text-[#EBDAAB] absolute top-[10%] right-[30%] opacity-0 animate-[ping_4s_infinite]" />
-                                
+
                                 {/* DESTELLOS ADICIONALES ON HOVER */}
                                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
                                     <Sparkles size={18} fill="currentColor" className="text-[#EBDAAB] absolute top-[25%] right-[20%] animate-pulse" style={{ animationDuration: '1.5s' }} />
@@ -292,8 +321,8 @@ export default function PackSelector({ id, nombre, capacidad, precio, clubDiscou
                             )}
                         >
                             <ShoppingBag size={16} strokeWidth={2.5} />
-                            {totalActual === capacidad 
-                                ? (isSubscriptionMode ? "IR A PLANES" : "AGREGAR AL CARRITO") 
+                            {totalActual === capacidad
+                                ? (isSubscriptionMode ? "IR A PLANES" : "AGREGAR AL CARRITO")
                                 : "SELECCIONA SABORES DENTRO"}
                         </button>
 

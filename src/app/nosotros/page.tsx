@@ -48,7 +48,14 @@ export default function NosotrosPage() {
                         ¿Qué es Pormucha?
                     </h2>
                     <p className="text-xl md:text-2xl font-light leading-relaxed text-gray-700">
-                        Pormucha Kombucha es más que una simple bebida. Somos un proyecto nacido en el sureste de México (Campeche) con la misión de democratizar la salud digestiva a través de la fermentación real y artesanal. Creamos una kombucha fresca, burbujeante, cien por ciento natural y sin sellos artificiales.
+                        Pormucha no es solo una kombucha.
+
+                        Es una bebida hecha con fermentación real, tiempo y atención a cada detalle. No aceleramos procesos ni usamos atajos: dejamos que cada lote desarrolle su sabor de forma natural.
+
+                        Nació en casa y hoy crece sin perder su esencia.
+
+                        Te gusta por el sabor…
+                        te quedas por cómo te hace sentir.
                     </p>
                 </div>
             </section>
@@ -68,7 +75,7 @@ export default function NosotrosPage() {
                             </div>
                             <h3 className="font-serif text-2xl mb-3">100% Natural</h3>
                             <p className="font-light text-gray-600 leading-relaxed">
-                                Sin conservadores, sin azúcares refinadas ocultas, ni ingredientes que no puedas pronunciar. 
+                                Sin conservadores, sin azúcares refinadas ocultas, ni ingredientes que no puedas pronunciar.
                             </p>
                         </div>
                         <div className="flex flex-col items-center">
@@ -86,7 +93,7 @@ export default function NosotrosPage() {
                             </div>
                             <h3 className="font-serif text-2xl mb-3">Cuidamos tu Centro</h3>
                             <p className="font-light text-gray-600 leading-relaxed">
-                                Creemos firmemente que una digestión saludable es la clave del bienestar emocional e inmunológico. 
+                                Creemos firmemente que una digestión saludable es la clave del bienestar emocional e inmunológico.
                             </p>
                         </div>
                     </div>
@@ -98,22 +105,25 @@ export default function NosotrosPage() {
                 <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-16">
                     <div className="w-full md:w-1/2">
                         <div className="aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl relative bg-gray-800">
-                             {/* Usamos hero-bg para simular historia temporal, luego pueden cambiarla */}
-                             <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url('/hero-bg.JPG')" }}></div>
+                            {/* Usamos hero-bg para simular historia temporal, luego pueden cambiarla */}
+                            <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url('/hero-bg.JPG')" }}></div>
                         </div>
                     </div>
                     <div className="w-full md:w-1/2 flex flex-col items-start text-left">
-                        <span className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#EBDAAB] font-bold mb-4">Los orígenes</span>
-                        <h2 className="font-serif text-5xl md:text-6xl mb-6">El Inicio</h2>
+                        <span className="font-mono text-[10px] tracking-[0.3em] uppercase text-[#EBDAAB] font-bold mb-4">¿Cómo empezó todo?</span>
+                        <h2 className="font-serif text-5xl md:text-6xl mb-6">El Origen</h2>
                         <div className="space-y-6 font-light text-lg md:text-xl text-gray-300 leading-relaxed">
                             <p>
-                                Todo comenzó en nuestra cocina, motivados por la necesidad de encontrar una bebida que refrescara sin recurrir al exceso de azúcares y aditivos de la industria convencional. 
+                                Todo empezó en casa, en la cocina de mi mamá.
+                                Ella buscaba algo diferente. Una bebida natural, refrescante y sin los excesos de azúcar que encontramos todos los días. Así comenzó a preparar sus primeros lotes de kombucha, de manera casera, con paciencia y mucho cuidado.
                             </p>
                             <p>
-                                Compartíamos nuestros primeros lotes con familia y amigos cercanos. Poco a poco fuimos perfeccionando las mezclas y entendiendo la alquimia viva del <span className="text-white font-medium">SCOBY</span>. Descubrimos el impacto innegable que tenía en la energía y el equilibrio del estómago de quienes la tomaban.
+                                Cada persona que llegaba a la casa la probaba. Familia, amigos, conocidos… y siempre pasaba lo mismo: les sorprendía el sabor, cómo se sentían después de tomarla, y casi sin excepción le decían: <span className="text-white font-medium">“Esto lo tienes que vender.”</span>. Lo que comenzó como algo hecho con amor para compartir, poco a poco se fue convirtiendo en algo más grande. Fuimos perfeccionando cada detalle, entendiendo el proceso, respetando la fermentación y manteniendo siempre la esencia de lo que empezó en casa.
                             </p>
                             <p>
-                                Así pasamos de ser un pasatiempo personal a la marca consolidada que hoy lleva "Pormuchos momentos compartidos" a todo México.
+                                Hoy, esa misma kombucha sigue naciendo del mismo lugar: la intención de compartir algo que se siente bien.
+                                Porque al final, esto nunca fue solo una bebida…
+                                es para muchos momentos compartidos.
                             </p>
                         </div>
                     </div>
@@ -128,7 +138,7 @@ export default function NosotrosPage() {
                     </div>
                     <h2 className="font-serif text-5xl md:text-6xl mb-8">¿Qué es la Kombucha?</h2>
                     <p className="text-xl font-light leading-relaxed text-gray-700 mb-8">
-                        La kombucha es un té fermentado milenario (originario de Asia) preparado a partir de té endulzado cultivado con una colonia simbiótica de bacterias y levaduras (SCOBY). 
+                        La kombucha es un té fermentado milenario (originario de Asia) preparado a partir de té endulzado cultivado con una colonia simbiótica de bacterias y levaduras (SCOBY).
                     </p>
                     <p className="text-xl font-light leading-relaxed text-gray-700">
                         Durante su proceso de fermentación, el SCOBY consume la mayor parte del azúcar, transformándola en ácidos orgánicos beneficiosos, antioxidantes, enzimas y burbujas naturales, dotándola de sus populares poderes reconstituyentes y protectores de la flora intestinal.
@@ -166,13 +176,13 @@ export default function NosotrosPage() {
             {/*================ 7. CTA BUY ================*/}
             <section className="relative py-40 px-6 text-[#F5F2EB] text-center bg-black overflow-hidden">
                 {/* FONDO IMAGEN */}
-                <div 
+                <div
                     className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-40 scale-105 transition-transform duration-1000 hover:scale-100"
                     style={{ backgroundImage: `url('/section-call-action-buy.jpg')` }}
                 />
                 {/* Gradient Overlay adicional para asegurar lectura perfecta */}
                 <div className="absolute inset-0 z-0 bg-gradient-to-t from-[#1A1A1A]/90 via-black/50 to-[#1A1A1A]/90 pointer-events-none" />
-                
+
                 <div className="relative z-10 max-w-3xl mx-auto flex flex-col items-center">
                     <span className="font-mono text-sm tracking-[0.4em] uppercase font-bold text-[#EBDAAB] mb-4 block drop-shadow-md">Haz la prueba</span>
                     <h2 className="font-serif text-5xl md:text-7xl mb-8 leading-tight drop-shadow-lg text-white">

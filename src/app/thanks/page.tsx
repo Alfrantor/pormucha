@@ -1,15 +1,19 @@
 "use client";
-import { useEffect, useState, Suspense } from "react"; // Añadimos Suspense
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
+// 1. IMPORTAMOS EL HOOK DEL CARRITO
+import { useCart } from "@/context/CartContext";
 
-// 1. Envolvemos toda tu lógica actual en un componente interno
 function ThanksContent() {
     const searchParams = useSearchParams();
     const sessionId = searchParams.get("session_id");
     const [status, setStatus] = useState<string>("loading");
+
+    // 2. EXTRAEMOS CLEARCART
+    const { clearCart } = useCart();
 
     useEffect(() => {
         if (!sessionId) {
@@ -21,8 +25,12 @@ function ThanksContent() {
             try {
                 const res = await fetch(`/api/checkout/verify?session_id=${sessionId}`);
                 const data = await res.json();
+
                 if (data.status === "paid" || data.status === "PAID") {
                     setStatus("verified");
+                    // 3. ¡LA MAGIA SUCEDE AQUÍ!
+                    // Si el pago es verificado, borramos todo el rastro del carrito
+                    clearCart();
                 } else {
                     setStatus("pending");
                 }
@@ -32,10 +40,11 @@ function ThanksContent() {
         };
 
         verify();
-    }, [sessionId]);
+    }, [sessionId, clearCart]); // Añadimos clearCart a las dependencias
 
     return (
         <div className="min-h-screen bg-[#fdfaf5] grid md:grid-cols-2 items-center overflow-hidden">
+            {/* ... Resto de tu código de UI se mantiene igual ... */}
             <div className="hidden md:flex relative w-full h-full items-center justify-center p-12 bg-[#f4f1e9]">
                 <div className="relative w-[80%] h-[80%] aspect-[1/2]">
                     <Image
@@ -46,7 +55,6 @@ function ThanksContent() {
                         priority
                     />
                 </div>
-                <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-[#8B3A18]/5 rounded-full blur-3xl" />
             </div>
 
             <motion.div
@@ -95,9 +103,6 @@ function ThanksContent() {
                             >
                                 CREAR MI CUENTA
                             </Link>
-                            <p className="text-xs text-gray-500 mt-3 italic">
-                                Usa el mismo correo con el que realizaste tu pago.
-                            </p>
                         </motion.div>
                     )}
 
@@ -111,21 +116,11 @@ function ThanksContent() {
                         VOLVER AL INICIO
                     </Link>
                 </div>
-
-                <div className="md:hidden absolute inset-0 -z-10 opacity-10">
-                    <Image
-                        src="/botella-pormucha.png"
-                        alt="Background bottle"
-                        fill
-                        className="object-contain"
-                    />
-                </div>
             </motion.div>
         </div>
     );
 }
 
-// 2. Exportamos la página principal envuelta en Suspense
 export default function ThanksPage() {
     return (
         <Suspense fallback={
