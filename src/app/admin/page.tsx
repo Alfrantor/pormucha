@@ -41,8 +41,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     // ==========================================
     // 0. DATOS DE LOGÍSTICA
     // ==========================================
-    let allLocations = [];
-    let activeLocations = [];
+    let allLocations: any[] = [];
+    let activeLocations: any[] = [];
 
     try {
       allLocations = await db.location.findMany({ orderBy: { isDefault: 'desc' } });
