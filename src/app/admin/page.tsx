@@ -253,9 +253,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       priceHistory = [];
     }
 
-    // ==========================================
+    // =============================================
     // 5. LEADS, TRANSFERS, SUBSCRIPTIONS Y USUARIOS
-    // ==========================================
+    // =============================================
     let leads = [];
     let transfers = [];
     let allSubscriptions = [];
