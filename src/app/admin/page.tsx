@@ -75,7 +75,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     // ==========================================
     // 2. ANALYTICS (CORREGIDO)
     // ==========================================
-    let filteredOrders = [];
+    let filteredOrders: any[] = [];
     let stats: AnalyticsData = {
       totalRevenue: 0,
       totalOrders: 0,
