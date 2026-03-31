@@ -151,12 +151,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         orderBy: { name: 'asc' }
       });
 
-      allFlavors = rawFlavors.map(f => ({
+      allFlavors = rawFlavors.map((f: any) => ({
         ...f,
         price: f.price ? Number(f.price) : 0,
         createdAt: f.createdAt?.toISOString() || new Date().toISOString(),
         updatedAt: f.updatedAt?.toISOString() || new Date().toISOString(),
-        locationStocks: f.locationStocks.map(s => ({
+        locationStocks: f.locationStocks.map((s: any) => ({
           ...s,
           createdAt: s.createdAt?.toISOString() || new Date().toISOString(),
           updatedAt: s.updatedAt?.toISOString() || new Date().toISOString(),
@@ -169,7 +169,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
     try {
       const rawProducts = await db.product.findMany({ orderBy: { price: 'asc' } });
-      allProducts = rawProducts.map(p => ({
+      allProducts = rawProducts.map((p: any) => ({
         ...p,
         price: Number(p.price || 0),
         weight: Number(p.weight || 0),
@@ -190,7 +190,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         include: { product: true }
       });
 
-      allPlans = rawPlans.map(p => ({
+      allPlans = rawPlans.map((p: any) => ({
         ...p,
         price: Number(p.price || 0),
         createdAt: p.createdAt?.toISOString() || new Date().toISOString(),
@@ -229,7 +229,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       });
 
       priceHistory = [
-        ...flavorPH.map(h => ({
+        ...flavorPH.map((h: any) => ({
           id: h.id,
           createdAt: h.createdAt.toISOString(),
           oldPrice: Number(h.oldPrice || 0),
@@ -238,7 +238,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           product: null,
           userId: h.userId
         })),
-        ...productPH.map(h => ({
+        ...productPH.map((h: any) => ({
           id: h.id,
           createdAt: h.createdAt.toISOString(),
           oldPrice: Number(h.oldPrice || 0),
