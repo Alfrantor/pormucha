@@ -216,6 +216,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     // ==========================================
     let priceHistory = [];
 
+
     try {
       const flavorPH = await db.flavorPriceHistory.findMany({
         take: 5,
