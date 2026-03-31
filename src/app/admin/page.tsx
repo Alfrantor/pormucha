@@ -399,7 +399,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       orders: serializedOrders // Pasamos la versión limpia
     };
 
-    // Verificar que stats existe y tiene las propiedades requeridas
+    // Verificar que stats existe y tiene las propiedades requeridas y más
     if (!dataObject.stats || typeof dataObject.stats !== 'object') {
       throw new Error("Stats object is invalid");
     }
