@@ -127,7 +127,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         });
       });
 
-      // Asignamos los valores a las variables de afuera
+      // Asignamos los valores a las variables de afuera y cambios en any
       topFlavors = Object.values(stats.flavorStats).sort((a, b) => b.count - a.count);
       topPacks = Object.values(stats.packStats).sort((a, b) => b.count - a.count);
 
