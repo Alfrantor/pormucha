@@ -212,7 +212,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     }
 
     // ==========================================
-    // 4. HISTORIAL DE PRECIOS
+    // 4. HISTORIAL DE PRECIOS    detalles en los precios
     // ==========================================
     let priceHistory = [];
 
