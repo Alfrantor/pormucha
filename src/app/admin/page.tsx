@@ -138,9 +138,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     // ==========================================
     // 3. INVENTARIO Y CATÁLOGO
     // ==========================================
-    let allFlavors = [];
-    let allProducts = [];
-    let allPlans = [];
+    let allFlavors: any[] = [];
+    let allProducts: any[] = [];
+    let allPlans: any[] = [];
 
     try {
       const rawFlavors = await db.flavor.findMany({
@@ -214,8 +214,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     // ==========================================
     // 4. HISTORIAL DE PRECIOS
     // ==========================================
-    let priceHistory = [];
-
+    let priceHistory: any[] = [];
 
     try {
       const flavorPH = await db.flavorPriceHistory.findMany({
@@ -257,11 +256,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     // =============================================
     // 5. LEADS, TRANSFERS, SUBSCRIPTIONS Y USUARIOS
     // =============================================
-    let leads = [];
-    let transfers = [];
-    let allSubscriptions = [];
-    let clients = [];
-    let usersList = [];
+    let leads: any[] = [];
+    let transfers: any[] = [];
+    let allSubscriptions: any[] = [];
+    let clients: any[] = [];
+    let usersList: any[] = [];
 
     try {
       leads = (await db.lead.findMany({ orderBy: { createdAt: 'desc' } }))
