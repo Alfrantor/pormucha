@@ -109,9 +109,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         packStats: {}
       };
 
-      filteredOrders.forEach(order => {
+      filteredOrders.forEach((order: any) => {
         stats.totalRevenue += Number(order.total || 0);
-        order.orderItems.forEach(item => {
+        order.orderItems.forEach((item: any) => {
           if (item.product) {
             const packName = item.product.name;
             if (!stats.packStats[packName]) stats.packStats[packName] = { name: packName, count: 0 };
