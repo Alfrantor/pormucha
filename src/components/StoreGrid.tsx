@@ -1,47 +1,55 @@
 "use client";
 import { useState } from "react";
-import PackSelector from "@/components/PackSelector";
+import PackCard from "@/components/PackCard"; // Renombramos para claridad
+import FlavorMixer from "@/components/FlavorMixer"; // Nuevo componente
 
 export default function StoreGrid({ packs, flavors }: { packs: any[], flavors: any[] }) {
     const [isSubscription, setIsSubscription] = useState(false);
+    const [activePack, setActivePack] = useState<any>(null);
+
+    // Tu lógica de imágenes
+    const getImage = (qty: number) => {
+        if (qty === 6) return "/pack-6.JPG";
+        if (qty === 8) return "/pack-8.JPG";
+        if (qty === 12) return "/pack-12.JPG";
+        if (qty === 24) return "/pack-24.JPG";
+        return "/hero-tienda.jpg";
+    };
+
+    const handleBack = () => setActivePack(null);
 
     return (
         <section id="packs" className="max-w-7xl mx-auto px-6 pb-24">
+            {!activePack ? (
+                <>
+                    {/* ... Toggle de suscripción ... */}
 
-            {/* TOGGLE SUSCRIPCIÓN */}
-            <div className="flex justify-center mb-12">
-                <div className="bg-[#EAE7DD] p-1.5 rounded-full flex items-center shadow-inner border border-[#8B3A18]/10 relative">
-                    <button
-                        onClick={() => setIsSubscription(false)}
-                        className={`px-6 py-2 rounded-full text-xs md:text-sm font-bold tracking-widest uppercase transition-all duration-300 z-10 ${!isSubscription ? 'bg-white text-[#1A1A1A] shadow-md' : 'text-gray-500 hover:text-gray-800'
-                            }`}
-                    >
-                        Sin Suscripción
-                    </button>
-                    <button
-                        onClick={() => setIsSubscription(true)}
-                        className={`px-6 py-2 rounded-full text-xs md:text-sm font-bold tracking-widest uppercase transition-all duration-300 z-10 ${isSubscription ? 'bg-[#1A1A1A] text-[#EBDAAB] shadow-[0_0_15px_rgba(139,58,24,0.3)] border border-[#8B3A18]/50' : 'text-gray-500 hover:text-[#8B3A18]'
-                            }`}
-                    >
-                        Con Suscripción
-                    </button>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {packs.map((pack) => (
-                    <PackSelector
-                        key={pack.id}
-                        id={pack.id}
-                        nombre={pack.name}
-                        capacidad={pack.quantity}
-                        precio={Number(pack.price)}
-                        clubDiscountPercent={pack.clubDiscountPercent}
-                        isSubscriptionMode={isSubscription}
-                        flavors={flavors}
-                    />
-                ))}
-            </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {packs.map((pack) => (
+                            <PackCard
+                                key={pack.id}
+                                id={pack.id}
+                                nombre={pack.name}
+                                capacidad={pack.quantity}
+                                precio={Number(pack.price)}
+                                clubDiscountPercent={pack.clubDiscountPercent}
+                                isSubscriptionMode={isSubscription}
+                                flavors={flavors}
+                                // USAMOS TU FUNCIÓN AQUÍ:
+                                imagenUrl={getImage(pack.quantity)}
+                                onSelect={() => setActivePack(pack)}
+                            />
+                        ))}
+                    </div>
+                </>
+            ) : (
+                <FlavorMixer
+                    pack={activePack}
+                    flavors={flavors}
+                    isSubscription={isSubscription}
+                    onBack={handleBack}
+                />
+            )}
         </section>
     );
 }

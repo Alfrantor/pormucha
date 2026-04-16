@@ -9,8 +9,8 @@ export default function CheckoutPage() {
   // Estados para el formulario y logística
   const [shippingCost, setShippingCost] = useState(0);
   const [loadingShipping, setLoadingShipping] = useState(false);
-  const [loadingPayment, setLoadingPayment] = useState(false); 
-  
+  const [loadingPayment, setLoadingPayment] = useState(false);
+
   const [shippingOptions, setShippingOptions] = useState<any[]>([]);
   const [selectedShipping, setSelectedShipping] = useState<any>(null);
 
@@ -79,7 +79,9 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           items: cart,
           shippingCost: shippingCost,
-          customerAddress: address
+          customerAddress: address,
+          shippingProvider: selectedShipping.provider, // Ej: "fedex"
+          shippingRateId: selectedShipping.id          // ¡ESTE ES EL CLAVE!
         }),
       });
 
@@ -190,10 +192,10 @@ export default function CheckoutPage() {
                   <span>Selecciona tu envío</span>
                   <span className="text-blue-500 bg-blue-50 px-2 py-1 rounded">Skydropx</span>
                 </label>
-                
+
                 {shippingOptions.map((opt) => (
-                  <div 
-                    key={opt.id} 
+                  <div
+                    key={opt.id}
                     onClick={() => {
                       setSelectedShipping(opt);
                       setShippingCost(opt.rate);

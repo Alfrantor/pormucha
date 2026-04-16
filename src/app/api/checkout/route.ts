@@ -11,12 +11,34 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { items, shippingCost, customerAddress } = body;
+    const {
+      items,
+      shippingCost,
+      customerAddress,
+      shippingRateId,
+      shippingProvider,
+      shippingId // El ID del shipment de Skydropx (opcional pero recomendado)
+    } = body;
+
+    if (!shippingRateId) {
+      console.error("❌ Error: shippingRateId no llegó en la petición");
+      return NextResponse.json(
+        { error: "Debes seleccionar una paquetería antes de pagar." },
+        { status: 400 }
+      );
+    }
     console.log("📦 CONTENIDO DEL CARRITO RECIBIDO:", JSON.stringify(items, null, 2));
     // VALIDACIÓN 1: Carrito vacío
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "El carrito está vacío" }, { status: 400 });
     }
+
+    console.log("🔍 DATOS RECIBIDOS EN API:", {
+      itemsCount: items?.length,
+      shippingRateId,
+      shippingProvider,
+      shippingCost
+    });
 
     console.log("🔍 SERVER: Items recibidos:", JSON.stringify(items, null, 2));
     // VALIDACIÓN 2: Dirección faltante
@@ -49,6 +71,8 @@ export async function POST(request: Request) {
         state: customerAddress.state || "Estado",
         neighborhood: customerAddress.neighborhood || "",
         shippingCost: Number(shippingCost || 0),
+        shippingRateId: shippingRateId,    // Guardamos el ID para la guía futura
+        shippingProvider: shippingProvider, // Para saber qué logo poner en el admin
         paymentMethod: "STRIPE",
 
         orderItems: {

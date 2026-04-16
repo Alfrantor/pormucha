@@ -268,3 +268,152 @@ export async function deleteLead(formData: FormData) {
   await db.lead.delete({ where: { id: leadId } });
   revalidatePath("/admin");
 }
+
+// ==========================================
+// LOGÍSTICA (SKYDROPX)
+// ==========================================
+export async function generateShippingLabel(orderId: string) {
+  try {
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+      include: { orderItems: { include: { product: true } } }
+    });
+
+    if (!order) throw new Error("Orden no encontrada");
+
+    // 1. OBTENER TOKEN
+    const tokenRes = await fetch("https://pro.skydropx.com/api/v1/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "client_credentials",
+        client_id: process.env.SKYDROPX_CLIENT_ID,
+        client_secret: process.env.SKYDROPX_CLIENT_SECRET,
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    const bearerToken = tokenData.access_token;
+
+    // 2. COTIZAR (Para obtener el rate_id fresco)
+    const totalWeight = order.orderItems.reduce((sum, i) => sum + Number(i.product?.weight || 1), 0);
+    const maxHeight = Math.max(...order.orderItems.map(i => Number(i.product?.height || 10)));
+    const maxWidth = Math.max(...order.orderItems.map(i => Number(i.product?.width || 10)));
+    const maxLength = Math.max(...order.orderItems.map(i => Number(i.product?.length || 10)));
+
+    const quoteRes = await fetch("https://pro.skydropx.com/api/v1/quotations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${bearerToken}` },
+      body: JSON.stringify({
+        quotation: {
+          address_from: { country_code: "MX", postal_code: "24000", area_level1: "Campeche", area_level2: "Campeche", area_level3: "Centro" },
+          address_to: { country_code: "MX", postal_code: order.zipCode, area_level1: order.state, area_level2: order.city, area_level3: order.neighborhood || "Centro" },
+          parcels: [{ weight: totalWeight, height: maxHeight, width: maxWidth, length: maxLength }]
+        }
+      })
+    });
+
+    let quoteData = await quoteRes.json();
+    let freshRateId = null;
+
+    // Polling rápido para encontrar la tarifa
+    for (let i = 0; i < 5; i++) {
+      const match = (quoteData.rates || []).find((r: any) =>
+        `${r.provider_service_name} (${r.provider_display_name})` === order.shippingProvider
+      );
+      if (match) { freshRateId = match.id; break; }
+      await new Promise(r => setTimeout(r, 1500));
+      const poll = await fetch(`https://pro.skydropx.com/api/v1/quotations/${quoteData.id}`, {
+        headers: { "Authorization": `Bearer ${bearerToken}` }
+      });
+      quoteData = await poll.json();
+    }
+
+    if (!freshRateId) throw new Error("No se encontró tarifa vigente.");
+
+    // 3. CREAR ENVÍO (Basado exactamente en tu manual: POST /api/v1/shipments/)
+    console.log(`🚚 Confirmando envío PRO con Rate ID: ${freshRateId}`);
+
+    const shipmentBody = {
+      shipment: {
+        rate_id: freshRateId,
+        headquarter_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", // <--- METE EL ID AQUÍ
+        printing_format: "standard",
+        address_from: {
+          country_code: "MX",
+          postal_code: "24090",
+          area_level1: "Campeche",
+          area_level2: "Campeche",
+          area_level3: "Samulá",
+          street1: "Siete",           // Calle exacta del dashboard
+          apartment_number: "25",     // Número interior separado
+          name: "Alfredo Andrés Pérez Toralla",
+          company: "Pormucha",
+          phone: "9811234567",
+          email: "admin@pormucha.com",
+          reference: "casa de dos pisos"
+        },
+        address_to: {
+          country_code: "MX",
+          postal_code: order.zipCode,
+          area_level1: order.state,
+          area_level2: order.city,
+          area_level3: order.neighborhood || "Centro",
+          street1: order.street,
+          name: order.fullName,
+          company: order.fullName, // Campo Requerido en PRO
+          phone: order.phone || "0000000000",
+          email: order.email,
+          reference: "Entrega a domicilio"
+        },
+        packages: [
+          {
+            package_number: 1, // Índice del paquete cotizado
+            package_protected: false,
+            declared_value: 0,
+            package_type: "4G", // Valor estándar según tu manual
+            consignment_note: "50202300" // Bebidas no alcohólicas (El ganador para tu Kombucha)
+          }
+        ]
+      }
+    };
+
+    const response = await fetch("https://pro.skydropx.com/api/v1/shipments/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": `Bearer ${bearerToken}`,
+      },
+      body: JSON.stringify(shipmentBody)
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("❌ Error de Skydropx PRO:", JSON.stringify(data, null, 2));
+      throw new Error(data.error || data.message || "Error al confirmar el envío.");
+    }
+
+    // 4. EXTRAER DATOS (Según el esquema de respuesta del manual)
+    const tracking = data.master_tracking_number || data.data?.attributes?.master_tracking_number;
+    const labelUrl = data.label_url || data.data?.attributes?.label_url;
+
+    if (!labelUrl) throw new Error("Envío creado pero no se recibió URL de guía.");
+
+    await db.order.update({
+      where: { id: orderId },
+      data: {
+        trackingNumber: String(tracking),
+        trackingUrl: labelUrl,
+        status: "SHIPPED"
+      }
+    });
+
+    revalidatePath("/admin");
+    return { success: true, labelUrl };
+
+  } catch (error: any) {
+    console.error("❌ Error en guía:", error.message);
+    return { success: false, error: error.message };
+  }
+}

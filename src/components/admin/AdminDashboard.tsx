@@ -13,6 +13,7 @@ import {
   createPlan, updatePlanPrice, updatePlanProduct, deleteLead, updateLocation,
   createTransfer, receiveTransfer
 } from "@/actions/admin-actions";
+import { generateShippingLabel } from "@/actions/admin-actions";
 
 // ---- Types ----
 type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "clientes";
@@ -173,15 +174,46 @@ export default function AdminDashboard({ data }: { data: any }) {
 }
 
 function TabPedidos({ orders = [] }: { orders: any[] }) {
-  // Filtramos para que SOLO se vean los pagados en esta tabla
-  const paidOrders = orders.filter(order => order.status === "PAID");
+  // Estado para controlar qué pedido se está procesando (loading)
+  const [isGenerating, setIsGenerating] = useState<string | null>(null);
+
+  // Función manejadora del botón
+  const handleAction = async (order: any) => {
+    // 1. Si ya existe la guía, solo la abrimos
+    if (order.trackingUrl) {
+      window.open(order.trackingUrl, "_blank");
+      return;
+    }
+
+    // 2. Si no hay guía, procedemos a generarla
+    setIsGenerating(order.id);
+    try {
+      const res = await generateShippingLabel(order.id);
+      if (res.success && res.labelUrl) {
+        window.open(res.labelUrl, "_blank");
+      } else {
+        alert("Error: " + res.error);
+      }
+    } catch (err) {
+      alert("Error crítico al conectar con Skydropx");
+    } finally {
+      setIsGenerating(null);
+    }
+  };
+
+  // Filtramos para ver tanto los pagados como los que ya tienen guía (SHIPPED)
+  const relevantOrders = orders.filter(
+    (order) => order.status === "PAID" || order.status === "SHIPPED"
+  );
 
   return (
     <section className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-black italic uppercase tracking-tighter">Gestión de Pedidos</h2>
-          <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Solo mostrando pagos confirmados ({paidOrders.length})</p>
+          <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">
+            Mostrando pedidos listos para envío ({relevantOrders.length})
+          </p>
         </div>
       </div>
 
@@ -197,40 +229,50 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {paidOrders.length > 0 ? (
-              paidOrders.map((order: any) => (
+            {relevantOrders.length > 0 ? (
+              relevantOrders.map((order: any) => (
                 <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
-                  {/* ID de la Orden */}
                   <td className="px-6 py-4">
                     <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
                       #{order.id.slice(-6).toUpperCase()}
                     </span>
                   </td>
 
-                  {/* Nombre del Cliente (fullName) */}
                   <td className="px-6 py-4">
                     <p className="font-bold text-gray-900">{order.fullName || "Sin nombre registrado"}</p>
-                    <p className="text-[10px] text-gray-400 font-medium">{order.customerEmail || order.email}</p>
+                    <p className="text-[10px] text-gray-400 font-medium">{order.email}</p>
                   </td>
 
-                  {/* Total */}
                   <td className="px-6 py-4">
                     <p className="font-black text-sm text-gray-900">
                       ${Number(order.total).toLocaleString('es-MX')}
                     </p>
                   </td>
 
-                  {/* Estatus */}
                   <td className="px-6 py-4">
-                    <span className="text-[10px] bg-green-100 text-green-700 px-3 py-1 rounded-full font-black tracking-tighter border border-green-200">
+                    <span className={`text-[10px] px-3 py-1 rounded-full font-black tracking-tighter border ${order.status === "SHIPPED"
+                      ? "bg-blue-50 text-blue-600 border-blue-100"
+                      : "bg-green-50 text-green-700 border-green-100"
+                      }`}>
                       ● {order.status}
                     </span>
                   </td>
 
-                  {/* Acciones */}
                   <td className="px-6 py-4 text-center">
-                    <button className="bg-black text-white text-[10px] px-4 py-2 rounded-xl font-bold uppercase tracking-widest hover:bg-gray-800 transition-all shadow-sm active:scale-95">
-                      Generar Guía
+                    <button
+                      onClick={() => handleAction(order)}
+                      disabled={isGenerating === order.id}
+                      className={`text-[10px] px-4 py-2 rounded-xl font-bold uppercase tracking-widest transition-all shadow-sm active:scale-95 disabled:opacity-50 ${order.trackingUrl
+                        ? "bg-green-100 text-green-700 border border-green-200 hover:bg-green-200"
+                        : "bg-black text-white hover:bg-gray-800"
+                        }`}
+                    >
+                      {isGenerating === order.id
+                        ? "Procesando..."
+                        : order.trackingUrl
+                          ? "Ver Guía"
+                          : "Generar Guía"
+                      }
                     </button>
                   </td>
                 </tr>
@@ -238,7 +280,7 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
             ) : (
               <tr>
                 <td colSpan={5} className="p-20 text-center">
-                  <p className="text-gray-400 italic font-medium">No se encontraron pedidos con estatus PAID.</p>
+                  <p className="text-gray-400 italic font-medium">No hay pedidos pendientes de envío.</p>
                 </td>
               </tr>
             )}

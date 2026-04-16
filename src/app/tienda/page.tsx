@@ -17,11 +17,24 @@ export default async function TiendaPage() {
     include: { locationStocks: true }
   });
 
-  const flavors = rawFlavors.map(f => ({
-    id: f.id,
-    name: f.name,
-    stock: f.locationStocks.reduce((sum, s) => sum + s.quantity, 0)
-  }));
+  const flavors = rawFlavors.map(f => {
+    // Limpiamos el nombre: "Kombucha Jamaica" -> "jamaica"
+    const cleanName = f.name
+      .toLowerCase()
+      .replace('kombucha', '') // Quitamos la palabra kombucha
+      .trim()                  // Quitamos espacios
+      .replace(/\s+/g, '-')    // Espacios por guiones
+      .normalize("NFD")        // Estas dos líneas quitan acentos y eñes
+      .replace(/[\u0300-\u036f]/g, "");
+
+    return {
+      id: f.id,
+      name: f.name,
+      // Forzamos la extensión .jpeg que es la que tienes
+      image: `/${cleanName}.jpeg`,
+      stock: f.locationStocks.reduce((sum, s) => sum + s.quantity, 0)
+    };
+  });
 
   return (
     <main className="min-h-screen bg-[#F5F2EB] selection:bg-[#8B3A28] selection:text-white font-sans">
@@ -32,15 +45,16 @@ export default async function TiendaPage() {
 
       <TiendaHero />
 
-      <StoreGrid 
+      <StoreGrid
         packs={packs.map(pack => ({
           id: pack.id,
           name: pack.name,
-          quantity: pack.quantity,
+          quantity: pack.quantity, // Fundamental para validar el límite de selección
           price: Number(pack.price),
-          clubDiscountPercent: pack.clubDiscountPercent
-        }))} 
-        flavors={flavors}
+          clubDiscountPercent: pack.clubDiscountPercent,
+          image: pack.image // La imagen del pack (ej. caja de 6)
+        }))}
+        flavors={flavors} // Ahora lleva la ruta de la imagen del sabor
       />
 
       {/* ============================================== */}
@@ -49,17 +63,17 @@ export default async function TiendaPage() {
       <section className="bg-[#EAE7DD] py-20 px-6 border-t border-[#8B3A18]/20 relative overflow-hidden">
         {/* Banner decorativo tipo listón en desktop */}
         <div className="absolute top-10 -left-16 w-64 bg-[#9B1C1C] text-white text-xs font-bold tracking-[0.2em] transform -rotate-45 text-center py-2 shadow-2xl border-b-4 border-[#EBDAAB] z-10 hidden lg:block">
-          GARANTÍA DE <br/>100% SATISFACCIÓN
+          GARANTÍA DE <br />100% SATISFACCIÓN
         </div>
-        
+
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center gap-12 lg:gap-20 relative z-20">
-          
+
           {/* Sello visual de garantía */}
           <div className="md:w-1/3 flex justify-center">
             <div className="w-56 h-56 rounded-full border border-[#8B3A18]/20 flex flex-col items-center justify-center bg-white shadow-[0_20px_40px_rgba(139,58,24,0.15)] relative">
               <div className="w-52 h-52 rounded-full border border-dashed border-[#8B3A18]/40 flex flex-col items-center justify-center bg-[#F5F2EB]">
-                 <span className="text-[#8B3A18] font-serif text-[4rem] leading-none mb-1">100%</span>
-                 <span className="font-mono text-[10px] uppercase tracking-widest text-[#1A1A1A] font-bold">Satisfacción</span>
+                <span className="text-[#8B3A18] font-serif text-[4rem] leading-none mb-1">100%</span>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-[#1A1A1A] font-bold">Satisfacción</span>
               </div>
               <div className="absolute -bottom-4 bg-[#1A1A1A] text-[#EBDAAB] font-sans text-xs tracking-[0.25em] font-bold uppercase px-6 py-2 rounded-full shadow-lg">
                 REEMBOLSO
@@ -114,19 +128,19 @@ export default async function TiendaPage() {
           </div>
 
           <div className="space-y-6">
-            <FAQItem 
+            <FAQItem
               question="¿Puedo elegír los sabores de mi caja?"
               answer="¡Claro que sí! Nuestros packs son 100% personalizables. Solo haz clic en la opción de tu pack preferido y arma tu combinación ideal (Piña, Jamaica, Té Verde o Té Negro) antes de agregarlo en tu carrito."
             />
-            <FAQItem 
+            <FAQItem
               question="¿A dónde hacen envíos?"
               answer="Enviamos a toda la República y podrás seleccionar en la pantalla de pago qué paquetería te conviene más (DHL, Redpack, FedEx, etc.) gracias a la red logística de Skydropx."
             />
-            <FAQItem 
+            <FAQItem
               question="¿Tengo que refrigerar mis bebidas al llegar?"
               answer="Sí. Al ser una bebida viva y natural, es muy importante que en cuanto las recibas en la puerta de tu casa las metas a refrigeración para detener la fermentación y disfrutarlas bien frías."
             />
-            <FAQItem 
+            <FAQItem
               question="¿Cómo funciona la garantía de satisfacción?"
               answer="La garantía de devolución aplica únicamente una vez por cliente."
             />

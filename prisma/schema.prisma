@@ -175,6 +175,8 @@ model Order {
   reference       String?
   shippingCost    Decimal?
   shippingId      String?
+  shippingRateId  String?   // <--- VITAL: Aquí guardas el ID de la tarifa elegida (FedEx, etc.)
+  shippingProvider String?  // <--- RECOMENDADO: Guardar "FedEx", "DHL" para mostrarlo en el Admin
   trackingNumber  String?
   trackingUrl     String?
   locationId      String?

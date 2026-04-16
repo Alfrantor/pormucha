@@ -25,6 +25,9 @@ const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   try {
+    const resolvedParams = await searchParams;
+    const from = resolvedParams.from;
+    const to = resolvedParams.to;
     // ==========================================
     // SEGURIDAD: VERIFICACIÓN DE ROL
     // ==========================================
@@ -54,7 +57,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     // ==========================================
     // 1. FILTRADO POR FECHAS
     // ==========================================
-    const { from, to } = searchParams;
+
 
     // Iniciamos el filtro solo con el estatus
     const dateFilter: any = {};
