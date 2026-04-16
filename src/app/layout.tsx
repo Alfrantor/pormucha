@@ -71,15 +71,16 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <CartProvider>
-        <html lang="es" className={`${playfair.variable} ${inter.variable}`}>
-          <body className="antialiased font-sans bg-[#F5F2EB] text-[#1A1A1A]">
+      <html lang="es" className={`${playfair.variable} ${inter.variable}`}>
+        <body className="antialiased font-sans bg-[#F5F2EB] text-[#1A1A1A]">
+          {/* Mueve el CartProvider ADENTRO del body */}
+          <CartProvider>
             {children}
             <FloatingCart />
             <Toaster richColors position="top-center" />
-          </body>
-        </html>
-      </CartProvider>
+          </CartProvider>
+        </body>
+      </html>
     </ClerkProvider>
   );
 }
