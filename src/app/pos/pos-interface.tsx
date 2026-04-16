@@ -7,7 +7,7 @@ import {
     ClipboardList, CreditCard, Banknote,
     Trash2, Plus, Minus, X
 } from "lucide-react";
-
+import { useRouter } from "next/navigation";
 interface PosProps {
     locations: any[];
     products: any[];
@@ -24,6 +24,7 @@ export function PosInterface({ locations, products, flavors, clients, recentSale
     const [selectedClient, setSelectedClient] = useState<any>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
+    const router = useRouter();
 
     // Modal para composición de Pack
     const [showPackModal, setShowPackModal] = useState<any>(null);
