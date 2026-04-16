@@ -16,7 +16,7 @@ import {
 import { generateShippingLabel } from "@/actions/admin-actions";
 
 // ---- Types ----
-type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "clientes";
+type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes";
 
 interface Tab {
   id: TabId;
