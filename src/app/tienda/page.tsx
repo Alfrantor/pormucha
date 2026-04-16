@@ -52,7 +52,7 @@ export default async function TiendaPage() {
           quantity: pack.quantity, // Fundamental para validar el límite de selección
           price: Number(pack.price),
           clubDiscountPercent: pack.clubDiscountPercent,
-          image: pack.image // La imagen del pack (ej. caja de 6)
+
         }))}
         flavors={flavors} // Ahora lleva la ruta de la imagen del sabor
       />
