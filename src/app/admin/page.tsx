@@ -146,13 +146,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     let allPlans: any[] = [];
 
     try {
+      // 👇 AGREGA "as any[]" AQUÍ AL FINAL 👇
       const rawFlavors = await db.flavor.findMany({
         include: {
           movements: { orderBy: { createdAt: 'desc' }, take: 100 },
           locationStocks: { include: { location: true } }
         },
         orderBy: { name: 'asc' }
-      });
+      }) as any[];
 
       allFlavors = rawFlavors.map((f: any) => ({
         ...f,
@@ -343,7 +344,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     // ==========================================
     // LIMPIEZA PROFUNDA DE ÓRDENES (Adiós Decimals)
     // ==========================================
-    const serializedOrders = filteredOrders.map(order => ({
+    const serializedOrders = filteredOrders.map((order: any) => ({
       ...order,
       // 1. Campos de la Orden
       total: Number(order.total || 0),
