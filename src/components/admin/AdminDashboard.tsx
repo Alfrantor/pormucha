@@ -317,7 +317,7 @@ function TabUsuarios({ users }: { users: any[] }) {
         <p className="text-sm text-gray-400 mt-1">Asigna roles de administrador o vendedor a los usuarios registrados.</p>
       </div>
       {users.length > 0 ? (
-        <UserManagement users={users} />
+        <UserManagement data={users} />
       ) : (
         <div className="p-10 border-2 border-dashed rounded-3xl text-center text-gray-400">
           No hay usuarios registrados en Clerk todavía.
