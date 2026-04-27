@@ -44,6 +44,10 @@ model Client {
   bankName              String?
   accountNumber         String?
 
+  // Giro del negocio
+  giroId                String?
+  giro                  Giro?                 @relation(fields: [giroId], references: [id], onDelete: SetNull)
+
   // Estatus
   status                String                @default("ACTIVO") // ACTIVO | INACTIVO | BLOQUEADO
 
@@ -60,6 +64,15 @@ model Client {
 
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
+}
+
+model Giro {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  clients     Client[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Address {

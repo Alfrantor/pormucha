@@ -1,7 +1,7 @@
 // Validaciones para datos de cliente
 
 export function validateRFC(rfc: string): boolean {
-  const rfcRegex = /^[A-ZÑ&]{3,4}\d{6}[A-V0-9]{3}[0-9A-Z]$/;
+  const rfcRegex = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
   return rfcRegex.test(rfc.toUpperCase());
 }
 

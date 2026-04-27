@@ -1,7 +1,6 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { validateRFC } from "@/lib/validation";
 import { revalidatePath } from "next/cache";
 
 // Crear cliente
@@ -19,13 +18,9 @@ export async function createClient(data: {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+  giroId?: string;
 }) {
   try {
-    // Validar RFC si existe
-    if (data.rfc && !validateRFC(data.rfc)) {
-      return { error: "RFC inválido" };
-    }
-
     const client = await db.client.create({
       data: {
         type: data.type,
@@ -41,11 +36,22 @@ export async function createClient(data: {
         contactName: data.contactName,
         contactPhone: data.contactPhone,
         contactEmail: data.contactEmail,
+        giroId: data.giroId || null,
       },
     });
 
     revalidatePath("/admin/clientes");
-    return { success: true, client };
+    return {
+      success: true,
+      client: {
+        ...client,
+        creditLimit: Number(client.creditLimit || 0),
+        creditUsed: Number(client.creditUsed || 0),
+        globalDiscount: client.globalDiscount ? Number(client.globalDiscount) : null,
+        createdAt: client.createdAt?.toISOString() || new Date().toISOString(),
+        updatedAt: client.updatedAt?.toISOString() || new Date().toISOString(),
+      },
+    };
   } catch (error: any) {
     console.error("Error creating client:", error);
     return { error: error.message };
@@ -69,13 +75,10 @@ export async function updateClient(
     contactPhone?: string;
     contactEmail?: string;
     status?: string;
+    giroId?: string | null;
   }
 ) {
   try {
-    if (data.rfc && !validateRFC(data.rfc)) {
-      return { error: "RFC inválido" };
-    }
-
     const client = await db.client.update({
       where: { id },
       data: {
@@ -86,7 +89,17 @@ export async function updateClient(
     });
 
     revalidatePath("/admin/clientes");
-    return { success: true, client };
+    return {
+      success: true,
+      client: {
+        ...client,
+        creditLimit: Number(client.creditLimit || 0),
+        creditUsed: Number(client.creditUsed || 0),
+        globalDiscount: client.globalDiscount ? Number(client.globalDiscount) : null,
+        createdAt: client.createdAt?.toISOString() || new Date().toISOString(),
+        updatedAt: client.updatedAt?.toISOString() || new Date().toISOString(),
+      },
+    };
   } catch (error: any) {
     console.error("Error updating client:", error);
     return { error: error.message };

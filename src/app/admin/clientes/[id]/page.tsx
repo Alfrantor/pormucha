@@ -91,13 +91,12 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
               <div>
                 <p className="text-sm text-gray-600">Estado</p>
                 <span
-                  className={`text-xs px-3 py-1 rounded-full font-bold ${
-                    client.status === "ACTIVO"
+                  className={`text-xs px-3 py-1 rounded-full font-bold ${client.status === "ACTIVO"
                       ? "bg-green-100 text-green-700"
                       : client.status === "INACTIVO"
                         ? "bg-gray-100 text-gray-600"
                         : "bg-red-100 text-red-700"
-                  }`}
+                    }`}
                 >
                   {client.status}
                 </span>
@@ -125,13 +124,12 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
                 <div className="col-span-2">
                   <div className="w-full bg-gray-200 rounded-full h-3">
                     <div
-                      className={`h-3 rounded-full ${
-                        Number(client.creditUsed) / Number(client.creditLimit) > 0.8
+                      className={`h-3 rounded-full ${Number(client.creditUsed) / Number(client.creditLimit) > 0.8
                           ? "bg-red-500"
                           : Number(client.creditUsed) / Number(client.creditLimit) > 0.5
                             ? "bg-yellow-500"
                             : "bg-green-500"
-                      }`}
+                        }`}
                       style={{
                         width: `${Math.min((Number(client.creditUsed) / Number(client.creditLimit)) * 100, 100)}%`,
                       }}

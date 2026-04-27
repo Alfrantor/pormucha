@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient, updateClient } from "@/app/_actions/clients";
 import { X } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -14,6 +14,7 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [giros, setGiros] = useState<{ id: string; name: string }[]>([]);
   const [formData, setFormData] = useState({
     type: client?.type || "FISICA",
     fullName: client?.fullName || "",
@@ -30,7 +31,14 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
     contactEmail: client?.contactEmail || "",
     status: client?.status || "ACTIVO",
     globalDiscount: client?.globalDiscount?.toString() || "",
+    giroId: client?.giroId || "",
   });
+
+  useEffect(() => {
+    fetch("/api/giros").then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setGiros(data);
+    }).catch(() => { });
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -51,6 +59,7 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
         creditLimit: formData.creditLimit ? parseFloat(formData.creditLimit) : 0,
         paymentTerms: formData.paymentTerms ? parseInt(formData.paymentTerms) : undefined,
         globalDiscount: formData.globalDiscount ? parseInt(formData.globalDiscount) : undefined,
+        giroId: formData.giroId || undefined,
       };
 
       const result = client
@@ -120,7 +129,7 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
                   onChange={handleChange}
                   className="w-4 h-4"
                 />
-                <span className="text-gray-700">Persona Jurídica</span>
+                <span className="text-gray-700">Persona Moral</span>
               </label>
             </div>
           </div>
@@ -129,7 +138,7 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {formData.type === "FISICA" ? "Nombre Completo" : "Nombre de Contacto"} *
+                {formData.type === "FISICA" ? "Nombre Completo" : "Nombre de la empresa"} *
               </label>
               <input
                 type="text"
@@ -325,6 +334,24 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
               </div>
             </div>
           </div>
+
+          {/* Giro del negocio */}
+          {giros.length > 0 && (
+            <div className="border-t pt-4">
+              <h3 className="font-semibold text-gray-900 mb-4">Giro del Negocio</h3>
+              <select
+                name="giroId"
+                value={formData.giroId}
+                onChange={handleChange}
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Sin giro asignado</option>
+                {giros.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Botones */}
           <div className="flex gap-3 pt-4 border-t">

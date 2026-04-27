@@ -268,6 +268,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     let allSubscriptions: any[] = [];
     let clients: any[] = [];
     let usersList: any[] = [];
+    let giros: any[] = [];
 
     try {
       leads = (await db.lead.findMany({ orderBy: { createdAt: 'desc' } }))
@@ -332,6 +333,15 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     } catch (err) {
       console.error("Error fetching clients:", err);
       clients = [];
+    }
+
+    try {
+      if ((db as any).giro) {
+        giros = await (db as any).giro.findMany({ orderBy: { name: 'asc' } });
+      }
+    } catch (err) {
+      console.error("Error fetching giros:", err);
+      giros = [];
     }
 
     // ==========================================
@@ -457,8 +467,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       allSubscriptions,
       users: usersList,
       clients,
-      orders: serializedOrders, // Pasamos la versión limpia
-      flavorsWithPricing
+      orders: serializedOrders,
+      flavorsWithPricing,
+      giros,
     };
 
     // Verificar que stats existe y tiene las propiedades requeridas y más

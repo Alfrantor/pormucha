@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   BarChart3, Package, Repeat, Users, ShoppingBag, Truck, Contact2, DollarSign,
   ShoppingCart, ChevronRight, LayoutDashboard, Package2, UserCog, Menu, MonitorCheck,
+  Building2, Pencil, Trash2, Plus, X,
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { TogglePlanBtn } from "@/components/admin/toggle-plan-btn";
@@ -23,7 +24,7 @@ import {
 import { generateShippingLabel } from "@/actions/admin-actions";
 
 // ---- Types ----
-type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios";
+type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios" | "giros";
 
 interface Tab {
   id: TabId;
@@ -43,6 +44,7 @@ const TABS: Tab[] = [
   { id: "clientes",     label: "Clientes",      icon: <Contact2 size={15} />,        group: "crm" },
   { id: "leads",        label: "Leads",         icon: <Users size={15} />,           group: "crm" },
   { id: "usuarios",     label: "Staff",         icon: <UserCog size={15} />,         group: "config" },
+  { id: "giros",        label: "Giros",         icon: <Building2 size={15} />,       group: "config" },
 ];
 
 const GROUPS: { id: string; label: string }[] = [
@@ -139,7 +141,8 @@ export default function AdminDashboard({ data }: { data: any }) {
     users = [],
     clients = [],
     orders = [],
-    flavorsWithPricing = []
+    flavorsWithPricing = [],
+    giros = [],
   } = data;
 
   const memoizedStats = useMemo(() => stats, [stats]);
@@ -280,6 +283,7 @@ export default function AdminDashboard({ data }: { data: any }) {
           {activeTab === "clientes" && <TabClientes clients={clients} />}
           {activeTab === "precios" && <TabPrecios flavors={flavorsWithPricing} />}
           {activeTab === "pedidos" && <TabPedidos orders={orders} />}
+          {activeTab === "giros" && <TabGiros giros={giros} />}
         </main>
       </div>
     </div>
@@ -287,18 +291,14 @@ export default function AdminDashboard({ data }: { data: any }) {
 }
 
 function TabPedidos({ orders = [] }: { orders: any[] }) {
-  // Estado para controlar qué pedido se está procesando (loading)
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
+  const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB">("all");
 
-  // Función manejadora del botón
   const handleAction = async (order: any) => {
-    // 1. Si ya existe la guía, solo la abrimos
     if (order.trackingUrl) {
       window.open(order.trackingUrl, "_blank");
       return;
     }
-
-    // 2. Si no hay guía, procedemos a generarla
     setIsGenerating(order.id);
     try {
       const res = await generateShippingLabel(order.id);
@@ -314,19 +314,43 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
     }
   };
 
-  // Filtramos para ver tanto los pagados como los que ya tienen guía (SHIPPED)
-  const relevantOrders = orders.filter(
-    (order) => order.status === "PAID" || order.status === "SHIPPED"
-  );
+  const posCount = orders.filter(o => o.channel === "POS").length;
+  const webCount = orders.filter(o => o.channel !== "POS").length;
+
+  const filteredOrders = orders.filter(order => {
+    if (channelFilter === "POS") return order.channel === "POS";
+    if (channelFilter === "WEB") return order.channel !== "POS";
+    return true;
+  });
 
   return (
     <section className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black italic uppercase tracking-tighter">Gestión de Pedidos</h2>
           <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">
-            Mostrando pedidos listos para envío ({relevantOrders.length})
+            {filteredOrders.length} pedidos encontrados
           </p>
+        </div>
+        <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
+          <button
+            onClick={() => setChannelFilter("all")}
+            className={`px-4 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === "all" ? "bg-white text-black shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+          >
+            Todos ({orders.length})
+          </button>
+          <button
+            onClick={() => setChannelFilter("POS")}
+            className={`px-4 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === "POS" ? "bg-white text-purple-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+          >
+            POS ({posCount})
+          </button>
+          <button
+            onClick={() => setChannelFilter("WEB")}
+            className={`px-4 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === "WEB" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+          >
+            Web ({webCount})
+          </button>
         </div>
       </div>
 
@@ -335,6 +359,7 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
           <thead>
             <tr className="bg-gray-50 text-[10px] uppercase font-black text-gray-500 border-b">
               <th className="px-6 py-4">ID Orden</th>
+              <th className="px-6 py-4">Canal</th>
               <th className="px-6 py-4">Nombre del Cliente</th>
               <th className="px-6 py-4">Total</th>
               <th className="px-6 py-4">Estatus</th>
@@ -342,58 +367,67 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {relevantOrders.length > 0 ? (
-              relevantOrders.map((order: any) => (
-                <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                      #{order.id.slice(-6).toUpperCase()}
-                    </span>
-                  </td>
+            {filteredOrders.length > 0 ? (
+              filteredOrders.map((order: any) => {
+                const isPOS = order.channel === "POS";
+                return (
+                  <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                        #{order.id.slice(-6).toUpperCase()}
+                      </span>
+                    </td>
 
-                  <td className="px-6 py-4">
-                    <p className="font-bold text-gray-900">{order.fullName || "Sin nombre registrado"}</p>
-                    <p className="text-[10px] text-gray-400 font-medium">{order.email}</p>
-                  </td>
+                    <td className="px-6 py-4">
+                      <span className={`text-[10px] px-2 py-1 rounded-full font-black border ${isPOS ? "bg-purple-50 text-purple-700 border-purple-100" : "bg-sky-50 text-sky-700 border-sky-100"}`}>
+                        {isPOS ? "POS" : "Web"}
+                      </span>
+                    </td>
 
-                  <td className="px-6 py-4">
-                    <p className="font-black text-sm text-gray-900">
-                      ${Number(order.total).toLocaleString('es-MX')}
-                    </p>
-                  </td>
+                    <td className="px-6 py-4">
+                      <p className="font-bold text-gray-900">{order.fullName || "Sin nombre registrado"}</p>
+                      <p className="text-[10px] text-gray-400 font-medium">{order.email}</p>
+                    </td>
 
-                  <td className="px-6 py-4">
-                    <span className={`text-[10px] px-3 py-1 rounded-full font-black tracking-tighter border ${order.status === "SHIPPED"
-                      ? "bg-blue-50 text-blue-600 border-blue-100"
-                      : "bg-green-50 text-green-700 border-green-100"
+                    <td className="px-6 py-4">
+                      <p className="font-black text-sm text-gray-900">
+                        ${Number(order.total).toLocaleString('es-MX')}
+                      </p>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <span className={`text-[10px] px-3 py-1 rounded-full font-black tracking-tighter border ${
+                        order.status === "SHIPPED" ? "bg-blue-50 text-blue-600 border-blue-100"
+                        : order.status === "PAID" || order.status === "COMPLETED" ? "bg-green-50 text-green-700 border-green-100"
+                        : "bg-gray-50 text-gray-600 border-gray-100"
                       }`}>
-                      ● {order.status}
-                    </span>
-                  </td>
+                        ● {order.status}
+                      </span>
+                    </td>
 
-                  <td className="px-6 py-4 text-center">
-                    <button
-                      onClick={() => handleAction(order)}
-                      disabled={isGenerating === order.id}
-                      className={`text-[10px] px-4 py-2 rounded-xl font-bold uppercase tracking-widest transition-all shadow-sm active:scale-95 disabled:opacity-50 ${order.trackingUrl
-                        ? "bg-green-100 text-green-700 border border-green-200 hover:bg-green-200"
-                        : "bg-black text-white hover:bg-gray-800"
-                        }`}
-                    >
-                      {isGenerating === order.id
-                        ? "Procesando..."
-                        : order.trackingUrl
-                          ? "Ver Guía"
-                          : "Generar Guía"
-                      }
-                    </button>
-                  </td>
-                </tr>
-              ))
+                    <td className="px-6 py-4 text-center">
+                      {!isPOS ? (
+                        <button
+                          onClick={() => handleAction(order)}
+                          disabled={isGenerating === order.id}
+                          className={`text-[10px] px-4 py-2 rounded-xl font-bold uppercase tracking-widest transition-all shadow-sm active:scale-95 disabled:opacity-50 ${order.trackingUrl
+                            ? "bg-green-100 text-green-700 border border-green-200 hover:bg-green-200"
+                            : "bg-black text-white hover:bg-gray-800"
+                          }`}
+                        >
+                          {isGenerating === order.id ? "Procesando..." : order.trackingUrl ? "Ver Guía" : "Generar Guía"}
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-gray-400 font-medium">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             ) : (
               <tr>
-                <td colSpan={5} className="p-20 text-center">
-                  <p className="text-gray-400 italic font-medium">No hay pedidos pendientes de envío.</p>
+                <td colSpan={6} className="p-20 text-center">
+                  <p className="text-gray-400 italic font-medium">No hay pedidos con este filtro.</p>
                 </td>
               </tr>
             )}
@@ -470,6 +504,137 @@ function TabClientes({ clients }: { clients: any[] }) {
       </div>
 
       <ClientsTable clients={clients} total={clients.length} />
+    </section>
+  );
+}
+
+// =====================================================================
+// TAB: GIROS DEL NEGOCIO
+// =====================================================================
+function TabGiros({ giros: initialGiros }: { giros: any[] }) {
+  const [giros, setGiros] = useState<any[]>(Array.isArray(initialGiros) ? initialGiros : []);
+  const [showForm, setShowForm] = useState(false);
+  const [editingGiro, setEditingGiro] = useState<any>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const openCreate = () => { setEditingGiro(null); setName(""); setDescription(""); setError(""); setShowForm(true); };
+  const openEdit = (g: any) => { setEditingGiro(g); setName(g.name); setDescription(g.description || ""); setError(""); setShowForm(true); };
+
+  const handleSave = async () => {
+    if (!name.trim()) { setError("El nombre es requerido"); return; }
+    setLoading(true); setError("");
+    try {
+      const { createGiro, updateGiro } = await import("@/app/_actions/giros");
+      if (editingGiro) {
+        const res = await updateGiro(editingGiro.id, { name: name.trim(), description: description.trim() || undefined });
+        if (res.error) { setError(res.error); return; }
+        setGiros(prev => prev.map(g => g.id === editingGiro.id ? { ...g, name: name.trim(), description: description.trim() } : g));
+      } else {
+        const res = await createGiro({ name: name.trim(), description: description.trim() || undefined });
+        if (res.error) { setError(res.error); return; }
+        if (res.giro) setGiros(prev => [...prev, res.giro]);
+      }
+      setShowForm(false);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("¿Eliminar este giro? Los clientes vinculados quedarán sin giro.")) return;
+    try {
+      const { deleteGiro } = await import("@/app/_actions/giros");
+      await deleteGiro(id);
+      setGiros(prev => prev.filter(g => g.id !== id));
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
+  return (
+    <section className="space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-black italic">Giros del Negocio</h2>
+          <p className="text-sm text-gray-400 mt-1">
+            Categorías de negocio para clasificar clientes (hotel, gimnasio, cafetería, etc.)
+          </p>
+        </div>
+        <button
+          onClick={openCreate}
+          className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-xl font-bold text-sm hover:bg-black transition shrink-0"
+        >
+          <Plus size={15} /> Nuevo Giro
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white border rounded-2xl p-5 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="font-black text-gray-800">{editingGiro ? "Editar Giro" : "Nuevo Giro"}</h3>
+            <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-700"><X size={16} /></button>
+          </div>
+          {error && <p className="text-red-600 text-sm font-medium">{error}</p>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Nombre *</label>
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Ej: Restaurante, Hotel, Gimnasio..."
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-300"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Descripción</label>
+              <input
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="Descripción opcional"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-300"
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">Cancelar</button>
+            <button onClick={handleSave} disabled={loading} className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black disabled:opacity-50">
+              {loading ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {giros.length === 0 ? (
+        <div className="p-12 border-2 border-dashed rounded-3xl text-center text-gray-400">
+          <Building2 size={40} className="mx-auto mb-3 opacity-30" />
+          <p className="font-bold">No hay giros creados</p>
+          <p className="text-sm mt-1">Crea giros para clasificar a tus clientes por tipo de negocio</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {giros.map((g: any) => (
+            <div key={g.id} className="bg-white border rounded-2xl p-4 flex items-start justify-between gap-3 shadow-sm hover:shadow-md transition-shadow">
+              <div className="min-w-0">
+                <p className="font-black text-gray-900 truncate">{g.name}</p>
+                {g.description && <p className="text-sm text-gray-500 mt-0.5 truncate">{g.description}</p>}
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <button onClick={() => openEdit(g)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar">
+                  <Pencil size={14} />
+                </button>
+                <button onClick={() => handleDelete(g.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Eliminar">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

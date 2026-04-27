@@ -89,6 +89,10 @@ export const PosInterface = ({
 
   const removeItem = (idx: number) => setCart(prev => prev.filter((_, i) => i !== idx));
 
+  const updateItemPrice = (idx: number, price: number) => {
+    setCart(prev => prev.map((item, i) => i === idx ? { ...item, price } : item));
+  };
+
   const handleAddBottle = (flavor: any) => {
     const stock = flavor.locationStocks.find((s: any) => s.locationId === selectedLocation)?.quantity ?? 0;
     const inCart = cart.find(c => c.flavorId === flavor.id)?.quantity ?? 0;
@@ -217,9 +221,22 @@ export const PosInterface = ({
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <p className="font-black text-sm text-gray-800 truncate">{item.name}</p>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase mt-0.5">
-                    {item.type === "PACK" ? "Pack" : "Botella"} · ${formatMoney(item.price)} c/u
-                  </p>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase shrink-0">
+                      {item.type === "PACK" ? "Pack" : "Botella"}
+                    </span>
+                    <span className="text-[10px] text-gray-300 shrink-0">·</span>
+                    <span className="text-[10px] text-gray-400 shrink-0">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.price}
+                      onChange={e => updateItemPrice(idx, parseFloat(e.target.value) || 0)}
+                      className="w-16 text-[11px] font-bold text-gray-700 bg-white border border-gray-200 rounded-md px-1 py-0.5 outline-none focus:border-blue-400"
+                    />
+                    <span className="text-[10px] text-gray-400 shrink-0">c/u</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                   <button

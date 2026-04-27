@@ -57,9 +57,17 @@ export default async function ClientesPage({ searchParams }: ClientsPageProps) {
       db.client.count({ where }),
     ]);
 
+    // Serializar campos Decimal → number plain para Client Components
+    const serializedClients = clients.map((c) => ({
+      ...c,
+      creditLimit: Number(c.creditLimit),
+      creditUsed: Number(c.creditUsed),
+      globalDiscount: Number(c.globalDiscount),
+    }));
+
     return (
       <div className="p-8 max-w-7xl mx-auto">
-        <ClientsTable clients={clients} total={total} />
+        <ClientsTable clients={serializedClients} total={total} />
       </div>
     );
   } catch (error) {
