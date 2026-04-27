@@ -10,38 +10,65 @@ export async function updateClientAddress(formData: any) {
 
     if (!userId || !user) throw new Error("No autorizado");
 
-    // Obtenemos el email del usuario logueado en Clerk
     const userEmail = user.emailAddresses[0].emailAddress;
 
-    // Usamos UPSERT pero buscando directamente por el ID de Clerk (infalible)
-    await db.client.upsert({
-        where: { clerkUserId: userId }, // <-- CAMBIO CLAVE: Búsqueda perfecta
+    // Obtener o crear el cliente
+    const client = await db.client.upsert({
+        where: { clerkUserId: userId },
         update: {
-            // Actualizamos el email por si el usuario lo cambió en Clerk
             email: userEmail,
             phone: formData.phone,
-            street: formData.street,
-            number: formData.number,
-            zipCode: formData.zipCode,
-            city: formData.city,
-            state: formData.state,
-            neighborhood: formData.neighborhood,
-            reference: formData.reference,
         },
         create: {
             clerkUserId: userId,
             email: userEmail,
             fullName: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
             phone: formData.phone,
-            street: formData.street,
-            number: formData.number,
-            zipCode: formData.zipCode,
-            city: formData.city,
-            state: formData.state,
-            neighborhood: formData.neighborhood,
-            reference: formData.reference,
+            type: "FISICA",
         },
     });
+
+    // Crear o actualizar la dirección de envío (en tabla Address)
+    if (formData.street || formData.city) {
+        // Buscar si ya existe una dirección de envío
+        const existingAddress = await db.address.findFirst({
+            where: {
+                clientId: client.id,
+                type: "ENVIO",
+            },
+        });
+
+        if (existingAddress) {
+            // Actualizar la existente
+            await db.address.update({
+                where: { id: existingAddress.id },
+                data: {
+                    street: formData.street,
+                    number: formData.number,
+                    zipCode: formData.zipCode,
+                    city: formData.city,
+                    state: formData.state,
+                    country: "MX",
+                },
+            });
+        } else {
+            // Crear nueva
+            await db.address.create({
+                data: {
+                    clientId: client.id,
+                    type: "ENVIO",
+                    street: formData.street,
+                    number: formData.number,
+                    zipCode: formData.zipCode,
+                    city: formData.city,
+                    state: formData.state,
+                    country: "MX",
+                    reference: formData.reference,
+                    isDefault: true,
+                },
+            });
+        }
+    }
 
     revalidatePath("/perfil");
 }

@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { UserButton } from "@clerk/nextjs";
 import AdminDashboard from "@/components/admin/AdminDashboard";
 import { redirect } from "next/navigation";
 import { createClerkClient } from "@clerk/backend";
@@ -160,6 +159,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       allFlavors = rawFlavors.map((f: any) => ({
         ...f,
         price: f.price ? Number(f.price) : 0,
+        basePrice: f.basePrice ? Number(f.basePrice) : 0,
+        wholesalePrice: f.wholesalePrice ? Number(f.wholesalePrice) : null,
         createdAt: f.createdAt?.toISOString() || new Date().toISOString(),
         updatedAt: f.updatedAt?.toISOString() || new Date().toISOString(),
         locationStocks: f.locationStocks.map((s: any) => ({
@@ -282,7 +283,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         orderBy: { createdAt: 'desc' }
       })).map(t => ({
         ...t,
-        flavor: t.flavor ? { ...t.flavor, price: Number(t.flavor.price || 0) } : null,
+        flavor: t.flavor ? {
+          ...t.flavor,
+          price: Number(t.flavor.price || 0),
+          basePrice: Number(t.flavor.basePrice || 0),
+          wholesalePrice: t.flavor.wholesalePrice ? Number(t.flavor.wholesalePrice) : null,
+        } : null,
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
       }));
@@ -317,6 +323,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       clients = (await db.client.findMany({ orderBy: { createdAt: 'desc' } }))
         .map(c => ({
           ...c,
+          creditLimit: Number(c.creditLimit || 0),
+          creditUsed: Number(c.creditUsed || 0),
+          globalDiscount: c.globalDiscount ? Number(c.globalDiscount) : null,
           createdAt: c.createdAt?.toISOString() || new Date().toISOString(),
           updatedAt: c.updatedAt?.toISOString() || new Date().toISOString(),
         }));
@@ -374,9 +383,55 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         flavor: item.flavor ? {
           ...item.flavor,
           price: Number(item.flavor.price || 0),
+          basePrice: Number(item.flavor.basePrice || 0),
+          wholesalePrice: item.flavor.wholesalePrice ? Number(item.flavor.wholesalePrice) : null,
         } : null
       })) || []
     }));
+
+    // ==========================================
+    // FLAVORS CON PRECIOS (para tab de precios)
+    // ==========================================
+    let flavorsWithPricing: any[] = [];
+    try {
+      flavorsWithPricing = await db.flavor.findMany({
+        where: { isArchived: false },
+        include: {
+          priceScales: { orderBy: { minQuantity: 'asc' } },
+          discounts: { orderBy: { createdAt: 'desc' } },
+          priceHistory: { take: 5, orderBy: { createdAt: 'desc' } }
+        },
+        orderBy: { name: 'asc' }
+      }).then(flavors =>
+        flavors.map(f => ({
+          ...f,
+          price: Number(f.price || 0),
+          basePrice: Number(f.basePrice || 0),
+          wholesalePrice: f.wholesalePrice ? Number(f.wholesalePrice) : null,
+          priceScales: f.priceScales.map(ps => ({
+            ...ps,
+            price: Number(ps.price || 0)
+          })),
+          discounts: f.discounts.map(d => ({
+            ...d,
+            discountPercent: d.discountPercent || 0,
+            fixedPrice: d.fixedPrice ? Number(d.fixedPrice) : null,
+            validUntil: d.validUntil?.toISOString() || null
+          })),
+          priceHistory: f.priceHistory.map(ph => ({
+            ...ph,
+            oldBasePrice: Number(ph.oldBasePrice || 0),
+            newBasePrice: Number(ph.newBasePrice || 0),
+            oldWholesale: ph.oldWholesale ? Number(ph.oldWholesale) : null,
+            newWholesale: ph.newWholesale ? Number(ph.newWholesale) : null,
+            createdAt: ph.createdAt.toISOString()
+          }))
+        }))
+      );
+    } catch (err) {
+      console.error("Error fetching flavors with pricing:", err);
+      flavorsWithPricing = [];
+    }
 
     // ==========================================
     // DATA OBJECT FINAL
@@ -402,7 +457,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       allSubscriptions,
       users: usersList,
       clients,
-      orders: serializedOrders // Pasamos la versión limpia
+      orders: serializedOrders, // Pasamos la versión limpia
+      flavorsWithPricing
     };
 
     // Verificar que stats existe y tiene las propiedades requeridas y más
@@ -410,56 +466,22 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       throw new Error("Stats object is invalid");
     }
 
-    return (
-      <div className="min-h-screen bg-gray-50 text-gray-900 font-sans pb-20">
-        <header className="bg-white border-b sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-            <h1 className="text-xl font-black tracking-tight flex items-center gap-2">
-              <span className="bg-black text-white px-2 py-1 rounded text-sm">ADMIN</span> DASHBOARD
-            </h1>
-            <UserButton showName />
-          </div>
-        </header>
-
-        <AdminDashboard data={dataObject} />
-      </div>
-    );
+    return <AdminDashboard data={dataObject} />;
 
   } catch (error) {
     console.error("Critical error in AdminPage:", error);
-
-    // Render de error seguro
     return (
-      <div className="min-h-screen bg-gray-50 text-gray-900 font-sans pb-20">
-        <header className="bg-white border-b sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-            <h1 className="text-xl font-black tracking-tight flex items-center gap-2">
-              <span className="bg-red-600 text-white px-2 py-1 rounded text-sm">ERROR</span> ADMIN
-            </h1>
-            <UserButton showName />
-          </div>
-        </header>
-
-        <main className="max-w-7xl mx-auto p-6">
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-8">
-            <h2 className="text-2xl font-black text-red-800 mb-4">⚠️ Error al cargar el panel</h2>
-            <p className="text-red-700 mb-4">
-              Ocurrió un error inesperado al cargar los datos del administrador.
-            </p>
-            <details className="bg-white p-4 rounded border border-red-200">
-              <summary className="font-bold cursor-pointer text-red-700">Ver detalles del error</summary>
-              <pre className="mt-2 text-xs text-gray-600 overflow-auto">
-                {error instanceof Error ? error.message : String(error)}
-              </pre>
-            </details>
-            <button
-
-              className="mt-6 bg-red-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-red-700"
-            >
-              🔄 Recargar página
-            </button>
-          </div>
-        </main>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-8 max-w-lg w-full">
+          <h2 className="text-2xl font-black text-red-800 mb-4">Error al cargar el panel</h2>
+          <p className="text-red-700 mb-4">Ocurrió un error inesperado al cargar los datos.</p>
+          <details className="bg-white p-4 rounded border border-red-200">
+            <summary className="font-bold cursor-pointer text-red-700">Ver detalles</summary>
+            <pre className="mt-2 text-xs text-gray-600 overflow-auto">
+              {error instanceof Error ? error.message : String(error)}
+            </pre>
+          </details>
+        </div>
       </div>
     );
   }

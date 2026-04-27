@@ -41,11 +41,22 @@ export default async function PosPage() {
     id: f.id,
     name: f.name,
     price: Number(f.price),
+    basePrice: Number(f.basePrice || f.price),
+    wholesalePrice: f.wholesalePrice ? Number(f.wholesalePrice) : null,
+    minimumWholesale: f.minimumWholesale ?? 50,
     unitCount: f.unitCount,
     locationStocks: f.locationStocks.map(s => ({
-      ...s,
+      locationId: s.locationId,
       quantity: Number(s.quantity)
     }))
+  }));
+
+  const sanitizedClients = (await db.client.findMany({ orderBy: { fullName: "asc" } })).map(c => ({
+    id: c.id,
+    fullName: c.fullName,
+    email: c.email,
+    phone: c.phone || "",
+    classification: c.classification,
   }));
 
   const sanitizedRecentSales = recentSales.map(sale => ({
@@ -67,7 +78,7 @@ export default async function PosPage() {
         locations={locations}
         products={products}
         flavors={flavors}
-        clients={clients} // <--- Pasamos los clientes
+        clients={sanitizedClients}
         recentSales={sanitizedRecentSales}
         userEmail={user.emailAddresses[0].emailAddress}
       />

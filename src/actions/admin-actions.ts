@@ -149,8 +149,20 @@ export async function updateFlavorPrice(formData: FormData) {
   const adminEmail = formData.get("adminEmail") as string;
   const currentFlavor = await db.flavor.findUnique({ where: { id: flavorId } });
   if (!currentFlavor || Number(currentFlavor.price) === newPrice) return;
-  await db.flavorPriceHistory.create({ data: { flavorId, oldPrice: currentFlavor.price, newPrice, userId: adminEmail } });
-  await db.flavor.update({ where: { id: flavorId }, data: { price: newPrice } });
+
+  const { Decimal } = require("@prisma/client/runtime/library");
+  const oldPriceDecimal = new Decimal(currentFlavor.price || 0);
+  const newPriceDecimal = new Decimal(newPrice);
+
+  await db.flavorPriceHistory.create({
+    data: {
+      flavorId,
+      oldBasePrice: oldPriceDecimal,
+      newBasePrice: newPriceDecimal,
+      userId: adminEmail
+    }
+  });
+  await db.flavor.update({ where: { id: flavorId }, data: { price: newPrice, basePrice: newPrice } });
   revalidatePath("/admin");
 }
 

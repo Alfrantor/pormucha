@@ -8,22 +8,109 @@ datasource db {
 }
 
 model Client {
-  id            String         @id @default(cuid())
-  clerkUserId   String?        @unique
-  fullName      String
-  email         String         @unique
-  phone         String?
-  street        String?
-  number        String?
-  zipCode       String?
-  city          String?
-  state         String?
-  neighborhood  String?
-  reference     String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  orders        Order[]
-  subscriptions Subscription[]
+  id                    String                @id @default(cuid())
+  clerkUserId           String?               @unique
+
+  // Tipo de cliente
+  type                  String                @default("FISICA") // FISICA | JURIDICA
+
+  // Datos personales/básicos
+  fullName              String                // Nombre para persona física
+  email                 String                @unique
+  phone                 String?
+
+  // Datos fiscales (CLAVE para México)
+  rfc                   String?               // Registro Federal del Contribuyente
+  businessName          String?               // Razón Social (para jurídicas)
+  curp                  String?               // CURP (para personas físicas)
+
+  // Clasificación comercial
+  classification        String                @default("MINORISTA") // MINORISTA | MAYORISTA | DISTRIBUIDOR
+
+  // Crédito
+  creditLimit           Decimal               @default(0)
+  creditUsed            Decimal               @default(0)
+  paymentTerms          Int?                  // Días de pago (30, 60, 90)
+
+  // Descuentos
+  globalDiscount        Int?                  // Descuento % global
+
+  // Datos de contacto adicionales
+  contactName           String?
+  contactPhone          String?
+  contactEmail          String?
+
+  // Información bancaria
+  bankName              String?
+  accountNumber         String?
+
+  // Estatus
+  status                String                @default("ACTIVO") // ACTIVO | INACTIVO | BLOQUEADO
+
+  // Direcciones
+  addresses             Address[]
+  defaultAddressId      String?
+
+  // Relaciones
+  orders                Order[]
+  subscriptions         Subscription[]
+  credits               Credit[]
+  interactions          ClientInteraction[]
+  flavorDiscounts       FlavorDiscount[]      @relation("FlavorDiscountClient")
+
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+}
+
+model Address {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  type         String   @default("ENVIO") // FISCAL | ENVIO | OFICINA
+  street       String
+  number       String
+  city         String
+  state        String
+  zipCode      String
+  country      String   @default("MX")
+  reference    String?
+
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+model Credit {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  amount    Decimal
+  dueDate   DateTime
+  status    String   @default("PENDING") // PENDING | PAID | OVERDUE | CANCELLED
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model ClientInteraction {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  type      String   // LLAMADA | EMAIL | VISITA | NOTA | OTRO
+  note      String
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
 }
 
 model Location {
@@ -51,19 +138,68 @@ model Stock {
 }
 
 model Flavor {
-  id             String               @id @default(cuid())
-  name           String
-  slug           String               @unique
-  image          String?
-  price          Decimal              @default(0)
-  isArchived     Boolean              @default(false)
-  priceHistory   FlavorPriceHistory[]
-  movements      InventoryMovement[]
-  orderItems     OrderItem[]
-  locationStocks Stock[]
-  transfers      Transfer[]
-  unitCount     Int      @default(6)
+  id                   String                @id @default(cuid())
+  name                 String
+  slug                 String                @unique
+  image                String?
+
+  // Precios - Compatibilidad con BD existente + nuevos
+  price                Decimal?              @default(0) // Campo original (se usa como basePrice)
+  basePrice            Decimal?              @default(0) // Precio minorista
+  wholesalePrice       Decimal?              // Precio mayorista (opcional)
+  minimumWholesale     Int                   @default(50) // Cantidad mínima para aplicar mayoreo
+
+  // Escalas y descuentos
+  priceScales          FlavorPriceScale[]
+  discounts            FlavorDiscount[]
+
+  isArchived           Boolean               @default(false)
+  priceHistory         FlavorPriceHistory[]
+  movements            InventoryMovement[]
+  orderItems           OrderItem[]
+  locationStocks       Stock[]
+  transfers            Transfer[]
+  unitCount            Int                   @default(6)
   orderItemCompositions OrderItemComposition[]
+}
+
+model FlavorPriceScale {
+  id            String   @id @default(cuid())
+  flavorId      String
+  flavor        Flavor   @relation(fields: [flavorId], references: [id], onDelete: Cascade)
+
+  minQuantity   Int      // A partir de X unidades
+  maxQuantity   Int?     // Hasta Y unidades (null = sin límite)
+  price         Decimal  // Precio en este rango
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([flavorId, minQuantity])
+  @@index([flavorId])
+}
+
+model FlavorDiscount {
+  id              String   @id @default(cuid())
+  flavorId        String
+  flavor          Flavor   @relation(fields: [flavorId], references: [id], onDelete: Cascade)
+
+  // Puede ser por clasificación o por cliente específico
+  applicableTo    String   // "TODAS" | "MAYORISTA" | "DISTRIBUIDOR" | "MINORISTA" | "CLIENTE"
+  clientId        String?
+  client          Client?  @relation("FlavorDiscountClient", fields: [clientId], references: [id], onDelete: Cascade)
+
+  discountPercent Int?     // Descuento %
+  fixedPrice      Decimal? // O precio fijo
+
+  validFrom       DateTime @default(now())
+  validUntil      DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([flavorId])
+  @@index([clientId])
 }
 
 model InventoryMovement {
@@ -80,13 +216,20 @@ model InventoryMovement {
 }
 
 model FlavorPriceHistory {
-  id        String   @id @default(cuid())
-  flavorId  String
-  oldPrice  Decimal
-  newPrice  Decimal
-  userId    String?
-  createdAt DateTime @default(now())
-  flavor    Flavor   @relation(fields: [flavorId], references: [id])
+  id              String   @id @default(cuid())
+  flavorId        String
+  flavor          Flavor   @relation(fields: [flavorId], references: [id], onDelete: Cascade)
+
+  oldBasePrice    Decimal
+  newBasePrice    Decimal
+  oldWholesale    Decimal?
+  newWholesale    Decimal?
+
+  userId          String?
+  changeReason    String?  // "Ajuste mercado" | "Promoción" | etc
+  createdAt       DateTime @default(now())
+
+  @@index([flavorId])
 }
 
 model Product {

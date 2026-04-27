@@ -18,7 +18,8 @@ export default async function PerfilPage() {
     const userEmail = user.emailAddresses[0].emailAddress;
 
     const cliente = await db.client.findUnique({
-        where: { clerkUserId: userId } // Búsqueda perfecta y exacta por ID
+        where: { clerkUserId: userId }, // Búsqueda perfecta y exacta por ID
+        include: { addresses: true }
     });
 
     const subscriptions = cliente ? await db.subscription.findMany({
@@ -35,8 +36,9 @@ export default async function PerfilPage() {
         price: flavor.price ? Number(flavor.price) : 0,
     }));
 
-    // NUEVA CONDICIÓN MÁS SIMPLE: Si tiene calle, asumimos que tiene dirección
-    const hasAddress = Boolean(cliente?.street);
+    // Buscar dirección de envío
+    const shippingAddress = cliente?.addresses?.find((addr) => addr.type === "ENVIO");
+    const hasAddress = Boolean(shippingAddress);
 
     return (
         <div className="max-w-7xl mx-auto p-6 pt-24 min-h-screen bg-[#FDFCF9]">
@@ -131,12 +133,10 @@ export default async function PerfilPage() {
                         {hasAddress ? (
                             <div className="text-sm text-gray-700 space-y-2 bg-[#FDFCF9] p-5 rounded-2xl border border-gray-100">
                                 <p className="font-bold text-gray-900 text-base">{user.firstName} {user.lastName}</p>
-                                {/* LEEMOS DIRECTAMENTE DE LOS CAMPOS INDIVIDUALES */}
-                                <p>{cliente?.street} {cliente?.number}</p>
-                                <p>{cliente?.neighborhood}</p>
-                                <p>{cliente?.city}, {cliente?.state}</p>
-                                <p>C.P. {cliente?.zipCode}</p>
-                                {cliente?.reference && <p className="text-gray-500 italic mt-2">Ref: {cliente.reference}</p>}
+                                <p>{shippingAddress?.street} {shippingAddress?.number}</p>
+                                <p>{shippingAddress?.city}, {shippingAddress?.state}</p>
+                                <p>C.P. {shippingAddress?.zipCode}</p>
+                                {shippingAddress?.reference && <p className="text-gray-500 italic mt-2">Ref: {shippingAddress.reference}</p>}
                                 <div className="mt-4 pt-3 border-t border-gray-200">
                                     <p className="font-medium bg-gray-100 inline-block px-3 py-1.5 rounded-lg text-xs tracking-widest uppercase">
                                         📞 {cliente?.phone || "Sin teléfono"}

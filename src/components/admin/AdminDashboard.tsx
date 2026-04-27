@@ -1,11 +1,18 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { BarChart3, Package, Repeat, Users, ShoppingBag, Truck, ShieldCheck, Contact2 } from "lucide-react";
+import Link from "next/link";
+import {
+  BarChart3, Package, Repeat, Users, ShoppingBag, Truck, Contact2, DollarSign,
+  ShoppingCart, ChevronRight, LayoutDashboard, Package2, UserCog, Menu, MonitorCheck,
+} from "lucide-react";
+import { UserButton } from "@clerk/nextjs";
 import { TogglePlanBtn } from "@/components/admin/toggle-plan-btn";
 import { DateRangeFilter } from "@/components/admin/date-range-filter";
 import { TabEnvios } from "@/components/admin/TabEnvios";
 import UserManagement from "@/components/admin/UserManagement";
+import { ClientsTable } from "@/components/admin/ClientsTable";
+import { PricingManager } from "@/components/admin/PricingManager";
 import { toggleStatus } from "@/actions/toggle-status";
 import {
   createLocation, registerMovement, updatePackPrice, updateFlavorPrice,
@@ -16,23 +23,34 @@ import {
 import { generateShippingLabel } from "@/actions/admin-actions";
 
 // ---- Types ----
-type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes";
+type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios";
 
 interface Tab {
   id: TabId;
   label: string;
   icon: React.ReactNode;
+  group: string;
 }
 
 const TABS: Tab[] = [
-  { id: "dashboard", label: "📊 Dashboard", icon: <BarChart3 size={18} /> },
-  { id: "inventario", label: "📦 Inventario", icon: <Package size={18} /> },
-  { id: "envios", label: "🚚 Traspasos", icon: <Truck size={18} /> },
-  { id: "productos", label: "🏷️ Productos", icon: <ShoppingBag size={18} /> },
-  { id: "suscripciones", label: "🔄 Suscripciones", icon: <Repeat size={18} /> },
-  { id: "leads", label: "👥 Leads", icon: <Users size={18} /> },
-  { id: "clientes", label: "👤 Clientes", icon: <Contact2 size={18} /> },
-  { id: "pedidos", label: "🛒 Pedidos", icon: <ShoppingBag size={18} /> },
+  { id: "dashboard",    label: "Dashboard",     icon: <LayoutDashboard size={15} />, group: "general" },
+  { id: "inventario",   label: "Inventario",    icon: <Package size={15} />,         group: "operaciones" },
+  { id: "envios",       label: "Traspasos",     icon: <Truck size={15} />,           group: "operaciones" },
+  { id: "pedidos",      label: "Pedidos",       icon: <ShoppingCart size={15} />,    group: "operaciones" },
+  { id: "productos",    label: "Productos",     icon: <Package2 size={15} />,        group: "catalogo" },
+  { id: "precios",      label: "Precios",       icon: <DollarSign size={15} />,      group: "catalogo" },
+  { id: "suscripciones",label: "Suscripciones", icon: <Repeat size={15} />,          group: "catalogo" },
+  { id: "clientes",     label: "Clientes",      icon: <Contact2 size={15} />,        group: "crm" },
+  { id: "leads",        label: "Leads",         icon: <Users size={15} />,           group: "crm" },
+  { id: "usuarios",     label: "Staff",         icon: <UserCog size={15} />,         group: "config" },
+];
+
+const GROUPS: { id: string; label: string }[] = [
+  { id: "general",     label: "General" },
+  { id: "operaciones", label: "Operaciones" },
+  { id: "catalogo",    label: "Catálogo" },
+  { id: "crm",         label: "CRM" },
+  { id: "config",      label: "Configuración" },
 ];
 
 /**
@@ -45,6 +63,7 @@ const TABS: Tab[] = [
  */
 export default function AdminDashboard({ data }: { data: any }) {
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
   // ==========================================
   // 🛡️ VALIDACIÓN DEFENSIVA NIVEL 1
@@ -119,57 +138,151 @@ export default function AdminDashboard({ data }: { data: any }) {
     allSubscriptions = [],
     users = [],
     clients = [],
-    orders = []
+    orders = [],
+    flavorsWithPricing = []
   } = data;
 
-  // Memoize para evitar re-renders innecesarios
   const memoizedStats = useMemo(() => stats, [stats]);
+  const activeTabInfo = TABS.find(t => t.id === activeTab);
 
   return (
-    <>
-      {/* TAB BAR */}
-      <nav className="bg-white border-b sticky top-[65px] z-40 overflow-x-auto">
-        <div className="max-w-7xl mx-auto px-6 flex gap-1">
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-5 py-3 text-sm font-bold tracking-wide uppercase border-b-2 transition-all whitespace-nowrap ${activeTab === tab.id
-                ? "border-black text-black"
-                : "border-transparent text-gray-400 hover:text-gray-700 hover:border-gray-200"
-                }`}
-            >
-              {tab.icon}
-              <span className="hidden md:inline">{tab.label}</span>
-            </button>
-          ))}
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      {/* Mobile backdrop */}
+      {showMobileSidebar && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 md:hidden"
+          onClick={() => setShowMobileSidebar(false)}
+        />
+      )}
+
+      {/* ═══════════════════ SIDEBAR ═══════════════════ */}
+      <aside className={[
+        "bg-zinc-950 flex flex-col flex-shrink-0 overflow-y-auto transition-transform duration-300",
+        // Mobile: fixed overlay, toggled by state
+        "fixed inset-y-0 left-0 z-50 w-64",
+        showMobileSidebar ? "translate-x-0" : "-translate-x-full",
+        // Tablet: static, icon-only width
+        "md:relative md:translate-x-0 md:w-14",
+        // Desktop: full width
+        "lg:w-56 xl:w-64",
+      ].join(" ")}>
+        {/* Logo */}
+        <div className="px-3 lg:px-5 py-5 lg:py-6 border-b border-white/10">
+          <div className="flex items-center gap-3 justify-center lg:justify-start">
+            <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shrink-0">
+              <span className="text-zinc-950 font-black text-xs">P</span>
+            </div>
+            <div className="min-w-0 hidden lg:block">
+              <p className="text-white font-black text-sm tracking-tight leading-none">Pormucha</p>
+              <p className="text-zinc-500 text-[11px] mt-0.5">Panel Admin</p>
+            </div>
+          </div>
         </div>
-      </nav>
 
+        {/* Navigation */}
+        <nav className="flex-1 px-1.5 lg:px-3 py-5 space-y-4 lg:space-y-5 overflow-y-auto">
+          {GROUPS.map(group => {
+            const groupTabs = TABS.filter(t => t.group === group.id);
+            if (groupTabs.length === 0) return null;
+            return (
+              <div key={group.id}>
+                <p className="text-zinc-600 text-[10px] font-bold uppercase tracking-widest mb-1.5 px-2 hidden lg:block">
+                  {group.label}
+                </p>
+                <div className="space-y-0.5">
+                  {groupTabs.map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => { setActiveTab(tab.id); setShowMobileSidebar(false); }}
+                      title={tab.label}
+                      className={`w-full flex items-center justify-center lg:justify-start gap-3 px-2 lg:px-3 py-2.5 rounded-lg text-sm transition-all ${
+                        activeTab === tab.id
+                          ? "bg-white text-zinc-950 font-semibold shadow-sm"
+                          : "text-zinc-400 hover:text-white hover:bg-white/10 font-medium"
+                      }`}
+                    >
+                      <span className={activeTab === tab.id ? "text-zinc-700" : "text-zinc-500"}>
+                        {tab.icon}
+                      </span>
+                      <span className="flex-1 text-left text-[13px] hidden lg:block">{tab.label}</span>
+                      {activeTab === tab.id && <ChevronRight size={12} className="text-zinc-400 hidden lg:block" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
 
+        {/* User */}
+        <div className="px-2 lg:px-4 py-4 border-t border-white/10">
+          <div className="flex items-center gap-3 justify-center lg:justify-start">
+            <UserButton />
+            <div className="min-w-0 hidden lg:block">
+              <p className="text-zinc-300 text-xs font-semibold leading-none">Administrador</p>
+              <p className="text-zinc-600 text-[10px] mt-0.5">Panel de control</p>
+            </div>
+          </div>
+        </div>
+      </aside>
 
-      <main className="max-w-7xl mx-auto p-6 space-y-8">
-        {activeTab === "dashboard" && (
-          <TabVentas {...{ stats: memoizedStats, topFlavors, topPacks, totalFlavorsSold, totalPacksSold, from, to }} />
-        )}
-        {activeTab === "inventario" && (
-          <TabInventario {...{ activeFlavors, activeLocations, allLocations, userEmail }} />
-        )}
-        {activeTab === "envios" && (
-          <TabEnvios {...{ activeFlavors, activeLocations, transfers, userEmail }} />
-        )}
-        {activeTab === "suscripciones" && (
-          <TabSuscripciones {...{ allPlans, allProducts, allSubscriptions }} />
-        )}
-        {activeTab === "leads" && <TabLeads leads={leads} />}
-        {activeTab === "productos" && (
-          <TabProductos {...{ allProducts, allFlavors, priceHistory, userEmail }} />
-        )}
-        {activeTab === "usuarios" && <TabUsuarios users={users} />}
-        {activeTab === "pedidos" && <TabPedidos orders={orders} />}
-        {activeTab === "clientes" && <TabClientes clients={clients} />}
-      </main>
-    </>
+      {/* ═══════════════════ MAIN AREA ═══════════════════ */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Breadcrumb header */}
+        <header className="bg-white border-b px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between shrink-0 gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Hamburger — only visible on mobile */}
+            <button
+              onClick={() => setShowMobileSidebar(true)}
+              className="md:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors -ml-1"
+            >
+              <Menu size={18} />
+            </button>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-gray-400 hidden sm:inline">Admin</span>
+              <ChevronRight size={14} className="text-gray-300 hidden sm:inline" />
+              <span className="text-gray-900 font-semibold">{activeTabInfo?.label}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full font-medium hidden md:block">
+              {new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}
+            </span>
+            <Link
+              href="/pos"
+              className="flex items-center gap-1.5 text-xs font-bold text-white bg-gray-900 hover:bg-black px-3 sm:px-4 py-2 rounded-xl transition-all shadow-sm active:scale-95 shrink-0"
+            >
+              <MonitorCheck size={14} />
+              <span className="hidden sm:inline">Ir al POS</span>
+            </Link>
+          </div>
+        </header>
+
+        {/* Scrollable content */}
+        <main className="flex-1 overflow-y-auto p-6 xl:p-8 space-y-8">
+          {activeTab === "dashboard" && (
+            <TabVentas {...{ stats: memoizedStats, topFlavors, topPacks, totalFlavorsSold, totalPacksSold, from, to }} />
+          )}
+          {activeTab === "inventario" && (
+            <TabInventario {...{ activeFlavors, activeLocations, allLocations, userEmail }} />
+          )}
+          {activeTab === "envios" && (
+            <TabEnvios {...{ activeFlavors, activeLocations, transfers, userEmail }} />
+          )}
+          {activeTab === "suscripciones" && (
+            <TabSuscripciones {...{ allPlans, allProducts, allSubscriptions }} />
+          )}
+          {activeTab === "leads" && <TabLeads leads={leads} />}
+          {activeTab === "productos" && (
+            <TabProductos {...{ allProducts, allFlavors, priceHistory, userEmail }} />
+          )}
+          {activeTab === "usuarios" && <TabUsuarios users={users} />}
+          {activeTab === "clientes" && <TabClientes clients={clients} />}
+          {activeTab === "precios" && <TabPrecios flavors={flavorsWithPricing} />}
+          {activeTab === "pedidos" && <TabPedidos orders={orders} />}
+        </main>
+      </div>
+    </div>
   );
 }
 
@@ -335,8 +448,10 @@ function TabClientes({ clients }: { clients: any[] }) {
     return (
       <section className="space-y-6">
         <div>
-          <h2 className="text-2xl font-black italic">Base de Datos de Clientes</h2>
-          <p className="text-sm text-gray-400 mt-1">Información de direcciones y contacto.</p>
+          <h2 className="text-2xl font-black italic">Gestión de Clientes ERP</h2>
+          <p className="text-sm text-gray-400 mt-1">
+            Administra clientes, direcciones, créditos y descuentos.
+          </p>
         </div>
         <div className="p-10 border-2 border-dashed rounded-3xl text-center text-gray-400">
           Error al cargar clientes.
@@ -348,55 +463,87 @@ function TabClientes({ clients }: { clients: any[] }) {
   return (
     <section className="space-y-6">
       <div>
-        <h2 className="text-2xl font-black italic">Base de Datos de Clientes</h2>
+        <h2 className="text-2xl font-black italic">Gestión de Clientes ERP</h2>
         <p className="text-sm text-gray-400 mt-1">
-          Información recolectada de la tabla client (direcciones y contacto).
+          RFC, razón social, clasificación, crédito, múltiples direcciones y descuentos.
         </p>
       </div>
 
-      <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-gray-50 text-[10px] uppercase font-black text-gray-500 border-b">
-              <th className="px-6 py-4">Cliente / Email</th>
-              <th className="px-6 py-4">Teléfono</th>
-              <th className="px-6 py-4">Ubicación</th>
-              <th className="px-6 py-4">Referencia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.length > 0 ? (
-              clients.map((c: any) => (
-                <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
-                  <td className="px-6 py-4">
-                    <p className="font-bold text-gray-900">{c.fullName || "S/N"}</p>
-                    <p className="text-xs text-blue-600 font-medium">{c.email || "S/E"}</p>
-                  </td>
-                  <td className="px-6 py-4 text-sm font-bold text-gray-700">
-                    {c.phone || "---"}
-                  </td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm font-medium">
-                      {c.street || ""} {c.number || ""}
-                    </p>
-                    <p className="text-[10px] text-gray-400 uppercase font-bold tracking-tight">
-                      {c.neighborhood || ""}, {c.city || ""}, {c.state || ""}
-                    </p>
-                  </td>
-                  <td className="px-6 py-4 text-[11px] text-gray-500 italic max-w-xs">
-                    {c.reference || "Sin referencias"}
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={4} className="p-10 text-center text-gray-400 italic">
-                  No hay registros en la tabla de clientes.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <ClientsTable clients={clients} total={clients.length} />
+    </section>
+  );
+}
+
+// =====================================================================
+// TAB: GESTIÓN DE PRECIOS
+// =====================================================================
+function TabPrecios({ flavors }: { flavors: any[] }) {
+  const [selectedFlavorId, setSelectedFlavorId] = useState<string | null>(null);
+
+  if (!Array.isArray(flavors) || flavors.length === 0) {
+    return (
+      <section className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-black italic">Gestión de Precios</h2>
+          <p className="text-sm text-gray-400 mt-1">
+            Configura precios base, escalas de cantidad y descuentos por cliente.
+          </p>
+        </div>
+        <div className="p-10 border-2 border-dashed rounded-3xl text-center text-gray-400">
+          No hay flavores disponibles.
+        </div>
+      </section>
+    );
+  }
+
+  const selectedFlavor = selectedFlavorId
+    ? flavors.find((f) => f.id === selectedFlavorId)
+    : null;
+
+  return (
+    <section className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-black italic">Gestión de Precios</h2>
+        <p className="text-sm text-gray-400 mt-1">
+          Precios base, escalas dinámicas por cantidad y descuentos por clasificación.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Listado de Flavores */}
+        <div className="bg-white rounded-xl border shadow-sm p-6 h-fit">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Flavores</h3>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {flavors.map((flavor: any) => (
+              <button
+                key={flavor.id}
+                onClick={() => setSelectedFlavorId(flavor.id)}
+                className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                  selectedFlavor?.id === flavor.id
+                    ? "bg-blue-50 border-blue-200 text-blue-900 font-semibold"
+                    : "hover:bg-gray-50 border-gray-200 text-gray-900"
+                }`}
+              >
+                <p className="font-medium truncate">{flavor.name}</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  ${flavor.basePrice?.toFixed(2) || "0.00"}
+                </p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Panel de configuración */}
+        <div className="lg:col-span-3">
+          {selectedFlavor ? (
+            <PricingManager flavor={selectedFlavor} />
+          ) : (
+            <div className="bg-white rounded-xl border shadow-sm p-6 text-center text-gray-500">
+              <p className="text-lg font-semibold mb-2">Selecciona un flavor</p>
+              <p className="text-sm">Haz clic en un flavor para gestionar sus precios</p>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
