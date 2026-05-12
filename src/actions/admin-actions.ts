@@ -293,18 +293,33 @@ export async function generateShippingLabel(orderId: string) {
 
     if (!order) throw new Error("Orden no encontrada");
 
-    // 1. OBTENER TOKEN
-    const tokenRes = await fetch("https://pro.skydropx.com/api/v1/oauth/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        grant_type: "client_credentials",
-        client_id: process.env.SKYDROPX_CLIENT_ID,
-        client_secret: process.env.SKYDROPX_CLIENT_SECRET,
-      }),
-    });
-    const tokenData = await tokenRes.json();
-    const bearerToken = tokenData.access_token;
+    // 1. OBTENER TOKEN (con fallback a form-urlencoded)
+    let bearerToken: string | null = null;
+
+    const tokenAttempts = [
+      { url: "https://pro.skydropx.com/api/v1/oauth/token",    contentType: "application/json" },
+      { url: "https://sb-pro.skydropx.com/api/v1/oauth/token", contentType: "application/json" },
+    ];
+
+    for (const attempt of tokenAttempts) {
+      try {
+        const res = await fetch(attempt.url, {
+          method: "POST",
+          headers: { "Content-Type": attempt.contentType, "Accept": "application/json" },
+          body: JSON.stringify({
+            grant_type: "client_credentials",
+            client_id: process.env.SKYDROPX_CLIENT_ID,
+            client_secret: process.env.SKYDROPX_CLIENT_SECRET,
+          }),
+        });
+        if (res.ok) {
+          const d = await res.json();
+          if (d.access_token) { bearerToken = d.access_token; break; }
+        }
+      } catch {}
+    }
+
+    if (!bearerToken) throw new Error("No se pudo obtener token de Skydropx. Verifica tus credenciales.");
 
     // 2. COTIZAR (Para obtener el rate_id fresco)
     const totalWeight = order.orderItems.reduce((sum, i) => sum + Number(i.product?.weight || 1), 0);
@@ -342,13 +357,16 @@ export async function generateShippingLabel(orderId: string) {
 
     if (!freshRateId) throw new Error("No se encontró tarifa vigente.");
 
-    // 3. CREAR ENVÍO (Basado exactamente en tu manual: POST /api/v1/shipments/)
+    // Sanitizar teléfono destino: solo dígitos, mínimo 10 caracteres
+    const rawPhone = String(order.phone || "").replace(/\D/g, "");
+    const sanitizedPhone = rawPhone.length >= 10 ? rawPhone : rawPhone.padEnd(10, "0");
+
+    // 3. CREAR ENVÍO
     console.log(`🚚 Confirmando envío PRO con Rate ID: ${freshRateId}`);
 
-    const shipmentBody = {
+    const shipmentBody: any = {
       shipment: {
         rate_id: freshRateId,
-        headquarter_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", // <--- METE EL ID AQUÍ
         printing_format: "standard",
         address_from: {
           country_code: "MX",
@@ -356,8 +374,8 @@ export async function generateShippingLabel(orderId: string) {
           area_level1: "Campeche",
           area_level2: "Campeche",
           area_level3: "Samulá",
-          street1: "Siete",           // Calle exacta del dashboard
-          apartment_number: "25",     // Número interior separado
+          street1: "Siete",
+          apartment_number: "25",
           name: "Alfredo Andrés Pérez Toralla",
           company: "Pormucha",
           phone: "9811234567",
@@ -372,22 +390,30 @@ export async function generateShippingLabel(orderId: string) {
           area_level3: order.neighborhood || "Centro",
           street1: order.street,
           name: order.fullName,
-          company: order.fullName, // Campo Requerido en PRO
-          phone: order.phone || "0000000000",
+          company: order.fullName,
+          phone: sanitizedPhone,
           email: order.email,
           reference: "Entrega a domicilio"
         },
         packages: [
           {
-            package_number: 1, // Índice del paquete cotizado
+            package_number: 1,
             package_protected: false,
-            declared_value: 0,
-            package_type: "4G", // Valor estándar según tu manual
-            consignment_note: "50202300" // Bebidas no alcohólicas (El ganador para tu Kombucha)
+            declared_value: Number(order.total),
+            total: Number(order.total),
+            package_type: "4G",
+            consignment_note: "50202300"
           }
         ]
       }
     };
+
+    // Si el headquarter está configurado en .env, incluirlo
+    if (process.env.SKYDROPX_HEADQUARTER_ID) {
+      shipmentBody.shipment.headquarter_id = process.env.SKYDROPX_HEADQUARTER_ID;
+    }
+
+    console.log("🚚 Enviando shipment a Skydropx:", JSON.stringify(shipmentBody, null, 2));
 
     const response = await fetch("https://pro.skydropx.com/api/v1/shipments/", {
       method: "POST",
@@ -399,11 +425,16 @@ export async function generateShippingLabel(orderId: string) {
       body: JSON.stringify(shipmentBody)
     });
 
-    const data = await response.json();
+    const rawText = await response.text();
+    console.log(`📬 Respuesta Skydropx HTTP ${response.status}:`, rawText);
+
+    let data: any;
+    try { data = JSON.parse(rawText); } catch { throw new Error(`Respuesta inválida de Skydropx: ${rawText.slice(0, 200)}`); }
 
     if (!response.ok) {
-      console.error("❌ Error de Skydropx PRO:", JSON.stringify(data, null, 2));
-      throw new Error(data.error || data.message || "Error al confirmar el envío.");
+      const detail = JSON.stringify(data);
+      console.error("❌ Error de Skydropx PRO:", detail);
+      throw new Error(`Skydropx error ${response.status}: ${detail}`);
     }
 
     // 4. EXTRAER DATOS (Según el esquema de respuesta del manual)

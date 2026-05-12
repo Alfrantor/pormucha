@@ -24,21 +24,21 @@ export default function StoreGrid({ packs, flavors }: { packs: any[], flavors: a
                 <>
                     {/* ... Toggle de suscripción ... */}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="flex flex-wrap justify-center gap-6">
                         {packs.map((pack) => (
-                            <PackCard
-                                key={pack.id}
-                                id={pack.id}
-                                nombre={pack.name}
-                                capacidad={pack.quantity}
-                                precio={Number(pack.price)}
-                                clubDiscountPercent={pack.clubDiscountPercent}
-                                isSubscriptionMode={isSubscription}
-                                flavors={flavors}
-                                // USAMOS TU FUNCIÓN AQUÍ:
-                                imagenUrl={getImage(pack.quantity)}
-                                onSelect={() => setActivePack(pack)}
-                            />
+                            <div key={pack.id} className="w-full md:w-[calc(50%-12px)] lg:w-[calc(25%-18px)]">
+                                <PackCard
+                                    id={pack.id}
+                                    nombre={pack.name}
+                                    capacidad={pack.quantity}
+                                    precio={Number(pack.price)}
+                                    clubDiscountPercent={pack.clubDiscountPercent}
+                                    isSubscriptionMode={isSubscription}
+                                    flavors={flavors}
+                                    imagenUrl={getImage(pack.quantity)}
+                                    onSelect={() => setActivePack(pack)}
+                                />
+                            </div>
                         ))}
                     </div>
                 </>

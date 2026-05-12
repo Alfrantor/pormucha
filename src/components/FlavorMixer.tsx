@@ -1,16 +1,49 @@
 "use client";
 import { useState } from "react";
 import { ArrowLeft, Plus, Minus, ShoppingCart } from "lucide-react";
+import { useCart } from "@/context/CartContext";
+import { useRouter } from "next/navigation";
 
 export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: any) {
-    // Estado para las cantidades de cada sabor
-    // Iniciamos en 0 para todos
+    const { addToCart } = useCart();
+    const router = useRouter();
+
     const [selections, setSelections] = useState<{ [key: string]: number }>(
         flavors.reduce((acc: any, f: any) => ({ ...acc, [f.id]: 0 }), {})
     );
 
     const totalSelected = Object.values(selections).reduce((a, b) => a + b, 0);
     const isComplete = totalSelected === pack.quantity;
+
+    const handleAddToCart = () => {
+        if (!isComplete) return;
+
+        if (isSubscription) {
+            // Suscripción: ir directo al checkout del plan
+            router.push(`/api/checkout-plan?planId=${pack.id}`);
+            return;
+        }
+
+        // Compra única: armar composition y agregar al carrito
+        const composition = flavors
+            .filter((f: any) => selections[f.id] > 0)
+            .map((f: any) => ({
+                flavorId: f.id,
+                name: f.name,
+                quantity: selections[f.id],
+            }));
+
+        addToCart({
+            id: pack.id,
+            name: pack.name,
+            price: pack.price,
+            quantity: 1,
+            flavors: selections,
+            composition,
+        });
+
+        router.push("/checkout");
+    };
 
     const updateQuantity = (id: string, delta: number) => {
         setSelections(prev => {
@@ -77,6 +110,7 @@ export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: a
             {/* Botón de Acción Final */}
             <div className="flex justify-center">
                 <button
+                    onClick={handleAddToCart}
                     disabled={!isComplete}
                     className={`flex items-center gap-3 px-12 py-4 rounded-full font-bold uppercase tracking-widest transition-all shadow-xl ${isComplete
                             ? 'bg-[#1A1A1A] text-[#EBDAAB] hover:scale-105 active:scale-95'
@@ -84,7 +118,7 @@ export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: a
                         }`}
                 >
                     <ShoppingCart size={20} />
-                    Agregar al Carrito
+                    {isSubscription ? "Suscribirme" : "Agregar al Carrito"}
                 </button>
             </div>
         </div>

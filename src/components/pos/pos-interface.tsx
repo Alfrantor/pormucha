@@ -38,6 +38,7 @@ export const PosInterface = ({
   const [showPackModal, setShowPackModal] = useState<any>(null);
   const [packSelection, setPackSelection] = useState<Record<string, number>>({});
   const [showMobileCart, setShowMobileCart] = useState(false);
+  const [serviceFee, setServiceFee] = useState<number>(0);
 
   // ─── Pricing ─────────────────────────────────────────────────────────────
   const getFlavorPrice = (flavor: any) =>
@@ -64,7 +65,7 @@ export const PosInterface = ({
 
   const isCourtesy = paymentMethod === "COURTESY";
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-  const chargedTotal = isCourtesy ? 0 : cartTotal;
+  const chargedTotal = isCourtesy ? 0 : cartTotal + serviceFee;
   const cartItemCount = cart.reduce((a, b) => a + b.quantity, 0);
 
   // ─── Cart ─────────────────────────────────────────────────────────────────
@@ -143,6 +144,8 @@ export const PosInterface = ({
           paymentMethod,
           status: paymentMethod === "CONSIGNMENT" ? "PENDING" : "PAID",
           total: chargedTotal,
+          subtotal: cartTotal,
+          serviceFee,
           originalTotal: cartTotal,
         }),
       });
@@ -159,6 +162,7 @@ export const PosInterface = ({
         setCart([]);
         setSelectedClient(null);
         setPaymentMethod("CASH");
+        setServiceFee(0);
         router.refresh();
       } else {
         const err = await res.json();
@@ -281,17 +285,50 @@ export const PosInterface = ({
 
       {/* Checkout panel */}
       <div className="p-4 sm:p-5 bg-white border-t space-y-3 sm:space-y-4 shrink-0">
-        {/* Total */}
-        <div className="flex justify-between items-end">
-          <div>
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Venta</p>
-            {isCourtesy && cartTotal > 0 && (
-              <p className="text-xs text-gray-400 line-through">${formatMoney(cartTotal)}</p>
-            )}
+        {/* Cargo por Servicio */}
+        <div className="flex items-center justify-between gap-2 bg-gray-50 rounded-2xl px-4 py-3 border border-gray-100">
+          <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">
+            Servicio
+          </label>
+          <div className="flex items-center gap-1">
+            <span className="text-sm font-black text-gray-400">$</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={serviceFee === 0 ? "" : serviceFee}
+              placeholder="0"
+              onChange={e => setServiceFee(Math.max(0, parseFloat(e.target.value) || 0))}
+              className="w-24 text-right font-black text-base bg-white border-2 border-gray-200 rounded-xl px-2 py-1 outline-none focus:border-gray-900 transition-colors"
+            />
           </div>
-          <span className={`text-3xl sm:text-4xl font-black tracking-tighter ${isCourtesy ? "text-pink-500" : "text-gray-900"}`}>
-            ${formatMoney(chargedTotal)}
-          </span>
+        </div>
+
+        {/* Total */}
+        <div className="space-y-1">
+          {serviceFee > 0 && (
+            <div className="flex justify-between items-center text-xs text-gray-400">
+              <span className="font-bold uppercase tracking-widest">Subtotal</span>
+              <span className="font-bold">${formatMoney(cartTotal)}</span>
+            </div>
+          )}
+          {serviceFee > 0 && (
+            <div className="flex justify-between items-center text-xs text-gray-500">
+              <span className="font-bold uppercase tracking-widest">+ Servicio</span>
+              <span className="font-bold">${formatMoney(serviceFee)}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-end pt-1">
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Venta</p>
+              {isCourtesy && (cartTotal + serviceFee) > 0 && (
+                <p className="text-xs text-gray-400 line-through">${formatMoney(cartTotal + serviceFee)}</p>
+              )}
+            </div>
+            <span className={`text-3xl sm:text-4xl font-black tracking-tighter ${isCourtesy ? "text-pink-500" : "text-gray-900"}`}>
+              ${formatMoney(chargedTotal)}
+            </span>
+          </div>
         </div>
 
         {/* Payment method */}
@@ -550,15 +587,17 @@ export const PosInterface = ({
                 <Row label="Cliente" value={selectedClient?.fullName ?? "Mostrador"} />
                 <Row label="Método" value={`${selectedOption.emoji} ${selectedOption.label}`} />
                 <Row label="Artículos" value={`${cartItemCount} pzs`} />
+                {serviceFee > 0 && <Row label="Subtotal" value={`$${formatMoney(cartTotal)}`} />}
+                {serviceFee > 0 && <Row label="Servicio" value={`+$${formatMoney(serviceFee)}`} />}
                 <div className="flex justify-between text-xl border-t pt-3 mt-1">
                   <span className="text-gray-800 font-black">Total</span>
                   <span className={`font-black ${isCourtesy ? "text-pink-500" : "text-gray-900"}`}>
                     ${formatMoney(chargedTotal)}
                   </span>
                 </div>
-                {isCourtesy && cartTotal > 0 && (
+                {isCourtesy && (cartTotal + serviceFee) > 0 && (
                   <p className="text-[10px] text-pink-500 text-center font-bold">
-                    Valor real de mercancía: ${formatMoney(cartTotal)}
+                    Valor real de mercancía: ${formatMoney(cartTotal + serviceFee)}
                   </p>
                 )}
               </div>

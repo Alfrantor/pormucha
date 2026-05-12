@@ -10,6 +10,8 @@ import { useCart } from "@/context/CartContext";
 function ThanksContent() {
     const searchParams = useSearchParams();
     const sessionId = searchParams.get("session_id");
+    const type = searchParams.get("type"); // "suscripcion" o null (compra única)
+    const isSubscription = type === "suscripcion";
     const [status, setStatus] = useState<string>("loading");
 
     // 2. EXTRAEMOS CLEARCART
@@ -87,7 +89,7 @@ function ThanksContent() {
                 </p>
 
                 <div className="flex flex-col gap-4 w-full items-center">
-                    {status === "verified" && (
+                    {status === "verified" && isSubscription && (
                         <motion.div
                             initial={{ y: 20, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}

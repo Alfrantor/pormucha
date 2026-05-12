@@ -30,7 +30,7 @@ export async function POST(req: Request) {
                 quantity: 1
             }],
             // Borramos la línea de customer_creation: "always"
-            success_url: `${process.env.NEXT_PUBLIC_URL}/thanks?session_id={CHECKOUT_SESSION_ID}`,
+            success_url: `${process.env.NEXT_PUBLIC_URL}/thanks?session_id={CHECKOUT_SESSION_ID}&type=suscripcion`,
             cancel_url: `${process.env.NEXT_PUBLIC_URL}/suscripciones`,
             metadata: {
                 planId: plan.id,
