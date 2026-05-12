@@ -235,7 +235,10 @@ export function printTicket(data: TicketData) {
   <!-- PIE -->
   <div class="footer">
     <p>¡Gracias por tu compra!</p>
-    <p>pormucha.com</p>
+    <p>Jaime G Ruiz Herrera</p>
+    <p>Av. Resurgimiento No. 62, Col. Prado,</p>
+    <p>C.P. 24030, Campeche, Campeche</p>
+    <p>RFC: RUHJ9008251CA</p>
   </div>
 
   <script>
