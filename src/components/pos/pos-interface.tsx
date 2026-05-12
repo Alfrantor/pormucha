@@ -38,6 +38,7 @@ export const PosInterface = ({
   const [showPackModal, setShowPackModal] = useState<any>(null);
   const [packSelection, setPackSelection] = useState<Record<string, number>>({});
   const [showMobileCart, setShowMobileCart] = useState(false);
+  const [mobileStep, setMobileStep] = useState<"items" | "payment">("items");
   const [serviceFee, setServiceFee] = useState<number>(0);
 
   // ─── Pricing ─────────────────────────────────────────────────────────────
@@ -163,6 +164,8 @@ export const PosInterface = ({
         setSelectedClient(null);
         setPaymentMethod("CASH");
         setServiceFee(0);
+        setMobileStep("items");
+        setShowMobileCart(false);
         router.refresh();
       } else {
         const err = await res.json();
@@ -176,6 +179,8 @@ export const PosInterface = ({
   };
 
   const selectedOption = PAYMENT_OPTIONS.find(p => p.value === paymentMethod)!;
+
+  const closeMobileCart = () => { setShowMobileCart(false); setMobileStep("items"); };
 
   // ─── Ticket content (shared between desktop panel and mobile sheet) ────────
   const ticketContent = (
@@ -524,7 +529,7 @@ export const PosInterface = ({
               </p>
             </div>
             <button
-              onClick={() => setShowMobileCart(true)}
+              onClick={() => { setMobileStep("items"); setShowMobileCart(true); }}
               disabled={cart.length === 0}
               className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-sm text-white shadow-lg active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                 paymentMethod === "COURTESY"    ? "bg-pink-500" :
@@ -544,32 +549,232 @@ export const PosInterface = ({
 
           {/* ── MOBILE CART BOTTOM SHEET ── */}
           {showMobileCart && (
-            <div
-              className="lg:hidden fixed inset-0 bg-black/50 z-40"
-              onClick={() => setShowMobileCart(false)}
-            />
+            <div className="lg:hidden fixed inset-0 bg-black/50 z-40" onClick={closeMobileCart} />
           )}
           <div className={[
             "lg:hidden fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-3xl shadow-2xl flex flex-col",
             "transition-transform duration-300 ease-out",
-            "max-h-[90vh]",
+            "h-[88vh]",
             showMobileCart ? "translate-y-0" : "translate-y-full",
           ].join(" ")}>
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-1 shrink-0">
-              <div className="w-10 h-1.5 bg-gray-200 rounded-full" />
-            </div>
-            {/* Mobile sheet header */}
-            <div className="flex items-center justify-between px-5 pb-2 shrink-0">
-              <span className="font-black text-gray-800 text-lg">Carrito</span>
-              <button
-                onClick={() => setShowMobileCart(false)}
-                className="p-2 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200"
-              >
-                <ChevronDown size={18} />
-              </button>
-            </div>
-            {ticketContent}
+
+            {/* ── PASO 1: ITEMS ── */}
+            {mobileStep === "items" && (
+              <>
+                {/* Header */}
+                <div className="flex justify-center pt-3 pb-1 shrink-0">
+                  <div className="w-10 h-1.5 bg-gray-200 rounded-full" />
+                </div>
+                <div className="flex items-center justify-between px-5 py-2 shrink-0 border-b">
+                  <span className="font-black text-gray-800 text-lg">
+                    Carrito
+                    {cartItemCount > 0 && (
+                      <span className="ml-2 text-sm font-bold text-gray-400">({cartItemCount} pzas)</span>
+                    )}
+                  </span>
+                  <button onClick={closeMobileCart} className="p-2 rounded-full bg-gray-100 text-gray-500">
+                    <ChevronDown size={18} />
+                  </button>
+                </div>
+
+                {/* Cliente */}
+                <div className="px-4 py-3 bg-gray-50 border-b shrink-0">
+                  <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-dashed border-gray-200">
+                    <div className={`p-1.5 rounded-lg shrink-0 ${selectedClient ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400"}`}>
+                      <User size={14} />
+                    </div>
+                    <select
+                      value={selectedClient?.id ?? ""}
+                      onChange={e => setSelectedClient(clients.find((c: any) => c.id === e.target.value) ?? null)}
+                      className="flex-1 bg-transparent outline-none font-bold text-xs text-gray-700 cursor-pointer"
+                    >
+                      <option value="">Cliente Mostrador</option>
+                      {clients.map((c: any) => (
+                        <option key={c.id} value={c.id}>{c.fullName}</option>
+                      ))}
+                    </select>
+                    {selectedClient && (
+                      <button onClick={() => setSelectedClient(null)} className="text-gray-300 hover:text-red-500 shrink-0">
+                        <X size={12} strokeWidth={3} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Items — todo el espacio disponible */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                  {cart.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-gray-300 py-12">
+                      <Package size={48} className="mb-3" />
+                      <p className="font-black uppercase text-[10px] tracking-widest">Carrito vacío</p>
+                    </div>
+                  ) : (
+                    cart.map((item, idx) => (
+                      <div key={idx} className="p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-black text-sm text-gray-800 truncate">{item.name}</p>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="text-[10px] font-bold text-gray-400 uppercase shrink-0">
+                                {item.type === "PACK" ? "Pack" : "Botella"}
+                              </span>
+                              <span className="text-[10px] text-gray-300">·</span>
+                              <span className="text-[10px] text-gray-400">$</span>
+                              <input
+                                type="number" min="0" step="0.01" value={item.price}
+                                onChange={e => updateItemPrice(idx, parseFloat(e.target.value) || 0)}
+                                className="w-16 text-[11px] font-bold text-gray-700 bg-white border border-gray-200 rounded-md px-1 py-0.5 outline-none focus:border-blue-400"
+                              />
+                              <span className="text-[10px] text-gray-400">c/u</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={() => updateQty(idx, item.quantity - 1)} className="w-7 h-7 bg-gray-200 hover:bg-gray-300 rounded-lg flex items-center justify-center font-black text-gray-700">−</button>
+                            <input
+                              type="number" min="1" value={item.quantity}
+                              onChange={e => updateQty(idx, parseInt(e.target.value) || 1)}
+                              className="w-9 text-center font-black text-sm bg-white border border-gray-200 rounded-lg py-0.5 outline-none"
+                            />
+                            <button onClick={() => updateQty(idx, item.quantity + 1)} className="w-7 h-7 bg-gray-200 hover:bg-gray-300 rounded-lg flex items-center justify-center font-black text-gray-700">+</button>
+                            <button onClick={() => removeItem(idx)} className="w-7 h-7 bg-red-50 hover:bg-red-100 text-red-400 rounded-lg flex items-center justify-center ml-0.5">
+                              <X size={11} strokeWidth={3} />
+                            </button>
+                          </div>
+                        </div>
+                        {item.composition && item.composition.length > 1 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {item.composition.map((c: any, i: number) => (
+                              <span key={i} className="text-[9px] bg-white px-2 py-0.5 rounded-full border text-gray-500 font-bold">
+                                {c.quantity} {c.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex justify-end mt-1.5">
+                          <p className="font-black text-sm text-gray-900">${formatMoney(item.price * item.quantity)}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Barra inferior — resumen + botón siguiente */}
+                <div className="shrink-0 border-t bg-white px-4 py-4 flex items-center gap-3">
+                  <div className="flex-1">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total</p>
+                    <p className="text-2xl font-black text-gray-900">${formatMoney(cartTotal)}</p>
+                  </div>
+                  <button
+                    onClick={() => setMobileStep("payment")}
+                    disabled={cart.length === 0}
+                    className="flex items-center gap-2 bg-gray-900 text-white px-6 py-4 rounded-2xl font-black text-sm shadow-lg active:scale-95 transition-all disabled:opacity-40"
+                  >
+                    Cobrar →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── PASO 2: COBRO ── */}
+            {mobileStep === "payment" && (
+              <>
+                {/* Header */}
+                <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b shrink-0">
+                  <button onClick={() => setMobileStep("items")} className="p-2 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200">
+                    <ArrowLeft size={16} />
+                  </button>
+                  <div className="flex-1">
+                    <p className="font-black text-gray-800">Cobrar</p>
+                    <p className="text-[10px] text-gray-400 font-bold">{cartItemCount} pzas · {selectedClient?.fullName ?? "Mostrador"}</p>
+                  </div>
+                  <button onClick={closeMobileCart} className="text-gray-400 hover:text-gray-700">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                  {/* Servicio */}
+                  <div className="flex items-center justify-between bg-gray-50 rounded-2xl px-4 py-4 border border-gray-100">
+                    <span className="text-sm font-black text-gray-600 uppercase tracking-widest">Servicio</span>
+                    <div className="flex items-center gap-1">
+                      <span className="font-black text-gray-400">$</span>
+                      <input
+                        type="number" min="0" step="1"
+                        value={serviceFee === 0 ? "" : serviceFee}
+                        placeholder="0"
+                        onChange={e => setServiceFee(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="w-28 text-right font-black text-lg bg-white border-2 border-gray-200 rounded-xl px-3 py-2 outline-none focus:border-gray-900 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Desglose */}
+                  <div className="bg-gray-50 rounded-2xl p-4 space-y-2 border border-gray-100">
+                    {serviceFee > 0 && (
+                      <>
+                        <div className="flex justify-between text-sm text-gray-500">
+                          <span className="font-bold">Subtotal</span>
+                          <span className="font-bold">${formatMoney(cartTotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm text-gray-500">
+                          <span className="font-bold">+ Servicio</span>
+                          <span className="font-bold">${formatMoney(serviceFee)}</span>
+                        </div>
+                        <div className="border-t border-gray-200 pt-2" />
+                      </>
+                    )}
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-black text-gray-500 uppercase tracking-widest">Total</span>
+                      <span className={`text-3xl font-black ${isCourtesy ? "text-pink-500" : "text-gray-900"}`}>
+                        ${formatMoney(chargedTotal)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Forma de pago */}
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Forma de Pago</p>
+                    <div className="relative">
+                      <select
+                        value={paymentMethod}
+                        onChange={e => setPaymentMethod(e.target.value as PaymentMethod)}
+                        className="w-full p-4 pr-10 bg-gray-50 border-2 border-gray-200 rounded-2xl font-bold text-sm text-gray-800 outline-none cursor-pointer appearance-none focus:border-gray-400"
+                      >
+                        {PAYMENT_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.emoji} {opt.label}</option>
+                        ))}
+                      </select>
+                      <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">▾</span>
+                    </div>
+                    {paymentMethod === "CONSIGNMENT" && (
+                      <p className="text-[11px] text-orange-600 font-bold bg-orange-50 px-3 py-2 rounded-xl">
+                        📋 Quedará como pedido pendiente de cobro
+                      </p>
+                    )}
+                    {paymentMethod === "COURTESY" && (
+                      <p className="text-[11px] text-pink-600 font-bold bg-pink-50 px-3 py-2 rounded-xl">
+                        🎁 Se registra la salida de inventario pero el total es $0
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Botón cobrar */}
+                <div className="shrink-0 p-5 border-t bg-white">
+                  <button
+                    onClick={() => setShowConfirm(true)}
+                    disabled={isProcessing || cart.length === 0}
+                    className={`w-full py-5 rounded-2xl font-black text-base uppercase tracking-wider transition-all active:scale-95 disabled:opacity-40 shadow-lg ${
+                      paymentMethod === "COURTESY"    ? "bg-pink-500   text-white shadow-pink-500/20" :
+                      paymentMethod === "CONSIGNMENT" ? "bg-orange-500 text-white shadow-orange-500/20" :
+                                                        "bg-gray-900   text-white shadow-gray-900/20"
+                    }`}
+                  >
+                    {isProcessing ? "Procesando..." : `Cobrar · ${selectedOption.emoji} ${selectedOption.label}`}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </>
       )}
