@@ -36,34 +36,60 @@ export async function POST(req: Request) {
         // --- INICIO BLOQUE PARA SUSCRIPCIONES ---
         if (session.mode === "subscription") {
             const planId = session.metadata?.planId;
+            const clerkUserId = session.metadata?.clerkUserId;
             const customerEmail = session.customer_details?.email;
             const customerName = session.customer_details?.name;
 
-            if (customerEmail && planId) {
-                // 1. Buscamos o creamos al Cliente en tu tabla 'client'
-                const client = await db.client.upsert({
-                    where: { email: customerEmail },
-                    update: {}, // Si ya existe, no cambiamos nada por ahora
-                    create: {
-                        email: customerEmail,
-                        fullName: customerName || "Cliente Nuevo",
-                    }
+            if (planId && (clerkUserId || customerEmail)) {
+                let client;
+
+                // Preferir vinculación por clerkUserId (más confiable)
+                if (clerkUserId) {
+                    client = await db.client.upsert({
+                        where: { clerkUserId },
+                        update: {
+                            // Actualizar email si no lo tenía
+                            ...(customerEmail ? { email: customerEmail } : {}),
+                        },
+                        create: {
+                            clerkUserId,
+                            email: customerEmail ?? `clerk_${clerkUserId}@pormucha.com`,
+                            fullName: customerName || "Nuevo Miembro",
+                        },
+                    });
+                } else {
+                    // Fallback: buscar por email (flujo antiguo)
+                    client = await db.client.upsert({
+                        where: { email: customerEmail! },
+                        update: {},
+                        create: {
+                            email: customerEmail!,
+                            fullName: customerName || "Cliente Nuevo",
+                        },
+                    });
+                }
+
+                // Verificar que no exista ya esta suscripción (idempotencia)
+                const existing = await db.subscription.findFirst({
+                    where: { stripeSubscriptionId: session.subscription as string },
                 });
 
-                // 2. Creamos la Suscripción vinculada al cliente
-                await db.subscription.create({
-                    data: {
-                        clientId: client.id,
-                        planId: planId,
-                        stripeSubscriptionId: session.subscription as string,
-                        stripeCustomerId: session.customer as string,
-                        status: "active",
-                        // Convertimos el timestamp de Stripe a objeto Date de JS
-                        currentPeriodEnd: new Date(session.expires_at ? session.expires_at * 1000 : Date.now() + 30 * 24 * 60 * 60 * 1000),
-                    }
-                });
+                if (!existing) {
+                    await db.subscription.create({
+                        data: {
+                            clientId: client.id,
+                            planId,
+                            stripeSubscriptionId: session.subscription as string,
+                            stripeCustomerId: session.customer as string,
+                            status: "active",
+                            currentPeriodEnd: new Date(
+                                Date.now() + 30 * 24 * 60 * 60 * 1000
+                            ),
+                        },
+                    });
+                }
 
-                return new NextResponse(null, { status: 200 }); // Terminamos proceso para suscripción
+                return new NextResponse(null, { status: 200 });
             }
         }
         // --- FIN BLOQUE PARA SUSCRIPCIONES ---

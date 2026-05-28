@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { db } from "@/lib/db";
+import { auth, currentUser } from "@clerk/nextjs/server";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export async function POST(req: Request) {
     try {
+        // Obtener el usuario autenticado de Clerk
+        const { userId } = await auth();
+        if (!userId) {
+            return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+        }
+        const clerkUser = await currentUser();
+        const customerEmail = clerkUser?.emailAddresses[0]?.emailAddress;
+
         const { planId } = await req.json();
 
         if (!planId) {
@@ -55,9 +64,12 @@ export async function POST(req: Request) {
             mode: "subscription",
             payment_method_types: ["card"],
             line_items: [{ price: stripePriceId, quantity: 1 }],
+            // Pre-llenar el email del cliente en Stripe Checkout
+            customer_email: customerEmail,
             success_url: `${process.env.NEXT_PUBLIC_URL}/thanks?session_id={CHECKOUT_SESSION_ID}&type=suscripcion`,
             cancel_url: `${process.env.NEXT_PUBLIC_URL}/suscripciones`,
-            metadata: { planId: plan.id },
+            // Incluir clerkUserId para que el webhook vincule la suscripción correctamente
+            metadata: { planId: plan.id, clerkUserId: userId },
         });
 
         return NextResponse.json({ url: session.url });
