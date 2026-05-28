@@ -3,10 +3,13 @@ import { useState } from "react";
 import { ArrowLeft, Plus, Minus, ShoppingCart } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 
 export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: any) {
     const { addToCart } = useCart();
     const router = useRouter();
+    const { isSignedIn } = useUser();
+    const [isLoading, setIsLoading] = useState(false);
 
     const [selections, setSelections] = useState<{ [key: string]: number }>(
         flavors.reduce((acc: any, f: any) => ({ ...acc, [f.id]: 0 }), {})
@@ -15,12 +18,35 @@ export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: a
     const totalSelected = Object.values(selections).reduce((a, b) => a + b, 0);
     const isComplete = totalSelected === pack.quantity;
 
-    const handleAddToCart = () => {
+    const handleAddToCart = async () => {
         if (!isComplete) return;
 
         if (isSubscription) {
-            // Suscripción: ir directo al checkout del plan
-            router.push(`/api/checkout-plan?planId=${pack.id}`);
+            // Gate de autenticación: requiere cuenta para suscribirse
+            if (!isSignedIn) {
+                router.push(`/sign-in?redirect_url=${encodeURIComponent("/suscripciones")}`);
+                return;
+            }
+
+            // Llamar al endpoint correctamente con POST
+            try {
+                setIsLoading(true);
+                const res = await fetch("/api/checkout-plan", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ planId: pack.id }),
+                });
+                const data = await res.json();
+                if (data.url) {
+                    window.location.href = data.url;
+                } else {
+                    alert("Error al iniciar el pago. Intenta de nuevo.");
+                }
+            } catch {
+                alert("Error de conexión.");
+            } finally {
+                setIsLoading(false);
+            }
             return;
         }
 
@@ -111,14 +137,14 @@ export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: a
             <div className="flex justify-center">
                 <button
                     onClick={handleAddToCart}
-                    disabled={!isComplete}
-                    className={`flex items-center gap-3 px-12 py-4 rounded-full font-bold uppercase tracking-widest transition-all shadow-xl ${isComplete
+                    disabled={!isComplete || isLoading}
+                    className={`flex items-center gap-3 px-12 py-4 rounded-full font-bold uppercase tracking-widest transition-all shadow-xl ${isComplete && !isLoading
                             ? 'bg-[#1A1A1A] text-[#EBDAAB] hover:scale-105 active:scale-95'
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         }`}
                 >
                     <ShoppingCart size={20} />
-                    {isSubscription ? "Suscribirme" : "Agregar al Carrito"}
+                    {isLoading ? "Preparando..." : isSubscription ? "Suscribirme" : "Agregar al Carrito"}
                 </button>
             </div>
         </div>

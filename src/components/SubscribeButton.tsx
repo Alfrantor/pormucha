@@ -1,43 +1,43 @@
 "use client";
 
 import { useState } from "react";
+import { useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 
 interface SubscribeButtonProps {
     planId: string;
     isFeatured: boolean;
-    // clientId?: string; // Descomenta esto si ya tienes sistema de login
 }
 
 export default function SubscribeButton({ planId, isFeatured }: SubscribeButtonProps) {
     const [isLoading, setIsLoading] = useState(false);
+    const { isSignedIn } = useUser();
+    const router = useRouter();
 
     const handleSubscribe = async () => {
+        // Si no tiene sesión, mandar a sign-in y volver aquí después
+        if (!isSignedIn) {
+            router.push(`/sign-in?redirect_url=${encodeURIComponent("/suscripciones")}`);
+            return;
+        }
+
         try {
             setIsLoading(true);
 
-            // Llamamos a la nueva ruta de API que conectará con Stripe
             const res = await fetch("/api/checkout-plan", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    planId,
-                    // clientId: clientId // Aquí enviarías el ID del usuario logueado
-                }),
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ planId }),
             });
 
             const data = await res.json();
 
-            // Si Stripe nos devuelve la URL, redirigimos al cliente allá
             if (data.url) {
                 window.location.href = data.url;
             } else {
-                console.error("Error del servidor:", data.error);
                 alert("Hubo un error al iniciar el pago. Intenta de nuevo.");
             }
-        } catch (error) {
-            console.error("Error de red:", error);
+        } catch {
             alert("Error de conexión.");
         } finally {
             setIsLoading(false);
