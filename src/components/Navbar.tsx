@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useCart } from "@/context/CartContext";
 import Link from "next/link";
 import Image from "next/image";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton, SignedIn, SignedOut } from "@clerk/nextjs";
 import { ShoppingCart, Menu, X } from "lucide-react";
 
 export default function Navbar() {
@@ -55,17 +55,28 @@ export default function Navbar() {
               <span className="group-hover:text-[#8B3A28] transition-colors hidden sm:inline">CARRITO</span>
             </Link>
 
-            {/* UserButton con Menú Personalizado */}
-            <UserButton afterSignOutUrl="/">
-              <UserButton.MenuItems>
-                <UserButton.Action
-                  label="Mi Perfil"
-                  labelIcon={<div className="text-xs">👤</div>}
-                  onClick={() => window.location.href = '/perfil'}
-                />
+            {/* Usuario logueado: avatar con menú */}
+            <SignedIn>
+              <UserButton afterSignOutUrl="/">
+                <UserButton.MenuItems>
+                  <UserButton.Action
+                    label="Mi Perfil"
+                    labelIcon={<div className="text-xs">👤</div>}
+                    onClick={() => window.location.href = '/perfil'}
+                  />
+                </UserButton.MenuItems>
+              </UserButton>
+            </SignedIn>
 
-              </UserButton.MenuItems>
-            </UserButton>
+            {/* Sin sesión: botón de iniciar sesión */}
+            <SignedOut>
+              <Link
+                href="/sign-in"
+                className="text-xs font-bold uppercase tracking-widest text-[#8B3A28] border border-[#8B3A28]/30 px-4 py-2 rounded-full hover:bg-[#8B3A28] hover:text-white transition-all"
+              >
+                Iniciar Sesión
+              </Link>
+            </SignedOut>
           </div>
 
           {/* Botón Hamburguesa (Solo móvil) */}
@@ -102,6 +113,12 @@ export default function Navbar() {
               <Link href="/tienda" onClick={toggleMenu} className="hover:text-[#8B3A28]">TIENDA</Link>
               <Link href="/suscripciones" onClick={toggleMenu} className="hover:text-[#8B3A28]">CLUB PORMUCHA</Link>
               <Link href="/contacto" onClick={toggleMenu} className="hover:text-[#8B3A28]">CONTACTO</Link>
+              <SignedOut>
+                <Link href="/sign-in" onClick={toggleMenu} className="text-[#8B3A28]">INICIAR SESIÓN</Link>
+              </SignedOut>
+              <SignedIn>
+                <Link href="/perfil" onClick={toggleMenu} className="hover:text-[#8B3A28]">MI PERFIL</Link>
+              </SignedIn>
             </div>
           </div>
         </>
