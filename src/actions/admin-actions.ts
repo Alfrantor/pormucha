@@ -361,6 +361,9 @@ export async function generateShippingLabel(orderId: string) {
     const rawPhone = String(order.phone || "").replace(/\D/g, "");
     const sanitizedPhone = rawPhone.length >= 10 ? rawPhone : rawPhone.padEnd(10, "0");
 
+    // Convertir Decimal de Prisma a número plano de forma segura
+    const orderTotal = parseFloat(order.total?.toString() || "0");
+
     // 3. CREAR ENVÍO
     const shipmentBody: any = {
       shipment: {
@@ -397,8 +400,8 @@ export async function generateShippingLabel(orderId: string) {
           {
             package_number: 1,
             package_protected: false,
-            declared_value: Number(order.total),
-            total: Number(order.total),
+            declared_value: orderTotal,
+            total: orderTotal,
             package_type: "4G",
             consignment_note: "50202300"
           }
