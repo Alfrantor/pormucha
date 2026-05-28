@@ -362,8 +362,6 @@ export async function generateShippingLabel(orderId: string) {
     const sanitizedPhone = rawPhone.length >= 10 ? rawPhone : rawPhone.padEnd(10, "0");
 
     // 3. CREAR ENVÍO
-    console.log(`🚚 Confirmando envío PRO con Rate ID: ${freshRateId}`);
-
     const shipmentBody: any = {
       shipment: {
         rate_id: freshRateId,
@@ -413,8 +411,6 @@ export async function generateShippingLabel(orderId: string) {
       shipmentBody.shipment.headquarter_id = process.env.SKYDROPX_HEADQUARTER_ID;
     }
 
-    console.log("🚚 Enviando shipment a Skydropx:", JSON.stringify(shipmentBody, null, 2));
-
     const response = await fetch("https://pro.skydropx.com/api/v1/shipments/", {
       method: "POST",
       headers: {
@@ -426,7 +422,6 @@ export async function generateShippingLabel(orderId: string) {
     });
 
     const rawText = await response.text();
-    console.log(`📬 Respuesta Skydropx HTTP ${response.status}:`, rawText);
 
     let data: any;
     try { data = JSON.parse(rawText); } catch { throw new Error(`Respuesta inválida de Skydropx: ${rawText.slice(0, 200)}`); }

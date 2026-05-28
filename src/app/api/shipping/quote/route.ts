@@ -8,8 +8,6 @@ const SKYDROPX_URLS = [
 ];
 
 async function tryGetToken(url: string): Promise<string | null> {
-  console.log(`📡 Intentando obtener token de: ${url}`);
-
   // Intentar con application/json (como indica la documentación)
   const response = await fetch(url, {
     method: "POST",
@@ -25,16 +23,13 @@ async function tryGetToken(url: string): Promise<string | null> {
   });
 
   const text = await response.text();
-  console.log(`   Status: ${response.status} | Body: ${text.substring(0, 200)}`);
 
   if (response.ok) {
     const data = JSON.parse(text);
-    console.log("✨ ¡CONEXIÓN EXITOSA! ✨");
     return data.access_token;
   }
 
   // Si JSON falla, intentar con form-urlencoded
-  console.log(`   ↳ JSON falló, intentando form-urlencoded...`);
   const formBody = new URLSearchParams({
     grant_type: "client_credentials",
     client_id: process.env.SKYDROPX_CLIENT_ID || "",
@@ -51,11 +46,9 @@ async function tryGetToken(url: string): Promise<string | null> {
   });
 
   const formText = await formResponse.text();
-  console.log(`   Status (form): ${formResponse.status} | Body: ${formText.substring(0, 200)}`);
 
   if (formResponse.ok) {
     const data = JSON.parse(formText);
-    console.log("✨ ¡CONEXIÓN EXITOSA (form-urlencoded)! ✨");
     return data.access_token;
   }
 
@@ -66,7 +59,6 @@ async function getSkydropxToken(): Promise<string> {
   for (const url of SKYDROPX_URLS) {
     const token = await tryGetToken(url);
     if (token) return token;
-    console.error(`❌ Fallo en ${url}`);
   }
 
   throw new Error(
@@ -80,7 +72,6 @@ export async function POST(request: Request) {
     const { zip, productIds } = await request.json();
 
     // 1. Obtener el Bearer Token dinámico
-    console.log("🔑 Solicitando token de acceso OAuth2...");
     const bearerToken = await getSkydropxToken();
 
     // 2. Buscar las dimensiones reales de los productos del carrito
@@ -102,11 +93,9 @@ export async function POST(request: Request) {
         maxLength = Math.max(...products.map(p => Number(p.length)));
       }
 
-      console.log(`📐 Dimensiones del paquete: ${totalWeight}kg, ${maxHeight}x${maxWidth}x${maxLength}cm`);
     }
 
     // 3. Cotizar usando el formato de la API PRO
-    console.log(`📦 Cotizando envío para CP: ${zip}`);
 
     const quotationBody = {
       quotation: {
@@ -148,12 +137,10 @@ export async function POST(request: Request) {
     let data = await response.json();
 
     if (!response.ok) {
-      console.error("❌ Error en cotización:", data);
       return NextResponse.json({ error: "Error de paquetería" }, { status: response.status });
     }
 
     const quotationId = data.id;
-    console.log(`📬 Cotización creada: ${quotationId}`);
 
     // 3. La API PRO es ASÍNCRONA: las tarifas comienzan en "pending"
     //    Necesitamos hacer polling hasta que estén listas
@@ -167,16 +154,11 @@ export async function POST(request: Request) {
         (r: any) => r.success === true && r.total != null
       );
 
-      console.log(`⏳ Intento ${attempt}: ${successfulRates.length} tarifas listas de ${allRates.length} totales`);
-
       // Si ya hay tarifas exitosas, salimos del loop
       if (successfulRates.length > 0) break;
 
       // Si ya se completó y no hay tarifas, no tiene sentido seguir
-      if (data.is_completed && successfulRates.length === 0 && attempt > 0) {
-        console.log("⚠️ Cotización completada pero sin tarifas exitosas");
-        break;
-      }
+      if (data.is_completed && successfulRates.length === 0 && attempt > 0) break;
 
       // Si es el último intento, no esperar más
       if (attempt === MAX_POLLS) break;
@@ -185,7 +167,6 @@ export async function POST(request: Request) {
       await new Promise((resolve) => setTimeout(resolve, POLL_DELAY_MS));
 
       // Consultar el estado actualizado de la cotización
-      console.log(`🔄 Polling cotización ${quotationId}...`);
       const pollResponse = await fetch(
         `https://pro.skydropx.com/api/v1/quotations/${quotationId}`,
         {
@@ -200,12 +181,9 @@ export async function POST(request: Request) {
       if (pollResponse.ok) {
         data = await pollResponse.json();
       } else {
-        console.error(`❌ Error en polling: ${pollResponse.status}`);
         break;
       }
     }
-
-    console.log(`✅ ${successfulRates.length} tarifas disponibles`);
 
     if (successfulRates.length > 0) {
       // Ordenar por precio de menor a mayor
@@ -218,8 +196,6 @@ export async function POST(request: Request) {
         days: r.days || "3-5",
         id: r.id || Math.random().toString(36).substring(7)
       }));
-
-      console.log(`✅ ${rates.length} tarifas devueltas al cliente`);
 
       return NextResponse.json({ rates });
     }

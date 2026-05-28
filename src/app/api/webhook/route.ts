@@ -63,7 +63,6 @@ export async function POST(req: Request) {
                     }
                 });
 
-                console.log(`✅ Suscripción creada para: ${customerEmail}`);
                 return new NextResponse(null, { status: 200 }); // Terminamos proceso para suscripción
             }
         }
@@ -80,7 +79,6 @@ export async function POST(req: Request) {
             });
 
             if (existingOrder?.status === "PAID") {
-                console.log(`ℹ️ La orden ${orderId} ya estaba marcada como pagada. Ignorando.`);
                 return new NextResponse(null, { status: 200 });
             }
 
@@ -105,8 +103,6 @@ export async function POST(req: Request) {
                     orderItems: { include: { flavor: true } }
                 }
             });
-
-            console.log(`✅ ¡Orden ${orderId} pagada! Procesando inventario...`);
 
             // 3. 📦 PROCESAR CADA ITEM
             for (const item of order.orderItems) {

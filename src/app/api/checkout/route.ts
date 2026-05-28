@@ -21,26 +21,16 @@ export async function POST(request: Request) {
     } = body;
 
     if (!shippingRateId) {
-      console.error("❌ Error: shippingRateId no llegó en la petición");
       return NextResponse.json(
         { error: "Debes seleccionar una paquetería antes de pagar." },
         { status: 400 }
       );
     }
-    console.log("📦 CONTENIDO DEL CARRITO RECIBIDO:", JSON.stringify(items, null, 2));
     // VALIDACIÓN 1: Carrito vacío
     if (!items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "El carrito está vacío" }, { status: 400 });
     }
 
-    console.log("🔍 DATOS RECIBIDOS EN API:", {
-      itemsCount: items?.length,
-      shippingRateId,
-      shippingProvider,
-      shippingCost
-    });
-
-    console.log("🔍 SERVER: Items recibidos:", JSON.stringify(items, null, 2));
     // VALIDACIÓN 2: Dirección faltante
     if (!customerAddress) {
       return NextResponse.json({ error: "Faltan datos de envío" }, { status: 400 });

@@ -12,8 +12,6 @@ export async function getSalesHistory({ startDate, endDate, locationId }: GetSal
   const start = new Date(`${startDate}T00:00:00.000`);
   const end = new Date(`${endDate}T23:59:59.999`);
 
-  console.log("[getSalesHistory] Buscando ventas desde:", start.toISOString(), "hasta:", end.toISOString());
-
   const where: any = {
     createdAt: {
       gte: start,
@@ -34,8 +32,6 @@ export async function getSalesHistory({ startDate, endDate, locationId }: GetSal
     },
     orderBy: { createdAt: "desc" },
   });
-
-  console.log("[getSalesHistory] Ventas encontradas:", sales.length);
 
   // Sanitizar Decimal → number y Date → string
   return sales.map((sale) => ({
