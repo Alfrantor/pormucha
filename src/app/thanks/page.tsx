@@ -4,8 +4,8 @@ import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
-// 1. IMPORTAMOS EL HOOK DEL CARRITO
 import { useCart } from "@/context/CartContext";
+import { useUser } from "@clerk/nextjs";
 
 function ThanksContent() {
     const searchParams = useSearchParams();
@@ -14,8 +14,8 @@ function ThanksContent() {
     const isSubscription = type === "suscripcion";
     const [status, setStatus] = useState<string>("loading");
 
-    // 2. EXTRAEMOS CLEARCART
     const { clearCart } = useCart();
+    const { isSignedIn } = useUser();
 
     useEffect(() => {
         if (!sessionId) {
@@ -96,15 +96,33 @@ function ThanksContent() {
                             transition={{ delay: 0.5 }}
                             className="w-full max-w-sm"
                         >
-                            <p className="text-sm text-[#8B3A18] font-bold mb-3 uppercase tracking-widest">
-                                ¡Paso importante!
-                            </p>
-                            <Link
-                                href="/sign-up"
-                                className="block w-full bg-[#2d4a3e] text-white px-10 py-4 rounded-full font-bold tracking-widest hover:bg-[#1A1A1A] transition-all duration-500 shadow-xl hover:scale-105 text-center"
-                            >
-                                CREAR MI CUENTA
-                            </Link>
+                            {isSignedIn ? (
+                                // Ya tiene cuenta → ir directo al perfil
+                                <>
+                                    <p className="text-sm text-[#8B3A18] font-bold mb-3 uppercase tracking-widest">
+                                        ¡Tu suscripción está activa!
+                                    </p>
+                                    <Link
+                                        href="/perfil"
+                                        className="block w-full bg-[#2d4a3e] text-white px-10 py-4 rounded-full font-bold tracking-widest hover:bg-[#1A1A1A] transition-all duration-500 shadow-xl hover:scale-105 text-center"
+                                    >
+                                        IR A MI PERFIL →
+                                    </Link>
+                                </>
+                            ) : (
+                                // Caso edge: llegó sin sesión → crear cuenta
+                                <>
+                                    <p className="text-sm text-[#8B3A18] font-bold mb-3 uppercase tracking-widest">
+                                        ¡Paso importante!
+                                    </p>
+                                    <Link
+                                        href={`/sign-up?redirect_url=${encodeURIComponent("/perfil")}`}
+                                        className="block w-full bg-[#2d4a3e] text-white px-10 py-4 rounded-full font-bold tracking-widest hover:bg-[#1A1A1A] transition-all duration-500 shadow-xl hover:scale-105 text-center"
+                                    >
+                                        CREAR MI CUENTA
+                                    </Link>
+                                </>
+                            )}
                         </motion.div>
                     )}
 
