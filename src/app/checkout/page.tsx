@@ -234,13 +234,22 @@ export default function CheckoutPage() {
 
                   {/* Desglose de Sabores dinámico */}
                   <div className="flex flex-wrap gap-1.5 mt-1">
-                    {Object.entries(item.flavors).map(([sabor, cant]) => (
-                      cant > 0 && (
-                        <span key={sabor} className="text-[9px] bg-gray-100 px-2 py-1 rounded-full text-gray-600 font-bold">
-                          {cant} {sabor}
-                        </span>
-                      )
-                    ))}
+                    {item.composition && item.composition.length > 0
+                      ? item.composition.map((comp) => (
+                          comp.quantity > 0 && (
+                            <span key={comp.flavorId} className="text-[9px] bg-gray-100 px-2 py-1 rounded-full text-gray-600 font-bold">
+                              {comp.quantity} {comp.name}
+                            </span>
+                          )
+                        ))
+                      : Object.entries(item.flavors).map(([sabor, cant]) => (
+                          cant > 0 && (
+                            <span key={sabor} className="text-[9px] bg-gray-100 px-2 py-1 rounded-full text-gray-600 font-bold">
+                              {cant} {sabor}
+                            </span>
+                          )
+                        ))
+                    }
                   </div>
                 </div>
                 <span className="font-black text-xl text-gray-900">${item.price}</span>
