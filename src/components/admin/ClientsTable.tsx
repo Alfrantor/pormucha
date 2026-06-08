@@ -10,9 +10,11 @@ import Link from "next/link";
 interface ClientsTableProps {
   clients: any[];
   total: number;
+  onClientClick?: (client: any) => void;
+  selectedClientId?: string;
 }
 
-export function ClientsTable({ clients, total }: ClientsTableProps) {
+export function ClientsTable({ clients, total, onClientClick, selectedClientId }: ClientsTableProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("TODOS");
@@ -112,10 +114,23 @@ export function ClientsTable({ clients, total }: ClientsTableProps) {
               </tr>
             ) : (
               clients.map((client: any) => (
-                <tr key={client.id} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={client.id}
+                  onClick={() => onClientClick?.(client)}
+                  className={`transition-colors ${onClientClick ? "cursor-pointer" : ""} ${
+                    selectedClientId === client.id
+                      ? "bg-blue-50 border-l-4 border-l-blue-500"
+                      : "hover:bg-gray-50"
+                  }`}
+                >
                   <td className="px-6 py-4">
                     <div>
-                      <p className="font-semibold text-gray-900">{client.fullName}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-900">{client.fullName}</p>
+                        {selectedClientId === client.id && (
+                          <span className="text-[9px] bg-blue-600 text-white px-1.5 py-0.5 rounded-full font-black">SELECCIONADO</span>
+                        )}
+                      </div>
                       {client.businessName && (
                         <p className="text-xs text-gray-500">{client.businessName}</p>
                       )}
@@ -171,7 +186,7 @@ export function ClientsTable({ clients, total }: ClientsTableProps) {
                       {client.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 flex gap-2">
+                  <td className="px-6 py-4 flex gap-2" onClick={e => e.stopPropagation()}>
                     <Link
                       href={`/admin/clientes/${client.id}`}
                       className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition"
@@ -180,7 +195,8 @@ export function ClientsTable({ clients, total }: ClientsTableProps) {
                       <Eye size={18} />
                     </Link>
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setEditingClient(client);
                         setShowModal(true);
                       }}

@@ -5,8 +5,12 @@ import Link from "next/link";
 import {
   BarChart3, Package, Repeat, Users, ShoppingBag, Truck, Contact2, DollarSign,
   ShoppingCart, ChevronRight, LayoutDashboard, Package2, UserCog, Menu, MonitorCheck,
-  Building2, Pencil, Trash2, Plus, X,
+  Building2, Pencil, Trash2, Plus, X, TrendingUp, TrendingDown, ArrowUpRight,
 } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  LineChart, Line, Area, AreaChart,
+} from "recharts";
 import { UserButton } from "@clerk/nextjs";
 import { TogglePlanBtn } from "@/components/admin/toggle-plan-btn";
 import { DateRangeFilter } from "@/components/admin/date-range-filter";
@@ -264,7 +268,7 @@ export default function AdminDashboard({ data }: { data: any }) {
         {/* Scrollable content */}
         <main className="flex-1 overflow-y-auto p-6 xl:p-8 space-y-8">
           {activeTab === "dashboard" && (
-            <TabVentas {...{ stats: memoizedStats, topFlavors, topPacks, totalFlavorsSold, totalPacksSold, from, to }} />
+            <TabVentas {...{ stats: memoizedStats, topFlavors, topPacks, totalFlavorsSold, totalPacksSold, from, to, orders, allLocations, allSubscriptions }} />
           )}
           {activeTab === "inventario" && (
             <TabInventario {...{ activeFlavors, activeLocations, allLocations, userEmail }} />
@@ -280,7 +284,7 @@ export default function AdminDashboard({ data }: { data: any }) {
             <TabProductos {...{ allProducts, allFlavors, priceHistory, userEmail }} />
           )}
           {activeTab === "usuarios" && <TabUsuarios users={users} />}
-          {activeTab === "clientes" && <TabClientes clients={clients} />}
+          {activeTab === "clientes" && <TabClientes clients={clients} orders={orders} />}
           {activeTab === "precios" && <TabPrecios flavors={flavorsWithPricing} />}
           {activeTab === "pedidos" && <TabPedidos orders={orders} />}
           {activeTab === "giros" && <TabGiros giros={giros} />}
@@ -477,7 +481,9 @@ function TabUsuarios({ users }: { users: any[] }) {
 // =====================================================================
 // TAB: CLIENTES (BASE DE DATOS LOCAL)
 // =====================================================================
-function TabClientes({ clients }: { clients: any[] }) {
+function TabClientes({ clients, orders = [] }: { clients: any[]; orders?: any[] }) {
+  const [selectedClient, setSelectedClient] = useState<any>(null);
+
   if (!Array.isArray(clients)) {
     return (
       <section className="space-y-6">
@@ -494,16 +500,140 @@ function TabClientes({ clients }: { clients: any[] }) {
     );
   }
 
+  // Orders for selected client (match by email or clientId)
+  const clientOrders = useMemo(() => {
+    if (!selectedClient) return [];
+    return orders
+      .filter((o: any) =>
+        (selectedClient.email && o.email === selectedClient.email) ||
+        (selectedClient.id && o.clientId === selectedClient.id)
+      )
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [selectedClient, orders]);
+
+  const clientStats = useMemo(() => {
+    if (!clientOrders.length) return null;
+    const totalSpent = clientOrders.reduce((s: number, o: any) => s + (o.total || 0), 0);
+    const avgTicket = totalSpent / clientOrders.length;
+    const maxOrder = Math.max(...clientOrders.map((o: any) => o.total || 0));
+    const totalBottles = clientOrders.reduce((s: number, o: any) =>
+      s + (o.orderItems || []).reduce((ss: number, it: any) => ss + (it.quantity || 0), 0), 0);
+    return { totalSpent, avgTicket, maxOrder, totalBottles };
+  }, [clientOrders]);
+
   return (
     <section className="space-y-6">
       <div>
         <h2 className="text-2xl font-black italic">Gestión de Clientes ERP</h2>
         <p className="text-sm text-gray-400 mt-1">
-          RFC, razón social, clasificación, crédito, múltiples direcciones y descuentos.
+          RFC, razón social, clasificación, crédito y descuentos. Haz clic en un cliente para ver su historial de compras.
         </p>
       </div>
 
-      <ClientsTable clients={clients} total={clients.length} />
+      <div className={`grid gap-6 transition-all ${selectedClient ? "grid-cols-1 xl:grid-cols-2" : "grid-cols-1"}`}>
+        {/* Tabla de clientes */}
+        <div className="min-w-0">
+          <ClientsTable
+            clients={clients}
+            total={clients.length}
+            onClientClick={(c: any) => setSelectedClient((prev: any) => prev?.id === c.id ? null : c)}
+            selectedClientId={selectedClient?.id}
+          />
+        </div>
+
+        {/* Panel historial */}
+        {selectedClient && (
+          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden h-fit">
+            {/* Header del panel */}
+            <div className="px-6 py-4 bg-gray-950 text-white flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="font-black text-sm truncate">{selectedClient.fullName || "Sin nombre"}</p>
+                <p className="text-gray-400 text-xs truncate">{selectedClient.email}</p>
+              </div>
+              <button onClick={() => setSelectedClient(null)} className="text-gray-400 hover:text-white p-1 rounded transition shrink-0 ml-3">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* KPIs del cliente */}
+            {clientStats ? (
+              <>
+                <div className="grid grid-cols-2 gap-px bg-gray-100">
+                  <div className="bg-white p-4">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total comprado</p>
+                    <p className="text-xl font-black text-emerald-600 mt-0.5">${clientStats.totalSpent.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                  </div>
+                  <div className="bg-white p-4">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Pedidos</p>
+                    <p className="text-xl font-black text-gray-900 mt-0.5">{clientOrders.length}</p>
+                  </div>
+                  <div className="bg-white p-4">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Ticket promedio</p>
+                    <p className="text-xl font-black text-blue-600 mt-0.5">${clientStats.avgTicket.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                  </div>
+                  <div className="bg-white p-4">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Mayor compra</p>
+                    <p className="text-xl font-black text-purple-600 mt-0.5">${clientStats.maxOrder.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                  </div>
+                </div>
+
+                {/* Historial de órdenes */}
+                <div className="max-h-[420px] overflow-y-auto">
+                  <table className="w-full text-left">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b">
+                        <th className="px-4 py-3">Fecha</th>
+                        <th className="px-4 py-3">Canal</th>
+                        <th className="px-4 py-3 text-right">Total</th>
+                        <th className="px-4 py-3 text-right">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {clientOrders.map((o: any) => (
+                        <tr key={o.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3">
+                            <p className="text-xs font-bold text-gray-800">
+                              {new Date(o.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
+                            </p>
+                            <p className="text-[10px] text-gray-400 font-mono">#{o.id.slice(-6).toUpperCase()}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${o.channel === "POS" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
+                              {o.channel === "POS" ? "POS" : "Web"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="font-black text-sm text-gray-900">${Number(o.total).toLocaleString("es-MX", { minimumFractionDigits: 0 })}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-black ${
+                              o.status === "PAID" || o.status === "COMPLETED" ? "bg-green-50 text-green-700"
+                              : o.status === "SHIPPED" ? "bg-blue-50 text-blue-700"
+                              : "bg-gray-100 text-gray-500"
+                            }`}>
+                              {o.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="px-4 py-3 bg-gray-50 border-t text-xs text-gray-400 font-medium">
+                  Total botellas compradas: <span className="font-black text-gray-700">{clientStats.totalBottles} uds</span>
+                </div>
+              </>
+            ) : (
+              <div className="p-8 text-center text-gray-400">
+                <ShoppingCart size={32} className="mx-auto mb-3 opacity-30" />
+                <p className="font-bold text-sm">Sin historial de compras</p>
+                <p className="text-xs mt-1">Este cliente no tiene órdenes registradas en el sistema.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -715,104 +845,540 @@ function TabPrecios({ flavors }: { flavors: any[] }) {
 }
 
 // =====================================================================
-// TAB 1: DASHBOARD DE VENTAS
+// TAB 1: DASHBOARD DE VENTAS — PROFESIONAL
 // =====================================================================
-function TabVentas({ stats, topFlavors, topPacks, totalFlavorsSold, totalPacksSold, from, to }: any) {
-  const safeStats = stats || {};
+const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const MONTH_NAMES_FULL = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const CHART_COLORS = {
+  POS: "#7c3aed",
+  Web: "#2563eb",
+  total: "#15803d",
+};
+
+const currencyFormatter = (v: number) =>
+  v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-xs">
+      <p className="font-black text-gray-700 mb-2">{label}</p>
+      {payload.map((entry: any) => (
+        <p key={entry.name} style={{ color: entry.color }} className="font-bold">
+          {entry.name}: ${Number(entry.value).toLocaleString("es-MX", { minimumFractionDigits: 0 })}
+        </p>
+      ))}
+    </div>
+  );
+};
+
+function TabVentas({ orders = [], allLocations = [], allSubscriptions = [], topFlavors = [], topPacks = [], totalFlavorsSold = 0, totalPacksSold = 0 }: any) {
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [viewMode, setViewMode] = useState<"month" | "day">("month");
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+
+  // Available years from orders
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    years.add(currentYear);
+    orders.forEach((o: any) => years.add(new Date(o.createdAt).getFullYear()));
+    return Array.from(years).sort((a, b) => b - a);
+  }, [orders, currentYear]);
+
+  // Orders filtered by selected year
+  const yearOrders = useMemo(() =>
+    orders.filter((o: any) => new Date(o.createdAt).getFullYear() === selectedYear),
+    [orders, selectedYear]
+  );
+
+  // KPIs for selected period
+  const kpis = useMemo(() => {
+    const base = viewMode === "day"
+      ? yearOrders.filter((o: any) => new Date(o.createdAt).getMonth() === selectedMonth)
+      : yearOrders;
+
+    const revenue = base.reduce((s: number, o: any) => s + (o.total || 0), 0);
+    const posRevenue = base.filter((o: any) => o.channel === "POS").reduce((s: number, o: any) => s + (o.total || 0), 0);
+    const webRevenue = base.filter((o: any) => o.channel !== "POS").reduce((s: number, o: any) => s + (o.total || 0), 0);
+    const count = base.length;
+    const avgTicket = count > 0 ? revenue / count : 0;
+
+    // Prev period comparison (same period last year)
+    const prevYearOrders = orders.filter((o: any) => new Date(o.createdAt).getFullYear() === selectedYear - 1);
+    const prevBase = viewMode === "day"
+      ? prevYearOrders.filter((o: any) => new Date(o.createdAt).getMonth() === selectedMonth)
+      : prevYearOrders;
+    const prevRevenue = prevBase.reduce((s: number, o: any) => s + (o.total || 0), 0);
+    const revGrowth = prevRevenue > 0 ? ((revenue - prevRevenue) / prevRevenue) * 100 : null;
+
+    const activeSubscriptions = allSubscriptions.filter((s: any) => s.status === "active").length;
+
+    return { revenue, posRevenue, webRevenue, count, avgTicket, revGrowth, activeSubscriptions };
+  }, [yearOrders, orders, viewMode, selectedMonth, selectedYear, allSubscriptions]);
+
+  // Monthly chart data
+  const monthlyChartData = useMemo(() =>
+    MONTH_NAMES.map((name, i) => {
+      const mo = yearOrders.filter((o: any) => new Date(o.createdAt).getMonth() === i);
+      const POS = mo.filter((o: any) => o.channel === "POS").reduce((s: number, o: any) => s + (o.total || 0), 0);
+      const Web = mo.filter((o: any) => o.channel !== "POS").reduce((s: number, o: any) => s + (o.total || 0), 0);
+      const pedidos = mo.length;
+      return { name, POS: Math.round(POS), Web: Math.round(Web), Total: Math.round(POS + Web), pedidos };
+    }),
+    [yearOrders]
+  );
+
+  // Daily chart data (for selected month)
+  const dailyChartData = useMemo(() => {
+    const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const day = i + 1;
+      const dayOrders = yearOrders.filter((o: any) => {
+        const d = new Date(o.createdAt);
+        return d.getMonth() === selectedMonth && d.getDate() === day;
+      });
+      const POS = dayOrders.filter((o: any) => o.channel === "POS").reduce((s: number, o: any) => s + (o.total || 0), 0);
+      const Web = dayOrders.filter((o: any) => o.channel !== "POS").reduce((s: number, o: any) => s + (o.total || 0), 0);
+      return { name: `${day}`, POS: Math.round(POS), Web: Math.round(Web), Total: Math.round(POS + Web) };
+    });
+  }, [yearOrders, selectedMonth, selectedYear]);
+
+  const chartData = viewMode === "month" ? monthlyChartData : dailyChartData;
+
+  // Recent orders (last 5)
+  const recentOrders = useMemo(() =>
+    [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 6),
+    [orders]
+  );
+
+  // Top months by revenue
+  const topMonth = monthlyChartData.reduce((best, m) => m.Total > best.Total ? m : best, { name: "—", Total: 0 });
+
+  // POS by location chart data
+  const locationChartData = useMemo(() => {
+    const locs = Array.isArray(allLocations) ? allLocations : [];
+    return locs
+      .map((loc: any) => {
+        const locOrders = yearOrders.filter((o: any) => o.locationId === loc.id && o.channel === "POS");
+        const revenue = locOrders.reduce((s: number, o: any) => s + (o.total || 0), 0);
+        const pedidos = locOrders.length;
+        return { name: loc.name?.length > 16 ? loc.name.slice(0, 15) + "…" : loc.name, fullName: loc.name, revenue: Math.round(revenue), pedidos };
+      })
+      .filter((d: any) => d.revenue > 0 || d.pedidos > 0)
+      .sort((a: any, b: any) => b.revenue - a.revenue);
+  }, [yearOrders, allLocations]);
+
+  // Top 10 customers
+  const topCustomers = useMemo(() => {
+    const map = new Map<string, { name: string; email: string; totalSpent: number; orderCount: number; maxSingleOrder: number; totalBottles: number }>();
+    orders.forEach((o: any) => {
+      const key = o.email || o.clientId || "anon";
+      const prev = map.get(key) || { name: o.fullName || o.email || "Sin nombre", email: o.email || "", totalSpent: 0, orderCount: 0, maxSingleOrder: 0, totalBottles: 0 };
+      prev.totalSpent += o.total || 0;
+      prev.orderCount += 1;
+      prev.maxSingleOrder = Math.max(prev.maxSingleOrder, o.total || 0);
+      prev.totalBottles += (o.orderItems || []).reduce((s: number, it: any) => s + (it.quantity || 0), 0);
+      if (!prev.name || prev.name === key) prev.name = o.fullName || o.email || "Sin nombre";
+      map.set(key, prev);
+    });
+    return Array.from(map.values()).sort((a, b) => b.totalSpent - a.totalSpent).slice(0, 10);
+  }, [orders]);
 
   return (
-    <section className="space-y-8">
-      <div className="flex flex-col md:flex-row justify-between items-end">
+    <section className="space-y-6">
+      {/* ─── HEADER + FILTROS ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black">Reporte de Ventas</h2>
-          <p className="text-sm text-gray-400 mt-1">
-            {from && to ? `Del ${from} al ${to}` : "Histórico completo"}
+          <h2 className="text-2xl font-black tracking-tight">Dashboard de Ventas</h2>
+          <p className="text-xs text-gray-400 font-medium mt-0.5 uppercase tracking-widest">
+            {viewMode === "month" ? `Año ${selectedYear} · Vista mensual` : `${MONTH_NAMES_FULL[selectedMonth]} ${selectedYear} · Vista diaria`}
+          </p>
+        </div>
+
+        {/* Controles de filtro */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Año */}
+          <select
+            value={selectedYear}
+            onChange={e => setSelectedYear(Number(e.target.value))}
+            className="text-xs font-bold border border-gray-200 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-gray-300"
+          >
+            {availableYears.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+
+          {/* Vista: Mes / Día */}
+          <div className="flex bg-gray-100 p-1 rounded-lg">
+            <button
+              onClick={() => setViewMode("month")}
+              className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${viewMode === "month" ? "bg-white shadow-sm text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
+            >
+              Por Mes
+            </button>
+            <button
+              onClick={() => setViewMode("day")}
+              className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded-md transition-all ${viewMode === "day" ? "bg-white shadow-sm text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
+            >
+              Por Día
+            </button>
+          </div>
+
+          {/* Mes (solo en vista diaria) */}
+          {viewMode === "day" && (
+            <select
+              value={selectedMonth}
+              onChange={e => setSelectedMonth(Number(e.target.value))}
+              className="text-xs font-bold border border-gray-200 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-gray-300"
+            >
+              {MONTH_NAMES_FULL.map((m, i) => (
+                <option key={i} value={i}>{m}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {/* ─── KPI CARDS ─── */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        {/* Revenue */}
+        <div className="bg-zinc-950 text-white p-5 rounded-2xl shadow-lg col-span-2 xl:col-span-1">
+          <p className="text-[10px] font-bold opacity-50 uppercase tracking-widest mb-1">Ingresos totales</p>
+          <p className="text-3xl font-black text-emerald-400">
+            ${kpis.revenue.toLocaleString("es-MX", { minimumFractionDigits: 0 })}
+          </p>
+          {kpis.revGrowth !== null && (
+            <p className={`text-xs font-bold mt-2 flex items-center gap-1 ${kpis.revGrowth >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              {kpis.revGrowth >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+              {kpis.revGrowth >= 0 ? "+" : ""}{kpis.revGrowth.toFixed(1)}% vs año anterior
+            </p>
+          )}
+        </div>
+
+        {/* Pedidos */}
+        <div className="bg-white p-5 rounded-2xl border shadow-sm">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Pedidos</p>
+          <p className="text-3xl font-black text-gray-900">{kpis.count}</p>
+          <p className="text-xs text-gray-400 mt-2 font-medium">Ticket promedio: ${kpis.avgTicket.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+        </div>
+
+        {/* Canal split */}
+        <div className="bg-white p-5 rounded-2xl border shadow-sm">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Canal de venta</p>
+          <div className="space-y-2">
+            <div>
+              <div className="flex justify-between text-xs font-bold mb-1">
+                <span className="text-purple-600">POS</span>
+                <span>${kpis.posRevenue.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-1.5">
+                <div className="h-full bg-purple-500 rounded-full" style={{ width: `${kpis.revenue > 0 ? (kpis.posRevenue / kpis.revenue) * 100 : 0}%` }} />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-xs font-bold mb-1">
+                <span className="text-blue-600">Web</span>
+                <span>${kpis.webRevenue.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-1.5">
+                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${kpis.revenue > 0 ? (kpis.webRevenue / kpis.revenue) * 100 : 0}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Suscripciones + Mes top */}
+        <div className="bg-white p-5 rounded-2xl border shadow-sm">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Suscripciones</p>
+          <p className="text-3xl font-black text-amber-600">{kpis.activeSubscriptions}</p>
+          <p className="text-xs text-gray-400 mt-2 font-medium">
+            Mejor mes: <span className="font-bold text-gray-700">{topMonth.name} (${topMonth.Total.toLocaleString("es-MX")})</span>
           </p>
         </div>
       </div>
-      <DateRangeFilter />
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-black text-white p-6 rounded-2xl shadow-lg">
-          <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest">Ingresos</p>
-          <p className="text-3xl font-black text-green-400 mt-1">
-            ${(safeStats.totalRevenue || 0).toLocaleString()}
-          </p>
+      {/* ─── GRÁFICA PRINCIPAL ─── */}
+      <div className="bg-white rounded-2xl border shadow-sm p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="font-black text-gray-900">
+              {viewMode === "month" ? "Ventas por mes" : `Ventas por día — ${MONTH_NAMES_FULL[selectedMonth]}`}
+            </h3>
+            <p className="text-xs text-gray-400 mt-0.5">POS (mostrador) vs. Web (ecommerce)</p>
+          </div>
+          <div className="flex items-center gap-4 text-xs font-bold">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-purple-500 inline-block" />POS</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" />Web</span>
+          </div>
         </div>
-        <div className="bg-white p-6 rounded-2xl border shadow-sm">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Pedidos</p>
-          <p className="text-3xl font-black mt-1">{safeStats.totalOrders || 0}</p>
+        <ResponsiveContainer width="100%" height={280}>
+          <BarChart data={chartData} margin={{ top: 0, right: 0, left: -10, bottom: 0 }} barCategoryGap="30%">
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} />
+            <YAxis tickFormatter={currencyFormatter} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: "#f9fafb" }} />
+            <Bar dataKey="POS" fill={CHART_COLORS.POS} radius={[4, 4, 0, 0]} maxBarSize={40} />
+            <Bar dataKey="Web" fill={CHART_COLORS.Web} radius={[4, 4, 0, 0]} maxBarSize={40} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ─── TENDENCIA DE INGRESOS ACUMULADOS ─── */}
+      <div className="bg-white rounded-2xl border shadow-sm p-6">
+        <h3 className="font-black text-gray-900 mb-1">Tendencia de ingresos acumulados</h3>
+        <p className="text-xs text-gray-400 mb-6">Crecimiento mes a mes durante {selectedYear}</p>
+        <ResponsiveContainer width="100%" height={180}>
+          <AreaChart
+            data={monthlyChartData.map((m, i) => ({
+              ...m,
+              Acumulado: monthlyChartData.slice(0, i + 1).reduce((s, x) => s + x.Total, 0),
+            }))}
+            margin={{ top: 0, right: 0, left: -10, bottom: 0 }}
+          >
+            <defs>
+              <linearGradient id="gradientGreen" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#15803d" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="#15803d" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} />
+            <YAxis tickFormatter={currencyFormatter} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+            <Tooltip content={<CustomTooltip />} />
+            <Area type="monotone" dataKey="Acumulado" stroke="#15803d" strokeWidth={2.5} fill="url(#gradientGreen)" dot={false} activeDot={{ r: 5, fill: "#15803d" }} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ─── VENTAS POR SUCURSAL (POS) ─── */}
+      {locationChartData.length > 0 && (
+        <div className="bg-white rounded-2xl border shadow-sm p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="font-black text-gray-900">Ventas por Sucursal — POS</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Ingresos generados en mostrador por ubicación · {selectedYear}</p>
+            </div>
+            <span className="text-[10px] font-bold bg-purple-50 text-purple-700 px-3 py-1.5 rounded-full border border-purple-100">
+              {locationChartData.length} sucursal{locationChartData.length !== 1 ? "es" : ""}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            {/* Gráfica */}
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={locationChartData} margin={{ top: 0, right: 0, left: -10, bottom: 0 }} layout="vertical" barCategoryGap="25%">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                <XAxis type="number" tickFormatter={currencyFormatter} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fontWeight: 600 }} axisLine={false} tickLine={false} width={90} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: "#f9fafb" }} />
+                <Bar dataKey="revenue" name="Ingresos" fill="#7c3aed" radius={[0, 4, 4, 0]} maxBarSize={32} />
+              </BarChart>
+            </ResponsiveContainer>
+            {/* Ranking */}
+            <div className="space-y-3">
+              {locationChartData.map((loc: any, i: number) => {
+                const maxRev = locationChartData[0]?.revenue || 1;
+                const pct = (loc.revenue / maxRev) * 100;
+                return (
+                  <div key={i}>
+                    <div className="flex items-center justify-between text-xs font-bold mb-1">
+                      <span className="flex items-center gap-2">
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white ${i === 0 ? "bg-amber-500" : i === 1 ? "bg-gray-400" : "bg-gray-300"}`}>{i + 1}</span>
+                        <span className="text-gray-800 truncate max-w-[140px]" title={loc.fullName}>{loc.fullName}</span>
+                      </span>
+                      <span className="text-gray-500 shrink-0 ml-2">${loc.revenue.toLocaleString("es-MX")} · {loc.pedidos} ped.</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-        <div className="bg-white p-6 rounded-2xl border shadow-sm">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Sabor #1</p>
-          <p className="text-xl font-black truncate mt-1">{topFlavors?.[0]?.name || "-"}</p>
+      )}
+
+      {/* ─── TOP 10 CLIENTES ─── */}
+      {topCustomers.length > 0 && (
+        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b flex items-center justify-between">
+            <div>
+              <h3 className="font-black text-gray-900">Top 10 Mejores Clientes</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Ordenados por monto acumulado total · histórico completo</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b">
+                  <th className="px-6 py-3">#</th>
+                  <th className="px-6 py-3">Cliente</th>
+                  <th className="px-6 py-3 text-right">Total Comprado</th>
+                  <th className="px-6 py-3 text-right">Pedidos</th>
+                  <th className="px-6 py-3 text-right">Max. Compra</th>
+                  <th className="px-6 py-3 text-right">Total Botellas</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {topCustomers.map((c, i) => (
+                  <tr key={i} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-3">
+                      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black text-white ${i === 0 ? "bg-amber-500" : i === 1 ? "bg-gray-400" : i === 2 ? "bg-amber-700" : "bg-gray-200 text-gray-600"}`}>
+                        {i + 1}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3">
+                      <p className="font-bold text-sm text-gray-900 truncate max-w-[180px]">{c.name}</p>
+                      <p className="text-[10px] text-blue-500 truncate max-w-[180px]">{c.email}</p>
+                    </td>
+                    <td className="px-6 py-3 text-right">
+                      <span className="font-black text-sm text-emerald-700">${c.totalSpent.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</span>
+                    </td>
+                    <td className="px-6 py-3 text-right">
+                      <span className="font-bold text-sm text-gray-700">{c.orderCount}</span>
+                    </td>
+                    <td className="px-6 py-3 text-right">
+                      <span className="font-bold text-sm text-gray-500">${c.maxSingleOrder.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</span>
+                    </td>
+                    <td className="px-6 py-3 text-right">
+                      <span className="font-bold text-sm text-purple-700">{c.totalBottles} uds</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div className="bg-white p-6 rounded-2xl border shadow-sm">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Pack #1</p>
-          <p className="text-xl font-black truncate mt-1">{topPacks?.[0]?.name || "-"}</p>
+      )}
+
+      {/* ─── TOP PRODUCTOS + ÓRDENES RECIENTES ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* Top Sabores */}
+        <div className="bg-white rounded-2xl border shadow-sm p-6">
+          <h3 className="font-black text-gray-900 mb-5 text-sm uppercase tracking-widest">Top Sabores</h3>
+          <div className="space-y-3">
+            {topFlavors.length > 0 ? topFlavors.slice(0, 6).map((f: any, idx: number) => {
+              const pct = totalFlavorsSold > 0 ? (f.count / totalFlavorsSold) * 100 : 0;
+              return (
+                <div key={idx}>
+                  <div className="flex justify-between text-xs font-bold mb-1">
+                    <span className="text-gray-700 truncate mr-2">{idx + 1}. {f.name}</span>
+                    <span className="text-gray-400 shrink-0">{f.count} uds</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: `hsl(${220 + idx * 20}, 70%, ${55 - idx * 5}%)` }} />
+                  </div>
+                </div>
+              );
+            }) : (
+              <p className="text-gray-400 text-sm italic text-center py-4">Sin ventas registradas.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Top Packs */}
+        <div className="bg-white rounded-2xl border shadow-sm p-6">
+          <h3 className="font-black text-gray-900 mb-5 text-sm uppercase tracking-widest">Top Packs</h3>
+          <div className="space-y-3">
+            {topPacks.length > 0 ? topPacks.slice(0, 6).map((p: any, idx: number) => {
+              const pct = totalPacksSold > 0 ? (p.count / totalPacksSold) * 100 : 0;
+              return (
+                <div key={idx}>
+                  <div className="flex justify-between text-xs font-bold mb-1">
+                    <span className="text-gray-700 truncate mr-2">{idx + 1}. {p.name}</span>
+                    <span className="text-gray-400 shrink-0">{p.count} uds</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: `hsl(${280 + idx * 15}, 65%, ${50 - idx * 4}%)` }} />
+                  </div>
+                </div>
+              );
+            }) : (
+              <p className="text-gray-400 text-sm italic text-center py-4">Sin ventas registradas.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Órdenes recientes */}
+        <div className="bg-white rounded-2xl border shadow-sm p-6">
+          <h3 className="font-black text-gray-900 mb-5 text-sm uppercase tracking-widest">Últimas Órdenes</h3>
+          <div className="space-y-3">
+            {recentOrders.length > 0 ? recentOrders.map((o: any) => (
+              <div key={o.id} className="flex items-center justify-between gap-2 py-2 border-b border-gray-50 last:border-0">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-gray-800 truncate">{o.fullName || o.email || "Sin nombre"}</p>
+                  <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                    {new Date(o.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs font-black text-gray-900">${Number(o.total).toLocaleString("es-MX")}</p>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black ${o.channel === "POS" ? "bg-purple-50 text-purple-600" : "bg-blue-50 text-blue-600"}`}>
+                    {o.channel === "POS" ? "POS" : "Web"}
+                  </span>
+                </div>
+              </div>
+            )) : (
+              <p className="text-gray-400 text-sm italic text-center py-4">Sin órdenes recientes.</p>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-2xl shadow-sm border">
-          <h3 className="text-lg font-black mb-6">🍍 Top Sabores</h3>
-          <div className="space-y-4">
-            {Array.isArray(topFlavors) && topFlavors.length > 0 ? (
-              topFlavors.map((f: any, idx: number) => {
-                const pct =
-                  totalFlavorsSold > 0
-                    ? ((f.count / totalFlavorsSold) * 100).toFixed(1)
-                    : 0;
-                return (
-                  <div key={idx}>
-                    <div className="flex justify-between text-sm font-bold mb-1">
-                      <span className="text-gray-800">{idx + 1}. {f.name}</span>
-                      <span className="text-gray-400">{pct}% ({f.count})</span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2.5">
-                      <div
-                        className="h-full bg-blue-500 rounded-full transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-gray-400 text-center italic text-sm">Sin datos aún.</p>
-            )}
-          </div>
+      {/* ─── TABLA RESUMEN POR MES ─── */}
+      <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b">
+          <h3 className="font-black text-gray-900 text-sm uppercase tracking-widest">Resumen por Mes — {selectedYear}</h3>
         </div>
-        <div className="bg-white p-8 rounded-2xl shadow-sm border">
-          <h3 className="text-lg font-black mb-6">📦 Top Packs</h3>
-          <div className="space-y-4">
-            {Array.isArray(topPacks) && topPacks.length > 0 ? (
-              topPacks.map((p: any, idx: number) => {
-                const pct =
-                  totalPacksSold > 0
-                    ? ((p.count / totalPacksSold) * 100).toFixed(1)
-                    : 0;
-                return (
-                  <div key={idx}>
-                    <div className="flex justify-between text-sm font-bold mb-1">
-                      <span className="text-gray-800">{idx + 1}. {p.name}</span>
-                      <span className="text-gray-400">{pct}% ({p.count})</span>
-                    </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2.5">
-                      <div
-                        className="h-full bg-black rounded-full transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-gray-400 text-center italic text-sm">Sin datos aún.</p>
-            )}
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b">
+                <th className="px-6 py-3">Mes</th>
+                <th className="px-6 py-3 text-right">POS</th>
+                <th className="px-6 py-3 text-right">Web</th>
+                <th className="px-6 py-3 text-right">Total</th>
+                <th className="px-6 py-3 text-right">Pedidos</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {monthlyChartData.map((m, i) => (
+                <tr
+                  key={i}
+                  onClick={() => { setViewMode("day"); setSelectedMonth(i); }}
+                  className="hover:bg-gray-50 cursor-pointer transition-colors group"
+                >
+                  <td className="px-6 py-3">
+                    <span className="font-bold text-sm text-gray-800 group-hover:text-blue-600 transition-colors">
+                      {MONTH_NAMES_FULL[i]}
+                    </span>
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <span className="text-sm font-bold text-purple-600">${m.POS.toLocaleString("es-MX")}</span>
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <span className="text-sm font-bold text-blue-600">${m.Web.toLocaleString("es-MX")}</span>
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <span className="text-sm font-black text-gray-900">${m.Total.toLocaleString("es-MX")}</span>
+                  </td>
+                  <td className="px-6 py-3 text-right">
+                    <span className="text-sm text-gray-500 font-medium">{m.pedidos}</span>
+                  </td>
+                </tr>
+              ))}
+              {/* Totales */}
+              <tr className="bg-gray-50 font-black">
+                <td className="px-6 py-3 text-sm uppercase tracking-wider text-gray-600">Total {selectedYear}</td>
+                <td className="px-6 py-3 text-right text-sm text-purple-700">${monthlyChartData.reduce((s, m) => s + m.POS, 0).toLocaleString("es-MX")}</td>
+                <td className="px-6 py-3 text-right text-sm text-blue-700">${monthlyChartData.reduce((s, m) => s + m.Web, 0).toLocaleString("es-MX")}</td>
+                <td className="px-6 py-3 text-right text-sm text-gray-900">${monthlyChartData.reduce((s, m) => s + m.Total, 0).toLocaleString("es-MX")}</td>
+                <td className="px-6 py-3 text-right text-sm text-gray-600">{monthlyChartData.reduce((s, m) => s + m.pedidos, 0)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
