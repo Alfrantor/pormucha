@@ -22,7 +22,8 @@ model Client {
   // Datos fiscales (CLAVE para México)
   rfc                   String?               // Registro Federal del Contribuyente
   businessName          String?               // Razón Social (para jurídicas)
-  curp                  String?               // CURP (para personas físicas)
+  curp                  String?               // CURP (para personas físicas) — en desuso, no se muestra en UI
+  zipCode               String?               // Código postal
 
   // Clasificación comercial
   classification        String                @default("MINORISTA") // MINORISTA | MAYORISTA | DISTRIBUIDOR

@@ -5,12 +5,12 @@ import { ArrowLeft, MapPin, CreditCard, MessageSquare } from "lucide-react";
 import Link from "next/link";
 
 interface ClientDetailPageProps {
-  params: {
-    id: string;
-  };
+  params: Promise<{ id: string }>;
 }
 
 export default async function ClientDetailPage({ params }: ClientDetailPageProps) {
+  const { id } = await params;
+
   // Verificar acceso
   const { sessionClaims } = await auth();
   const userRole = (sessionClaims?.metadata as any)?.role;
@@ -20,7 +20,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
   }
 
   const client = await db.client.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       addresses: true,
       orders: { orderBy: { createdAt: "desc" }, take: 10 },
@@ -45,7 +45,7 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
       {/* Encabezado */}
       <div className="flex items-center gap-4">
         <Link
-          href="/admin/clientes"
+          href="/admin"
           className="p-2 hover:bg-gray-100 rounded-lg transition"
         >
           <ArrowLeft size={20} className="text-gray-600" />

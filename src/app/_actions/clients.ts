@@ -11,7 +11,7 @@ export async function createClient(data: {
   phone?: string;
   rfc?: string;
   businessName?: string;
-  curp?: string;
+  zipCode?: string;
   classification?: string;
   creditLimit?: number;
   paymentTerms?: number;
@@ -29,7 +29,7 @@ export async function createClient(data: {
         phone: data.phone,
         rfc: data.rfc?.toUpperCase(),
         businessName: data.businessName,
-        curp: data.curp?.toUpperCase(),
+        zipCode: data.zipCode || null,
         classification: data.classification || "MINORISTA",
         creditLimit: data.creditLimit ? parseFloat(data.creditLimit.toString()) : 0,
         paymentTerms: data.paymentTerms,
@@ -67,6 +67,7 @@ export async function updateClient(
     phone?: string;
     rfc?: string;
     businessName?: string;
+    zipCode?: string;
     classification?: string;
     creditLimit?: number;
     paymentTerms?: number;
