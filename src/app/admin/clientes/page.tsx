@@ -42,19 +42,21 @@ export default async function ClientesPage({ searchParams }: ClientsPageProps) {
       where.classification = classification;
     }
 
-    const [clients, total] = await Promise.all([
+    const [clients, total, giros] = await Promise.all([
       db.client.findMany({
         where,
         include: {
           addresses: { where: { isDefault: true }, take: 1 },
           orders: { select: { id: true }, take: 1 },
           credits: { where: { status: "PENDING" }, select: { id: true } },
+          giro: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: "desc" },
         take: 20,
         skip: offset,
       }),
       db.client.count({ where }),
+      db.businessGiro.findMany({ orderBy: { name: "asc" } }),
     ]);
 
     // Serializar campos Decimal → number plain para Client Components
@@ -67,7 +69,7 @@ export default async function ClientesPage({ searchParams }: ClientsPageProps) {
 
     return (
       <div className="p-8 max-w-7xl mx-auto">
-        <ClientsTable clients={serializedClients} total={total} />
+        <ClientsTable clients={serializedClients} total={total} giros={giros} />
       </div>
     );
   } catch (error) {
