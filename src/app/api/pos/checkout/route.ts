@@ -19,8 +19,9 @@ export async function POST(request: Request) {
           subtotal: recordedSubtotal,
           locationId: body.locationId,
           clientId: body.clientId || null,
-          fullName: body.fullName || "Cliente Mostrador",
+          fullName: body.fullName || null,
           email: body.email || "",
+          requiresInvoice: body.requiresInvoice ?? false,
           orderItems: {
             create: body.items.map((item: any) => ({
               productId: item.productId || null,

@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  LineChart, Line, Area, AreaChart,
+  LineChart, Line, Area, AreaChart, ReferenceLine,
 } from "recharts";
 import { UserButton } from "@clerk/nextjs";
 import { TogglePlanBtn } from "@/components/admin/toggle-plan-btn";
@@ -26,6 +26,9 @@ import {
   createTransfer, receiveTransfer
 } from "@/actions/admin-actions";
 import { generateShippingLabel } from "@/actions/admin-actions";
+import { setInventoryPin } from "@/app/_actions/settings";
+import { createAdjustmentRequest, approveAdjustmentRequest, rejectAdjustmentRequest } from "@/app/_actions/inventory";
+import { cancelOrder } from "@/app/_actions/orders";
 
 // ---- Types ----
 type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios" | "giros";
@@ -138,6 +141,7 @@ export default function AdminDashboard({ data }: { data: any }) {
     activeLocations = [],
     leads = [],
     userEmail = "",
+    userRole = "admin",
     from = null,
     to = null,
     transfers = [],
@@ -147,6 +151,7 @@ export default function AdminDashboard({ data }: { data: any }) {
     orders = [],
     flavorsWithPricing = [],
     giros = [],
+    adjustmentRequests = [],
   } = data;
 
   const memoizedStats = useMemo(() => stats, [stats]);
@@ -271,7 +276,7 @@ export default function AdminDashboard({ data }: { data: any }) {
             <TabVentas {...{ stats: memoizedStats, topFlavors, topPacks, totalFlavorsSold, totalPacksSold, from, to, orders, allLocations, allSubscriptions }} />
           )}
           {activeTab === "inventario" && (
-            <TabInventario {...{ activeFlavors, activeLocations, allLocations, userEmail }} />
+            <TabInventario {...{ activeFlavors, activeLocations, allLocations, userEmail, userRole, adjustmentRequests }} />
           )}
           {activeTab === "envios" && (
             <TabEnvios {...{ activeFlavors, activeLocations, transfers, userEmail }} />
@@ -283,8 +288,8 @@ export default function AdminDashboard({ data }: { data: any }) {
           {activeTab === "productos" && (
             <TabProductos {...{ allProducts, allFlavors, priceHistory, userEmail }} />
           )}
-          {activeTab === "usuarios" && <TabUsuarios users={users} />}
-          {activeTab === "clientes" && <TabClientes clients={clients} orders={orders} />}
+          {activeTab === "usuarios" && <TabUsuarios users={users} currentUserRole={userRole} />}
+          {activeTab === "clientes" && <TabClientes clients={clients} orders={orders} giros={giros} />}
           {activeTab === "precios" && <TabPrecios flavors={flavorsWithPricing} />}
           {activeTab === "pedidos" && <TabPedidos orders={orders} />}
           {activeTab === "giros" && <TabGiros giros={giros} />}
@@ -294,38 +299,104 @@ export default function AdminDashboard({ data }: { data: any }) {
   );
 }
 
+// ── tipos del modal de cancelación ───────────────────────────────────────────
+type CancelStep = "confirm" | "stock" | "replacement" | "note" | "done";
+
 function TabPedidos({ orders = [] }: { orders: any[] }) {
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
-  const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB">("all");
+  const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB" | "CANCELLED">("all");
+
+  // Estado del modal de cancelación
+  const [cancelTarget, setCancelTarget] = useState<any>(null);
+  const [cancelStep, setCancelStep] = useState<CancelStep>("confirm");
+  const [returnStock, setReturnStock] = useState<boolean | null>(null);
+  const [doReplacement, setDoReplacement] = useState<boolean | null>(null);
+  const [cancelNote, setCancelNote] = useState("");
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [localOrders, setLocalOrders] = useState<any[]>(orders);
+
+  // Sincronizar si cambia el prop (refresco de página)
+  React.useEffect(() => { setLocalOrders(orders); }, [orders]);
+
+  const openCancel = (order: any) => {
+    setCancelTarget(order);
+    setCancelStep("confirm");
+    setReturnStock(null);
+    setDoReplacement(null);
+    setCancelNote("");
+  };
+  const closeCancel = () => { setCancelTarget(null); setCancelLoading(false); };
+
+  const executeCancel = async () => {
+    if (!cancelTarget) return;
+    setCancelLoading(true);
+    const res = await cancelOrder(
+      cancelTarget.id,
+      returnStock ?? false,
+      doReplacement ?? false,
+      cancelNote || undefined
+    );
+    setCancelLoading(false);
+    if (!res.success) { alert("Error: " + res.error); return; }
+
+    // Actualizar estado local
+    setLocalOrders(prev => {
+      const updated = prev.map(o =>
+        o.id === cancelTarget.id
+          ? { ...o, status: "CANCELLED", cancelledAt: new Date().toISOString(), cancellationNote: cancelNote || null }
+          : o
+      );
+      if (res.replacementOrderId) {
+        // Añadir la orden de reemplazo con datos básicos
+        const orig = cancelTarget;
+        updated.unshift({
+          ...orig,
+          id: res.replacementOrderId,
+          status: "PENDING",
+          cancelledAt: null,
+          cancellationNote: null,
+          replacesOrderId: orig.id,
+          replacements: [],
+          notes: `Reemplazo de #${orig.id.slice(-6).toUpperCase()}`,
+        });
+      }
+      return updated;
+    });
+    setCancelStep("done");
+  };
 
   const handleAction = async (order: any) => {
-    if (order.trackingUrl) {
-      window.open(order.trackingUrl, "_blank");
-      return;
-    }
+    if (order.trackingUrl) { window.open(order.trackingUrl, "_blank"); return; }
     setIsGenerating(order.id);
     try {
       const res = await generateShippingLabel(order.id);
-      if (res.success && res.labelUrl) {
-        window.open(res.labelUrl, "_blank");
-      } else {
-        alert("Error: " + res.error);
-      }
-    } catch (err) {
-      alert("Error crítico al conectar con Skydropx");
-    } finally {
-      setIsGenerating(null);
-    }
+      if (res.success && res.labelUrl) window.open(res.labelUrl, "_blank");
+      else alert("Error: " + res.error);
+    } catch { alert("Error crítico al conectar con Skydropx"); }
+    finally { setIsGenerating(null); }
   };
 
-  const posCount = orders.filter(o => o.channel === "POS").length;
-  const webCount = orders.filter(o => o.channel !== "POS").length;
+  const cancelledCount = localOrders.filter(o => o.status === "CANCELLED").length;
+  const posCount       = localOrders.filter(o => o.channel === "POS" && o.status !== "CANCELLED").length;
+  const webCount       = localOrders.filter(o => o.channel !== "POS" && o.status !== "CANCELLED").length;
 
-  const filteredOrders = orders.filter(order => {
-    if (channelFilter === "POS") return order.channel === "POS";
-    if (channelFilter === "WEB") return order.channel !== "POS";
-    return true;
+  const filteredOrders = localOrders.filter(order => {
+    if (channelFilter === "CANCELLED") return order.status === "CANCELLED";
+    if (channelFilter === "POS") return order.channel === "POS" && order.status !== "CANCELLED";
+    if (channelFilter === "WEB") return order.channel !== "POS" && order.status !== "CANCELLED";
+    return order.status !== "CANCELLED";
   });
+
+  const statusBadge = (status: string) => {
+    const map: Record<string, string> = {
+      SHIPPED:    "bg-blue-50 text-blue-600 border-blue-100",
+      PAID:       "bg-green-50 text-green-700 border-green-100",
+      COMPLETED:  "bg-green-50 text-green-700 border-green-100",
+      CANCELLED:  "bg-red-50 text-red-600 border-red-100",
+      PENDING:    "bg-amber-50 text-amber-600 border-amber-100",
+    };
+    return map[status] ?? "bg-gray-50 text-gray-600 border-gray-100";
+  };
 
   return (
     <section className="space-y-6">
@@ -336,25 +407,23 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
             {filteredOrders.length} pedidos encontrados
           </p>
         </div>
-        <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
-          <button
-            onClick={() => setChannelFilter("all")}
-            className={`px-4 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === "all" ? "bg-white text-black shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-          >
-            Todos ({orders.length})
-          </button>
-          <button
-            onClick={() => setChannelFilter("POS")}
-            className={`px-4 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === "POS" ? "bg-white text-purple-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-          >
-            POS ({posCount})
-          </button>
-          <button
-            onClick={() => setChannelFilter("WEB")}
-            className={`px-4 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === "WEB" ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-          >
-            Web ({webCount})
-          </button>
+        <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
+          {(["all","POS","WEB","CANCELLED"] as const).map(f => (
+            <button key={f}
+              onClick={() => setChannelFilter(f)}
+              className={`px-3 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === f
+                ? f === "CANCELLED" ? "bg-white text-red-600 shadow-sm"
+                  : f === "POS" ? "bg-white text-purple-700 shadow-sm"
+                  : f === "WEB" ? "bg-white text-blue-600 shadow-sm"
+                  : "bg-white text-black shadow-sm"
+                : "text-gray-500 hover:text-gray-700"}`}
+            >
+              {f === "all" ? `Todos (${localOrders.filter(o=>o.status!=="CANCELLED").length})`
+                : f === "POS" ? `POS (${posCount})`
+                : f === "WEB" ? `Web (${webCount})`
+                : `Cancelados (${cancelledCount})`}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -364,7 +433,7 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
             <tr className="bg-gray-50 text-[10px] uppercase font-black text-gray-500 border-b">
               <th className="px-6 py-4">ID Orden</th>
               <th className="px-6 py-4">Canal</th>
-              <th className="px-6 py-4">Nombre del Cliente</th>
+              <th className="px-6 py-4">Cliente</th>
               <th className="px-6 py-4">Total</th>
               <th className="px-6 py-4">Estatus</th>
               <th className="px-6 py-4 text-center">Acciones</th>
@@ -374,12 +443,25 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
             {filteredOrders.length > 0 ? (
               filteredOrders.map((order: any) => {
                 const isPOS = order.channel === "POS";
+                const isCancelled = order.status === "CANCELLED";
+                const hasReplacement = order.replacements?.length > 0;
+                const isReplacement = !!order.replacesOrderId;
                 return (
-                  <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={order.id} className={`hover:bg-gray-50/50 transition-colors ${isCancelled ? "opacity-60" : ""}`}>
                     <td className="px-6 py-4">
                       <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
                         #{order.id.slice(-6).toUpperCase()}
                       </span>
+                      {isReplacement && (
+                        <p className="text-[9px] text-amber-600 font-bold mt-1">
+                          ↩ Reemplazo de #{order.replacesOrderId?.slice(-6).toUpperCase()}
+                        </p>
+                      )}
+                      {hasReplacement && (
+                        <p className="text-[9px] text-blue-500 font-bold mt-1">
+                          ↪ Reemplazada
+                        </p>
+                      )}
                     </td>
 
                     <td className="px-6 py-4">
@@ -389,41 +471,57 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
                     </td>
 
                     <td className="px-6 py-4">
-                      <p className="font-bold text-gray-900">{order.fullName || "Sin nombre registrado"}</p>
-                      <p className="text-[10px] text-gray-400 font-medium">{order.email}</p>
+                      <p className="font-bold text-gray-900">{order.fullName || "Sin nombre"}</p>
+                      <p className="text-[10px] text-gray-400">{order.email}</p>
+                      {isCancelled && order.cancellationNote && (
+                        <p className="text-[9px] text-red-500 italic mt-0.5">"{order.cancellationNote}"</p>
+                      )}
                     </td>
 
                     <td className="px-6 py-4">
                       <p className="font-black text-sm text-gray-900">
-                        ${Number(order.total).toLocaleString('es-MX')}
+                        ${Number(order.total).toLocaleString("es-MX")}
                       </p>
                     </td>
 
                     <td className="px-6 py-4">
-                      <span className={`text-[10px] px-3 py-1 rounded-full font-black tracking-tighter border ${
-                        order.status === "SHIPPED" ? "bg-blue-50 text-blue-600 border-blue-100"
-                        : order.status === "PAID" || order.status === "COMPLETED" ? "bg-green-50 text-green-700 border-green-100"
-                        : "bg-gray-50 text-gray-600 border-gray-100"
-                      }`}>
+                      <span className={`text-[10px] px-3 py-1 rounded-full font-black tracking-tighter border ${statusBadge(order.status)}`}>
                         ● {order.status}
                       </span>
                     </td>
 
-                    <td className="px-6 py-4 text-center">
-                      {!isPOS ? (
-                        <button
-                          onClick={() => handleAction(order)}
-                          disabled={isGenerating === order.id}
-                          className={`text-[10px] px-4 py-2 rounded-xl font-bold uppercase tracking-widest transition-all shadow-sm active:scale-95 disabled:opacity-50 ${order.trackingUrl
-                            ? "bg-green-100 text-green-700 border border-green-200 hover:bg-green-200"
-                            : "bg-black text-white hover:bg-gray-800"
-                          }`}
-                        >
-                          {isGenerating === order.id ? "Procesando..." : order.trackingUrl ? "Ver Guía" : "Generar Guía"}
-                        </button>
-                      ) : (
-                        <span className="text-[10px] text-gray-400 font-medium">—</span>
-                      )}
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-center gap-2">
+                        {/* Botón envío (solo web) */}
+                        {!isPOS && !isCancelled && (
+                          <button
+                            onClick={() => handleAction(order)}
+                            disabled={isGenerating === order.id}
+                            className={`text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest transition-all shadow-sm active:scale-95 disabled:opacity-50 ${order.trackingUrl
+                              ? "bg-green-100 text-green-700 border border-green-200 hover:bg-green-200"
+                              : "bg-black text-white hover:bg-gray-800"
+                            }`}
+                          >
+                            {isGenerating === order.id ? "..." : order.trackingUrl ? "Ver Guía" : "Generar Guía"}
+                          </button>
+                        )}
+
+                        {/* Botón cancelar */}
+                        {!isCancelled && (
+                          <button
+                            onClick={() => openCancel(order)}
+                            className="text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest border border-red-200 text-red-500 hover:bg-red-50 transition-all"
+                          >
+                            Cancelar
+                          </button>
+                        )}
+
+                        {isCancelled && (
+                          <span className="text-[10px] text-gray-400 font-medium">
+                            {order.cancelledAt ? new Date(order.cancelledAt).toLocaleDateString("es-MX") : "—"}
+                          </span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -438,6 +536,138 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
           </tbody>
         </table>
       </div>
+
+      {/* ── MODAL DE CANCELACIÓN ── */}
+      {cancelTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 space-y-6">
+
+            {cancelStep === "confirm" && (
+              <>
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 mx-auto rounded-full bg-red-100 flex items-center justify-center text-2xl">🚫</div>
+                  <h3 className="text-xl font-black text-gray-800">¿Cancelar esta orden?</h3>
+                  <p className="text-sm text-gray-500">
+                    Orden <span className="font-black text-gray-800">#{cancelTarget.id.slice(-6).toUpperCase()}</span>
+                    {" — "}{cancelTarget.fullName || "Sin nombre"}
+                  </p>
+                  <p className="font-black text-gray-900">${Number(cancelTarget.total).toLocaleString("es-MX")}</p>
+                </div>
+                <div className="space-y-2">
+                  <button onClick={() => setCancelStep("stock")} className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-2xl font-black uppercase transition-all active:scale-95">
+                    Sí, cancelar orden
+                  </button>
+                  <button onClick={closeCancel} className="w-full py-3 text-sm text-gray-400 font-bold hover:text-gray-700">
+                    Volver
+                  </button>
+                </div>
+              </>
+            )}
+
+            {cancelStep === "stock" && (
+              <>
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 flex items-center justify-center text-2xl">📦</div>
+                  <h3 className="text-xl font-black text-gray-800">¿Regresar inventario?</h3>
+                  <p className="text-sm text-gray-500">¿Deseas devolver los productos de esta orden al inventario de la sucursal?</p>
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => { setReturnStock(true); setCancelStep("replacement"); }}
+                    className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-2xl font-black transition-all active:scale-95"
+                  >
+                    ✅ Sí, regresar al inventario
+                  </button>
+                  <button
+                    onClick={() => { setReturnStock(false); setCancelStep("replacement"); }}
+                    className="w-full border-2 border-gray-200 py-3 rounded-2xl font-black text-gray-600 hover:bg-gray-50 transition-all"
+                  >
+                    ❌ No, mantener inventario
+                  </button>
+                </div>
+              </>
+            )}
+
+            {cancelStep === "replacement" && (
+              <>
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 mx-auto rounded-full bg-blue-100 flex items-center justify-center text-2xl">🔄</div>
+                  <h3 className="text-xl font-black text-gray-800">¿Crear nota de venta?</h3>
+                  <p className="text-sm text-gray-500">¿Deseas generar una nueva orden vinculada a esta cancelación para dar seguimiento?</p>
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => { setDoReplacement(true); setCancelStep("note"); }}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-2xl font-black transition-all active:scale-95"
+                  >
+                    ✅ Sí, crear nota de reemplazo
+                  </button>
+                  <button
+                    onClick={() => { setDoReplacement(false); setCancelStep("note"); }}
+                    className="w-full border-2 border-gray-200 py-3 rounded-2xl font-black text-gray-600 hover:bg-gray-50 transition-all"
+                  >
+                    ❌ No, solo cancelar
+                  </button>
+                </div>
+              </>
+            )}
+
+            {cancelStep === "note" && (
+              <>
+                <div className="space-y-3">
+                  <div className="text-center space-y-1">
+                    <div className="w-14 h-14 mx-auto rounded-full bg-gray-100 flex items-center justify-center text-2xl">📝</div>
+                    <h3 className="text-xl font-black text-gray-800">Motivo (opcional)</h3>
+                  </div>
+                  <textarea
+                    value={cancelNote}
+                    onChange={e => setCancelNote(e.target.value)}
+                    placeholder="Ej: Cliente solicitó devolución, error en pedido..."
+                    rows={3}
+                    className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-gray-400 resize-none"
+                  />
+                  <div className="bg-gray-50 rounded-2xl p-4 text-xs text-gray-600 space-y-1">
+                    <p>• Regresar inventario: <span className="font-black">{returnStock ? "Sí" : "No"}</span></p>
+                    <p>• Nota de reemplazo: <span className="font-black">{doReplacement ? "Sí" : "No"}</span></p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={executeCancel}
+                    disabled={cancelLoading}
+                    className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-2xl font-black uppercase transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {cancelLoading ? "Procesando..." : "Confirmar Cancelación"}
+                  </button>
+                  <button onClick={closeCancel} className="w-full py-3 text-sm text-gray-400 font-bold hover:text-gray-700">
+                    Volver
+                  </button>
+                </div>
+              </>
+            )}
+
+            {cancelStep === "done" && (
+              <div className="text-center space-y-4">
+                <div className="w-16 h-16 mx-auto rounded-full bg-green-100 flex items-center justify-center text-3xl">✅</div>
+                <h3 className="text-xl font-black text-gray-800">Cancelación completada</h3>
+                {doReplacement && (
+                  <p className="text-sm text-blue-600 font-bold bg-blue-50 rounded-2xl px-4 py-3">
+                    Se generó una nota de reemplazo vinculada (PENDING) para dar seguimiento.
+                  </p>
+                )}
+                {returnStock && (
+                  <p className="text-sm text-amber-600 font-bold bg-amber-50 rounded-2xl px-4 py-3">
+                    El inventario fue actualizado correctamente.
+                  </p>
+                )}
+                <button onClick={closeCancel} className="w-full bg-gray-900 text-white py-3 rounded-2xl font-black uppercase transition-all active:scale-95">
+                  Cerrar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -446,14 +676,25 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
 // =====================================================================
 // TAB: GESTIÓN DE USUARIOS (STAFF)
 // =====================================================================
-function TabUsuarios({ users }: { users: any[] }) {
+function TabUsuarios({ users, currentUserRole }: { users: any[]; currentUserRole?: string }) {
+  const [pin, setPin] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinStatus, setPinStatus] = useState<"idle" | "saving" | "ok" | "error">("idle");
+  const [pinMsg, setPinMsg] = useState("");
+
+  const handleSavePin = async () => {
+    if (pin.length < 4) { setPinMsg("El PIN debe tener al menos 4 caracteres."); setPinStatus("error"); return; }
+    if (pin !== pinConfirm) { setPinMsg("Los PINs no coinciden."); setPinStatus("error"); return; }
+    setPinStatus("saving");
+    const res = await setInventoryPin(pin);
+    if ((res as any).error) { setPinMsg((res as any).error); setPinStatus("error"); }
+    else { setPinMsg("PIN guardado correctamente."); setPinStatus("ok"); setPin(""); setPinConfirm(""); }
+  };
+
   if (!Array.isArray(users)) {
     return (
       <section className="space-y-6">
-        <div>
-          <h2 className="text-2xl font-black">Gestión de Staff</h2>
-          <p className="text-sm text-gray-400 mt-1">Asigna roles de administrador o vendedor.</p>
-        </div>
+        <h2 className="text-2xl font-black">Gestión de Staff</h2>
         <div className="p-10 border-2 border-dashed rounded-3xl text-center text-gray-400">
           Error al cargar usuarios. Por favor, recarga la página.
         </div>
@@ -462,16 +703,75 @@ function TabUsuarios({ users }: { users: any[] }) {
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-8">
       <div>
         <h2 className="text-2xl font-black">Gestión de Staff</h2>
         <p className="text-sm text-gray-400 mt-1">Asigna roles de administrador o vendedor a los usuarios registrados.</p>
       </div>
+
       {users.length > 0 ? (
         <UserManagement data={users} />
       ) : (
         <div className="p-10 border-2 border-dashed rounded-3xl text-center text-gray-400">
           No hay usuarios registrados en Clerk todavía.
+        </div>
+      )}
+
+      {/* PIN de ajuste de inventario */}
+      {currentUserRole === "admin" && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 max-w-md">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 text-lg">🔐</div>
+            <div>
+              <h3 className="font-bold text-gray-900">PIN de ajuste de inventario</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Requerido cuando un no-admin registra movimientos</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Nuevo PIN</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={8}
+                value={pin}
+                onChange={e => { setPin(e.target.value); setPinStatus("idle"); }}
+                placeholder="Mínimo 4 dígitos"
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 tracking-widest"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Confirmar PIN</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={8}
+                value={pinConfirm}
+                onChange={e => { setPinConfirm(e.target.value); setPinStatus("idle"); }}
+                placeholder="Repite el PIN"
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 tracking-widest"
+              />
+            </div>
+
+            {pinMsg && (
+              <p className={`text-xs font-bold ${pinStatus === "ok" ? "text-green-600" : "text-red-500"}`}>
+                {pinMsg}
+              </p>
+            )}
+
+            <button
+              onClick={handleSavePin}
+              disabled={pinStatus === "saving"}
+              className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 rounded-lg text-sm transition disabled:opacity-50"
+            >
+              {pinStatus === "saving" ? "Guardando..." : "Guardar PIN"}
+            </button>
+
+            <p className="text-[11px] text-gray-400">
+              Los administradores no necesitan ingresar el PIN al hacer ajustes.
+            </p>
+          </div>
         </div>
       )}
     </section>
@@ -481,26 +781,44 @@ function TabUsuarios({ users }: { users: any[] }) {
 // =====================================================================
 // TAB: CLIENTES (BASE DE DATOS LOCAL)
 // =====================================================================
-function TabClientes({ clients, orders = [] }: { clients: any[]; orders?: any[] }) {
+const MONTH_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+function TabClientes({ clients, orders = [], giros = [] }: { clients: any[]; orders?: any[]; giros?: any[] }) {
   const [selectedClient, setSelectedClient] = useState<any>(null);
+  const [view, setView] = useState<"clientes" | "deudores">("clientes");
 
   if (!Array.isArray(clients)) {
     return (
       <section className="space-y-6">
-        <div>
-          <h2 className="text-2xl font-black italic">Gestión de Clientes ERP</h2>
-          <p className="text-sm text-gray-400 mt-1">
-            Administra clientes, direcciones, créditos y descuentos.
-          </p>
-        </div>
-        <div className="p-10 border-2 border-dashed rounded-3xl text-center text-gray-400">
-          Error al cargar clientes.
-        </div>
+        <h2 className="text-2xl font-black italic">Gestión de Clientes ERP</h2>
+        <div className="p-10 border-2 border-dashed rounded-3xl text-center text-gray-400">Error al cargar clientes.</div>
       </section>
     );
   }
 
-  // Orders for selected client (match by email or clientId)
+  // ── Deudores ──
+  const debtors = useMemo(() => {
+    const today = Date.now();
+    return clients
+      .filter((c: any) => c.creditUsed > 0)
+      .map((c: any) => {
+        const overdueCredits = (c.credits || []).filter((cr: any) =>
+          cr.status !== "PAID" && cr.status !== "CANCELLED" && cr.dueDate && new Date(cr.dueDate).getTime() < today
+        );
+        const oldest = overdueCredits.reduce((min: any, cr: any) =>
+          !min || new Date(cr.dueDate) < new Date(min.dueDate) ? cr : min, null);
+        const daysOverdue = oldest
+          ? Math.floor((today - new Date(oldest.dueDate).getTime()) / 86400000)
+          : 0;
+        const totalDebt = (c.credits || [])
+          .filter((cr: any) => cr.status !== "PAID" && cr.status !== "CANCELLED")
+          .reduce((s: number, cr: any) => s + (cr.amount || 0), 0);
+        return { ...c, daysOverdue, totalDebt, isOverdue: daysOverdue > 0 };
+      })
+      .sort((a: any, b: any) => b.daysOverdue - a.daysOverdue);
+  }, [clients]);
+
+  // ── Historial del cliente seleccionado ──
   const clientOrders = useMemo(() => {
     if (!selectedClient) return [];
     return orders
@@ -521,119 +839,250 @@ function TabClientes({ clients, orders = [] }: { clients: any[]; orders?: any[] 
     return { totalSpent, avgTicket, maxOrder, totalBottles };
   }, [clientOrders]);
 
+  // ── Gráfica mensual del cliente ──
+  const clientMonthlyData = useMemo(() => {
+    if (!clientOrders.length) return [];
+    const map = new Map<string, number>();
+    clientOrders.forEach((o: any) => {
+      const d = new Date(o.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      map.set(key, (map.get(key) || 0) + (o.total || 0));
+    });
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, total]) => {
+        const [yr, mo] = key.split("-");
+        return { name: `${MONTH_SHORT[Number(mo) - 1]} ${yr.slice(2)}`, total: Math.round(total) };
+      });
+  }, [clientOrders]);
+
   return (
     <section className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-black italic">Gestión de Clientes ERP</h2>
-        <p className="text-sm text-gray-400 mt-1">
-          RFC, razón social, clasificación, crédito y descuentos. Haz clic en un cliente para ver su historial de compras.
-        </p>
-      </div>
-
-      <div className={`grid gap-6 transition-all ${selectedClient ? "grid-cols-1 xl:grid-cols-2" : "grid-cols-1"}`}>
-        {/* Tabla de clientes */}
-        <div className="min-w-0">
-          <ClientsTable
-            clients={clients}
-            total={clients.length}
-            onClientClick={(c: any) => setSelectedClient((prev: any) => prev?.id === c.id ? null : c)}
-            selectedClientId={selectedClient?.id}
-          />
+      {/* Header + toggle de vista */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-black italic">Gestión de Clientes ERP</h2>
+          <p className="text-sm text-gray-400 mt-0.5">RFC, clasificación, crédito y descuentos.</p>
         </div>
-
-        {/* Panel historial */}
-        {selectedClient && (
-          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden h-fit">
-            {/* Header del panel */}
-            <div className="px-6 py-4 bg-gray-950 text-white flex items-center justify-between">
-              <div className="min-w-0">
-                <p className="font-black text-sm truncate">{selectedClient.fullName || "Sin nombre"}</p>
-                <p className="text-gray-400 text-xs truncate">{selectedClient.email}</p>
-              </div>
-              <button onClick={() => setSelectedClient(null)} className="text-gray-400 hover:text-white p-1 rounded transition shrink-0 ml-3">
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* KPIs del cliente */}
-            {clientStats ? (
-              <>
-                <div className="grid grid-cols-2 gap-px bg-gray-100">
-                  <div className="bg-white p-4">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total comprado</p>
-                    <p className="text-xl font-black text-emerald-600 mt-0.5">${clientStats.totalSpent.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
-                  </div>
-                  <div className="bg-white p-4">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Pedidos</p>
-                    <p className="text-xl font-black text-gray-900 mt-0.5">{clientOrders.length}</p>
-                  </div>
-                  <div className="bg-white p-4">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Ticket promedio</p>
-                    <p className="text-xl font-black text-blue-600 mt-0.5">${clientStats.avgTicket.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
-                  </div>
-                  <div className="bg-white p-4">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Mayor compra</p>
-                    <p className="text-xl font-black text-purple-600 mt-0.5">${clientStats.maxOrder.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
-                  </div>
-                </div>
-
-                {/* Historial de órdenes */}
-                <div className="max-h-[420px] overflow-y-auto">
-                  <table className="w-full text-left">
-                    <thead className="sticky top-0 z-10">
-                      <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b">
-                        <th className="px-4 py-3">Fecha</th>
-                        <th className="px-4 py-3">Canal</th>
-                        <th className="px-4 py-3 text-right">Total</th>
-                        <th className="px-4 py-3 text-right">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {clientOrders.map((o: any) => (
-                        <tr key={o.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-3">
-                            <p className="text-xs font-bold text-gray-800">
-                              {new Date(o.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
-                            </p>
-                            <p className="text-[10px] text-gray-400 font-mono">#{o.id.slice(-6).toUpperCase()}</p>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${o.channel === "POS" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
-                              {o.channel === "POS" ? "POS" : "Web"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <span className="font-black text-sm text-gray-900">${Number(o.total).toLocaleString("es-MX", { minimumFractionDigits: 0 })}</span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-black ${
-                              o.status === "PAID" || o.status === "COMPLETED" ? "bg-green-50 text-green-700"
-                              : o.status === "SHIPPED" ? "bg-blue-50 text-blue-700"
-                              : "bg-gray-100 text-gray-500"
-                            }`}>
-                              {o.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="px-4 py-3 bg-gray-50 border-t text-xs text-gray-400 font-medium">
-                  Total botellas compradas: <span className="font-black text-gray-700">{clientStats.totalBottles} uds</span>
-                </div>
-              </>
-            ) : (
-              <div className="p-8 text-center text-gray-400">
-                <ShoppingCart size={32} className="mx-auto mb-3 opacity-30" />
-                <p className="font-bold text-sm">Sin historial de compras</p>
-                <p className="text-xs mt-1">Este cliente no tiene órdenes registradas en el sistema.</p>
-              </div>
+        <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
+          <button
+            onClick={() => setView("clientes")}
+            className={`px-4 py-2 text-[11px] font-bold uppercase rounded-lg transition-all ${view === "clientes" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+          >
+            Todos los clientes ({clients.length})
+          </button>
+          <button
+            onClick={() => setView("deudores")}
+            className={`px-4 py-2 text-[11px] font-bold uppercase rounded-lg transition-all flex items-center gap-1.5 ${view === "deudores" ? "bg-white text-red-700 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
+          >
+            Deudores
+            {debtors.length > 0 && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${view === "deudores" ? "bg-red-100 text-red-700" : "bg-gray-200 text-gray-600"}`}>
+                {debtors.length}
+              </span>
             )}
-          </div>
-        )}
+          </button>
+        </div>
       </div>
+
+      {/* ── Vista: Deudores ── */}
+      {view === "deudores" && (
+        <div className="space-y-4">
+          {debtors.length === 0 ? (
+            <div className="p-12 border-2 border-dashed rounded-3xl text-center text-gray-400">
+              <p className="font-bold text-lg">Sin deudores activos</p>
+              <p className="text-sm mt-1">Ningún cliente tiene crédito utilizado actualmente.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b bg-red-50 flex items-center gap-2">
+                <span className="text-red-600 font-black text-sm">{debtors.length} cliente{debtors.length !== 1 ? "s" : ""} con deuda activa</span>
+                <span className="text-red-400 text-xs">· ordenados por días de retraso</span>
+              </div>
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b">
+                    <th className="px-5 py-3">Cliente</th>
+                    <th className="px-5 py-3">Clasificación</th>
+                    <th className="px-5 py-3 text-right">Crédito usado</th>
+                    <th className="px-5 py-3 text-right">Deuda en créditos</th>
+                    <th className="px-5 py-3 text-right">Días atrasado</th>
+                    <th className="px-5 py-3 text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {debtors.map((c: any) => (
+                    <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-5 py-3">
+                        <p className="font-bold text-sm text-gray-900">{c.fullName}</p>
+                        <p className="text-xs text-gray-400">{c.email}</p>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="text-xs text-gray-500">{c.classification}</span>
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        <p className="font-black text-sm text-gray-900">${c.creditUsed.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                        <p className="text-[10px] text-gray-400">límite: ${c.creditLimit.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        {c.totalDebt > 0 ? (
+                          <p className="font-black text-sm text-red-600">${c.totalDebt.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        {c.daysOverdue > 0 ? (
+                          <span className="font-black text-sm text-red-600">{c.daysOverdue} días</span>
+                        ) : (
+                          <span className="text-xs text-green-600 font-bold">Al corriente</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-center">
+                        {c.daysOverdue > 30 ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-red-100 text-red-700 border border-red-200">Crítico</span>
+                        ) : c.daysOverdue > 0 ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-amber-100 text-amber-700 border border-amber-200">Atrasado</span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-green-50 text-green-700 border border-green-200">Al corriente</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Vista: Todos los clientes ── */}
+      {view === "clientes" && (
+        <div className={`grid gap-6 transition-all ${selectedClient ? "grid-cols-1 xl:grid-cols-2" : "grid-cols-1"}`}>
+          {/* Tabla */}
+          <div className="min-w-0">
+            <ClientsTable
+              clients={clients}
+              total={clients.length}
+              giros={giros}
+              onClientClick={(c: any) => setSelectedClient((prev: any) => prev?.id === c.id ? null : c)}
+              selectedClientId={selectedClient?.id}
+            />
+          </div>
+
+          {/* Panel detalle del cliente seleccionado */}
+          {selectedClient && (
+            <div className="bg-white rounded-2xl border shadow-sm overflow-hidden h-fit">
+              {/* Header */}
+              <div className="px-6 py-4 bg-gray-950 text-white flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="font-black text-sm truncate">{selectedClient.fullName || "Sin nombre"}</p>
+                  <p className="text-gray-400 text-xs truncate">{selectedClient.email}</p>
+                </div>
+                <button onClick={() => setSelectedClient(null)} className="text-gray-400 hover:text-white p-1 rounded transition shrink-0 ml-3">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {clientStats ? (
+                <>
+                  {/* KPIs */}
+                  <div className="grid grid-cols-2 gap-px bg-gray-100">
+                    <div className="bg-white p-4">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total comprado</p>
+                      <p className="text-xl font-black text-emerald-600 mt-0.5">${clientStats.totalSpent.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                    </div>
+                    <div className="bg-white p-4">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Pedidos</p>
+                      <p className="text-xl font-black text-gray-900 mt-0.5">{clientOrders.length}</p>
+                    </div>
+                    <div className="bg-white p-4">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Ticket promedio</p>
+                      <p className="text-xl font-black text-blue-600 mt-0.5">${clientStats.avgTicket.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                    </div>
+                    <div className="bg-white p-4">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Mayor compra</p>
+                      <p className="text-xl font-black text-purple-600 mt-0.5">${clientStats.maxOrder.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                    </div>
+                  </div>
+
+                  {/* Gráfica de compras mes a mes */}
+                  {clientMonthlyData.length >= 2 && (
+                    <div className="px-5 py-4 border-b">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Compras mes a mes</p>
+                      <ResponsiveContainer width="100%" height={140}>
+                        <LineChart data={clientMonthlyData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                          <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
+                          <Tooltip
+                            formatter={(v: any) => [`$${Number(v).toLocaleString("es-MX", { minimumFractionDigits: 0 })}`, "Compras"]}
+                            contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #e5e7eb" }}
+                          />
+                          <Line type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3, fill: "#2563eb" }} activeDot={{ r: 5 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
+                  {/* Historial de órdenes */}
+                  <div className="max-h-[360px] overflow-y-auto">
+                    <table className="w-full text-left">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b">
+                          <th className="px-4 py-3">Fecha</th>
+                          <th className="px-4 py-3">Canal</th>
+                          <th className="px-4 py-3 text-right">Total</th>
+                          <th className="px-4 py-3 text-right">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {clientOrders.map((o: any) => (
+                          <tr key={o.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-3">
+                              <p className="text-xs font-bold text-gray-800">
+                                {new Date(o.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })}
+                              </p>
+                              <p className="text-[10px] text-gray-400 font-mono">#{o.id.slice(-6).toUpperCase()}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${o.channel === "POS" ? "bg-purple-50 text-purple-700" : "bg-blue-50 text-blue-700"}`}>
+                                {o.channel === "POS" ? "POS" : "Web"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span className="font-black text-sm text-gray-900">${Number(o.total).toLocaleString("es-MX", { minimumFractionDigits: 0 })}</span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span className={`text-[9px] px-2 py-0.5 rounded-full font-black ${
+                                o.status === "PAID" || o.status === "COMPLETED" ? "bg-green-50 text-green-700"
+                                : o.status === "SHIPPED" ? "bg-blue-50 text-blue-700"
+                                : "bg-gray-100 text-gray-500"
+                              }`}>
+                                {o.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="px-4 py-3 bg-gray-50 border-t text-xs text-gray-400 font-medium">
+                    Total botellas: <span className="font-black text-gray-700">{clientStats.totalBottles} uds</span>
+                  </div>
+                </>
+              ) : (
+                <div className="p-8 text-center text-gray-400">
+                  <ShoppingCart size={32} className="mx-auto mb-3 opacity-30" />
+                  <p className="font-bold text-sm">Sin historial de compras</p>
+                  <p className="text-xs mt-1">Este cliente no tiene órdenes registradas.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -1388,70 +1837,243 @@ function TabVentas({ orders = [], allLocations = [], allSubscriptions = [], topF
 // =====================================================================
 // TAB 2: INVENTARIO
 // =====================================================================
-function TabInventario({ activeFlavors, activeLocations, allLocations, userEmail }: any) {
-  const [expandedFlavorId, setExpandedFlavorId] = useState<string | null>(null);
-
-  const toggleKardex = (id: string) => {
-    if (expandedFlavorId === id) setExpandedFlavorId(null);
-    else setExpandedFlavorId(id);
-  };
-
+function TabInventario({ activeFlavors, activeLocations, allLocations, userEmail, userRole, adjustmentRequests: initialRequests }: any) {
+  const isAdmin = userRole === "admin";
   const safeFlavors = Array.isArray(activeFlavors) ? activeFlavors : [];
   const safeLocations = Array.isArray(activeLocations) ? activeLocations : [];
   const safeAllLocations = Array.isArray(allLocations) ? allLocations : [];
 
-  return (
-    <section className="space-y-8">
-      <h2 className="text-2xl font-black">Plantas, Bodegas e Inventario</h2>
+  const [showGestion, setShowGestion] = useState(false);
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
-        {/* Existencias y Kardex */}
-        <div className="xl:col-span-2 space-y-6">
-          {/* Formulario Global de Entradas / Salidas */}
-          <div className="bg-white p-6 rounded-2xl border shadow-sm border-blue-100">
-            <h3 className="font-bold text-blue-900 uppercase text-xs tracking-widest mb-4">
-              Mover / Ajustar Inventario
-            </h3>
-            <form
-              action={registerMovement}
-              onSubmit={(e) => {
-                if (!confirm("¿Estás seguro de registrar este movimiento?"))
-                  e.preventDefault();
-              }}
-              className="grid grid-cols-12 gap-3"
-            >
-              <input type="hidden" name="adminEmail" value={userEmail || ""} />
-              <div className="col-span-12 md:col-span-4">
+  // ── Estado del formulario de ajuste ──
+  const [adjForm, setAdjForm] = useState({ locationId: "", flavorId: "", type: "IN", quantity: "", reason: "" });
+  const [adjStatus, setAdjStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [adjMsg, setAdjMsg] = useState("");
+
+  // ── Estado de las solicitudes pendientes (admin) ──
+  const [pendingRequests, setPendingRequests] = useState<any[]>(Array.isArray(initialRequests) ? initialRequests : []);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [rejectModal, setRejectModal] = useState<{ id: string; note: string } | null>(null);
+
+  const handleAdjSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjForm.locationId || !adjForm.flavorId || !adjForm.quantity || !adjForm.reason) return;
+    setAdjStatus("sending");
+    try {
+      if (isAdmin) {
+        // Admin: registra directamente
+        const fd = new FormData();
+        fd.append("adminEmail", userEmail || "");
+        fd.append("locationId", adjForm.locationId);
+        fd.append("flavorId", adjForm.flavorId);
+        fd.append("type", adjForm.type);
+        fd.append("quantity", adjForm.quantity);
+        fd.append("reason", adjForm.reason);
+        await registerMovement(fd);
+        setAdjMsg("Movimiento registrado correctamente.");
+      } else {
+        // Non-admin: crea solicitud
+        const res = await createAdjustmentRequest({
+          locationId: adjForm.locationId,
+          flavorId: adjForm.flavorId,
+          type: adjForm.type,
+          quantity: Number(adjForm.quantity),
+          reason: adjForm.reason,
+          requestedBy: userEmail || "desconocido",
+        });
+        if ((res as any).error) { setAdjStatus("error"); setAdjMsg((res as any).error); return; }
+        setAdjMsg("Tu solicitud fue enviada. El administrador la revisará pronto.");
+      }
+      setAdjStatus("sent");
+      setAdjForm({ locationId: "", flavorId: "", type: "IN", quantity: "", reason: "" });
+    } catch {
+      setAdjStatus("error");
+      setAdjMsg("Error al procesar. Intenta de nuevo.");
+    }
+  };
+
+  const handleApprove = async (id: string) => {
+    setProcessingId(id);
+    const res = await approveAdjustmentRequest(id);
+    setProcessingId(null);
+    if ((res as any).error) { alert("Error: " + (res as any).error); return; }
+    setPendingRequests(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleReject = async () => {
+    if (!rejectModal) return;
+    setProcessingId(rejectModal.id);
+    await rejectAdjustmentRequest(rejectModal.id, rejectModal.note);
+    setProcessingId(null);
+    setPendingRequests(prev => prev.filter(r => r.id !== rejectModal.id));
+    setRejectModal(null);
+  };
+
+  // Precalcula totales y sabores por bodega
+  const locCards = useMemo(() =>
+    safeLocations.map((loc: any) => ({
+      ...loc,
+      flavors: safeFlavors
+        .map((f: any) => ({
+          id: f.id,
+          name: f.name,
+          qty: f.locationStocks?.find((s: any) => s.locationId === loc.id)?.quantity || 0,
+        }))
+        .filter((f: any) => f.qty > 0),
+      total: safeFlavors.reduce((sum: number, f: any) =>
+        sum + (f.locationStocks?.find((s: any) => s.locationId === loc.id)?.quantity || 0), 0),
+    })),
+    [safeLocations, safeFlavors]
+  );
+
+  return (
+    <section className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-black">Inventario por Bodega</h2>
+          {!isAdmin && (
+            <p className="text-xs text-gray-400 mt-0.5">Envía solicitudes de ajuste · el admin las aprobará remotamente</p>
+          )}
+        </div>
+        {isAdmin && (
+          <button
+            onClick={() => setShowGestion(v => !v)}
+            className="text-xs font-bold px-4 py-2 rounded-lg border border-purple-200 text-purple-700 hover:bg-purple-50 transition"
+          >
+            {showGestion ? "Ocultar gestión" : "⚙ Gestionar bodegas"}
+          </button>
+        )}
+      </div>
+
+      {/* Solicitudes pendientes — solo admin */}
+      {isAdmin && pendingRequests.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="w-6 h-6 bg-amber-500 text-white rounded-full flex items-center justify-center text-xs font-black">{pendingRequests.length}</span>
+            <h3 className="font-bold text-amber-900 text-sm uppercase tracking-widest">Solicitudes de ajuste pendientes</h3>
+          </div>
+          <div className="space-y-3">
+            {pendingRequests.map((req: any) => (
+              <div key={req.id} className="bg-white rounded-xl border border-amber-100 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-black border ${req.type === "IN" ? "bg-green-50 text-green-700 border-green-100" : "bg-red-50 text-red-700 border-red-100"}`}>
+                      {req.type === "IN" ? "📥 ENTRADA" : "📤 SALIDA"}
+                    </span>
+                    <span className="text-xs font-black text-gray-900">{req.quantity} uds</span>
+                    <span className="text-xs text-gray-500">·</span>
+                    <span className="text-xs font-bold text-gray-700">{req.flavor?.name}</span>
+                    <span className="text-xs text-gray-500">en</span>
+                    <span className="text-xs font-bold text-gray-700">{req.location?.name}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1 truncate">{req.reason}</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    Solicitado por <span className="font-bold">{req.requestedBy}</span> · {new Date(req.createdAt).toLocaleDateString("es-MX", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => handleApprove(req.id)}
+                    disabled={processingId === req.id}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition disabled:opacity-50"
+                  >
+                    {processingId === req.id ? "..." : "✓ Aprobar"}
+                  </button>
+                  <button
+                    onClick={() => setRejectModal({ id: req.id, note: "" })}
+                    disabled={processingId === req.id}
+                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition disabled:opacity-50"
+                  >
+                    ✕ Rechazar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de rechazo */}
+      {rejectModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+            <h3 className="font-black text-gray-900 mb-1">Rechazar solicitud</h3>
+            <p className="text-sm text-gray-500 mb-4">Puedes agregar un motivo (opcional).</p>
+            <textarea
+              value={rejectModal.note}
+              onChange={e => setRejectModal(prev => prev ? { ...prev, note: e.target.value } : null)}
+              placeholder="Motivo del rechazo..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-300 mb-4"
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setRejectModal(null)} className="flex-1 py-2 border border-gray-200 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={processingId !== null}
+                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold transition disabled:opacity-50"
+              >
+                {processingId ? "Rechazando..." : "Confirmar rechazo"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Formulario de ajuste */}
+      {safeLocations.length > 0 && (
+        <div className="bg-white p-5 rounded-2xl border shadow-sm border-blue-100">
+          <h3 className="font-bold text-blue-900 uppercase text-xs tracking-widest mb-4">
+            {isAdmin ? "Registrar ajuste de inventario" : "Solicitar ajuste de inventario"}
+          </h3>
+
+          {adjStatus === "sent" ? (
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-2xl">
+                {isAdmin ? "✓" : "📨"}
+              </div>
+              <p className="text-sm font-bold text-green-700">{adjMsg}</p>
+              <button
+                onClick={() => { setAdjStatus("idle"); setAdjMsg(""); }}
+                className="text-xs text-blue-600 hover:underline font-bold"
+              >
+                Registrar otro
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleAdjSubmit} className="grid grid-cols-12 gap-3">
+              <div className="col-span-12 md:col-span-3">
                 <select
-                  name="flavorId"
+                  value={adjForm.locationId}
+                  onChange={e => setAdjForm(f => ({ ...f, locationId: e.target.value }))}
                   className="w-full p-2 bg-gray-50 rounded-lg text-sm font-bold border outline-none"
                   required
                 >
-                  <option value="">-- Seleccionar Producto --</option>
-                  {safeFlavors.map((f: any) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                    </option>
+                  <option value="">-- Bodega --</option>
+                  {safeLocations.map((loc: any) => (
+                    <option key={loc.id} value={loc.id}>{loc.name}</option>
                   ))}
                 </select>
               </div>
               <div className="col-span-12 md:col-span-3">
                 <select
-                  name="locationId"
+                  value={adjForm.flavorId}
+                  onChange={e => setAdjForm(f => ({ ...f, flavorId: e.target.value }))}
                   className="w-full p-2 bg-gray-50 rounded-lg text-sm font-bold border outline-none"
                   required
                 >
-                  <option value="">-- Seleccionar Planta/Bodega --</option>
-                  {safeLocations.map((loc: any) => (
-                    <option key={loc.id} value={loc.id}>
-                      {loc.name}
-                    </option>
+                  <option value="">-- Producto --</option>
+                  {safeFlavors.map((f: any) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
                   ))}
                 </select>
               </div>
-              <div className="col-span-6 md:col-span-3">
+              <div className="col-span-6 md:col-span-2">
                 <select
-                  name="type"
+                  value={adjForm.type}
+                  onChange={e => setAdjForm(f => ({ ...f, type: e.target.value }))}
                   className="w-full p-2 bg-gray-50 rounded-lg text-sm font-bold border outline-none"
                   required
                 >
@@ -1461,243 +2083,133 @@ function TabInventario({ activeFlavors, activeLocations, allLocations, userEmail
               </div>
               <div className="col-span-6 md:col-span-2">
                 <input
-                  name="quantity"
                   type="number"
                   min="1"
                   placeholder="Cant."
+                  value={adjForm.quantity}
+                  onChange={e => setAdjForm(f => ({ ...f, quantity: e.target.value }))}
                   className="w-full p-2 bg-gray-50 rounded-lg text-sm font-bold border text-center outline-none"
                   required
                 />
               </div>
-              <div className="col-span-12 md:col-span-9">
+              <div className="col-span-12 md:col-span-7">
                 <input
-                  name="reason"
                   type="text"
-                  placeholder="Motivo (Ej. Producción, Ajuste, Merma...)"
+                  placeholder="Motivo (Producción, Ajuste, Merma...)"
+                  value={adjForm.reason}
+                  onChange={e => setAdjForm(f => ({ ...f, reason: e.target.value }))}
                   className="w-full p-2 bg-gray-50 rounded-lg text-sm border outline-none"
                   required
                 />
               </div>
               <div className="col-span-12 md:col-span-3">
+                {adjStatus === "error" && (
+                  <p className="text-xs text-red-500 font-bold mb-1">{adjMsg}</p>
+                )}
                 <button
                   type="submit"
-                  className="w-full bg-blue-600 text-white p-2 rounded-lg text-sm font-bold hover:bg-blue-700"
+                  disabled={adjStatus === "sending"}
+                  className={`w-full p-2 rounded-lg text-sm font-bold transition disabled:opacity-50 ${isAdmin ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-amber-500 hover:bg-amber-600 text-white"}`}
                 >
-                  Registrar
+                  {adjStatus === "sending" ? "Enviando..." : isAdmin ? "Registrar" : "Solicitar ajuste"}
                 </button>
               </div>
             </form>
-          </div>
-
-          {/* Tabla de Existencias */}
-          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-widest border-b">
-                  <th className="px-6 py-3 font-bold">Producto (Sabor)</th>
-                  <th className="px-6 py-3 font-bold">Existencia Actual</th>
-                  <th className="px-6 py-3 font-bold text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {safeFlavors.length > 0 ? (
-                  safeFlavors.map((flavor: any) => {
-                    const totalStock =
-                      flavor.locationStocks?.reduce(
-                        (sum: number, s: any) => sum + (s.quantity || 0),
-                        0
-                      ) || 0;
-                    const isExpanded = expandedFlavorId === flavor.id;
-
-                    return (
-                      <React.Fragment key={flavor.id}>
-                        <tr className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                          <td className="px-6 py-4 font-bold text-sm text-gray-900">
-                            {flavor.name}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="font-black text-lg">{totalStock}</span>{" "}
-                            <span className="text-xs text-gray-400 uppercase">pzs</span>
-                            <div className="flex gap-1 mt-1 flex-wrap">
-                              {flavor.locationStocks?.map((s: any) => (
-                                <span
-                                  key={s.locationId}
-                                  className="text-[10px] bg-gray-100 text-gray-500 px-1 rounded"
-                                >
-                                  {s.location?.name?.split(" ")[0]}: {s.quantity}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => toggleKardex(flavor.id)}
-                              className="text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg"
-                            >
-                              {isExpanded ? "Ocultar Kardex" : "Ver Kardex"}
-                            </button>
-                          </td>
-                        </tr>
-                        {/* Sub-tabla Kardex */}
-                        {isExpanded && (
-                          <tr className="bg-slate-50 border-b">
-                            <td colSpan={3} className="px-6 py-4">
-                              <h4 className="text-xs font-bold text-gray-500 uppercase mb-3">
-                                Movimientos (Últimos 100)
-                              </h4>
-                              <div className="max-h-[300px] overflow-y-auto pr-2">
-                                <table className="w-full text-left text-xs">
-                                  <thead>
-                                    <tr className="border-b border-gray-200 text-gray-400">
-                                      <th className="py-2">Fecha</th>
-                                      <th className="py-2">Tipo</th>
-                                      <th className="py-2">Cantidad</th>
-                                      <th className="py-2">Motivo / Usuario</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {flavor.movements && flavor.movements.length > 0 ? (
-                                      flavor.movements.map((m: any) => (
-                                        <tr
-                                          key={m.id}
-                                          className="border-b border-gray-100 last:border-0"
-                                        >
-                                          <td className="py-2 font-mono text-gray-500">
-                                            {new Date(m.createdAt).toLocaleString()}
-                                          </td>
-                                          <td
-                                            className={`py-2 font-bold ${m.type === "IN"
-                                              ? "text-green-600"
-                                              : "text-red-500"
-                                              }`}
-                                          >
-                                            {m.type === "IN" ? "Entrada" : "Salida"}
-                                          </td>
-                                          <td className="py-2 font-black">
-                                            {m.quantity}
-                                          </td>
-                                          <td className="py-2 text-gray-600 uppercase">
-                                            <span className="font-bold">
-                                              {m.reason}
-                                            </span>{" "}
-                                            <span className="text-gray-400 lowercase">
-                                              ({m.userId})
-                                            </span>
-                                          </td>
-                                        </tr>
-                                      ))
-                                    ) : (
-                                      <tr>
-                                        <td
-                                          colSpan={4}
-                                          className="py-4 text-center italic text-gray-400"
-                                        >
-                                          Sin movimientos.
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-gray-400 italic">
-                      No hay productos.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          )}
         </div>
+      )}
 
-        {/* Gestión Sucursales */}
-        <div className="space-y-6">
-          <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100">
-            <h4 className="font-bold text-purple-800 mb-3 text-sm uppercase">
-              Nueva Planta / Bodega
-            </h4>
-            <form action={createLocation} className="grid grid-cols-1 gap-3">
-              <input
-                name="name"
-                placeholder="Nombre (Ej: Planta, Bodega Campeche)"
-                className="p-2 rounded bg-white border text-sm"
-                required
-              />
-              <input
-                name="address"
-                placeholder="Dirección (Opcional)"
-                className="p-2 rounded bg-white border text-sm"
-              />
-              <button className="bg-purple-600 text-white p-2 rounded font-bold text-sm hover:bg-purple-700">
-                + Crear Ubicación
-              </button>
-            </form>
-            <div className="mt-4 border-t pt-4 border-purple-200">
-              <p className="text-xs font-bold text-purple-500 uppercase mb-2">
-                Ubicaciones existentes:
-              </p>
-              <div className="flex flex-col gap-3">
+      {safeLocations.length === 0 ? (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-xl text-sm">
+          No hay bodegas activas. Usa "Gestionar bodegas" para crear una.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {locCards.map((loc: any) => (
+            <div
+              key={loc.id}
+              className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex flex-col gap-4"
+            >
+              {/* Encabezado */}
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
+                    {loc.isDefault ? "★ Principal" : "Bodega"}
+                  </p>
+                  <p className="font-black text-xl text-gray-900 leading-tight">{loc.name}</p>
+                  {loc.address && (
+                    <p className="text-xs text-gray-400 mt-0.5">{loc.address}</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0 ml-4">
+                  <p className="text-4xl font-black text-blue-600 leading-none">{loc.total}</p>
+                  <p className="text-[10px] uppercase tracking-widest text-gray-400 mt-0.5">botellas</p>
+                </div>
+              </div>
+
+              {/* Separador */}
+              <div className="border-t border-gray-100" />
+
+              {/* Lista de sabores */}
+              {loc.flavors.length > 0 ? (
+                <div className="space-y-2">
+                  {loc.flavors.map((f: any) => (
+                    <div key={f.id} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">{f.name}</span>
+                      <div className="flex items-center gap-2">
+                        {f.qty < 10 && (
+                          <span className="text-[10px] font-bold text-orange-500 uppercase">bajo</span>
+                        )}
+                        <span className={`text-sm font-black tabular-nums w-10 text-right ${
+                          f.qty < 10 ? "text-orange-500" : "text-gray-900"
+                        }`}>
+                          {f.qty}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 italic">Sin existencias registradas</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Panel gestión de bodegas (colapsable) */}
+      {showGestion && (
+        <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100">
+          <h4 className="font-bold text-purple-800 mb-4 text-sm uppercase">Gestionar Bodegas</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <p className="text-xs font-bold text-purple-600 uppercase mb-2">Nueva bodega</p>
+              <form action={createLocation} className="grid grid-cols-1 gap-3">
+                <input name="name" placeholder="Nombre (Ej: Bodega Campeche)" className="p-2 rounded bg-white border text-sm" required />
+                <input name="address" placeholder="Dirección (Opcional)" className="p-2 rounded bg-white border text-sm" />
+                <button className="bg-purple-600 text-white p-2 rounded font-bold text-sm hover:bg-purple-700">+ Crear Bodega</button>
+              </form>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-purple-600 uppercase mb-2">Existentes</p>
+              <div className="flex flex-col gap-3 max-h-72 overflow-y-auto pr-1">
                 {safeAllLocations.map((loc: any) => {
-                  const locStockCount =
-                    safeFlavors?.reduce(
-                      (sum: number, flavor: any) =>
-                        sum +
-                        (flavor.locationStocks?.find(
-                          (s: any) => s.locationId === loc.id
-                        )?.quantity || 0),
-                      0
-                    ) || 0;
+                  const locStockCount = safeFlavors.reduce(
+                    (sum: number, flavor: any) =>
+                      sum + (flavor.locationStocks?.find((s: any) => s.locationId === loc.id)?.quantity || 0), 0
+                  );
                   return (
-                    <div
-                      key={loc.id}
-                      className={`flex flex-col gap-2 bg-white p-3 rounded-xl border shadow-sm transition-all ${loc.isArchived
-                        ? "opacity-60 bg-gray-50/50 grayscale-[0.5]"
-                        : "hover:border-purple-300"
-                        }`}
-                    >
-                      <form action={updateLocation} className="flex flex-col gap-2 relative">
+                    <div key={loc.id} className={`flex flex-col gap-2 bg-white p-3 rounded-xl border shadow-sm ${loc.isArchived ? "opacity-60" : ""}`}>
+                      <form action={updateLocation} className="flex flex-col gap-2">
                         <input type="hidden" name="id" value={loc.id} />
                         <div className="flex gap-2 items-center">
-                          <input
-                            name="name"
-                            defaultValue={loc.name || ""}
-                            className={`flex-1 text-sm font-bold border border-transparent hover:border-gray-200 focus:border-purple-400 bg-transparent focus:bg-white rounded p-1 outline-none transition-colors ${loc.isDefault
-                              ? "text-yellow-700"
-                              : "text-purple-700"
-                              }`}
-                            required
-                          />
-                          {loc.isDefault && (
-                            <span className="text-[10px] uppercase font-black text-yellow-600 tracking-wider">
-                              ★ Principal
-                            </span>
-                          )}
-                          {loc.isArchived && (
-                            <span className="text-xs font-bold text-gray-500">
-                              (Inactivo)
-                            </span>
-                          )}
+                          <input name="name" defaultValue={loc.name || ""} className="flex-1 text-sm font-bold border border-transparent hover:border-gray-200 focus:border-purple-400 bg-transparent focus:bg-white rounded p-1 outline-none" required />
+                          {loc.isDefault && <span className="text-[10px] font-black text-yellow-600">★ Principal</span>}
+                          {loc.isArchived && <span className="text-xs text-gray-400">(Inactivo)</span>}
                         </div>
                         <div className="flex gap-2">
-                          <input
-                            name="address"
-                            defaultValue={loc.address || ""}
-                            placeholder="Dirección / Comentarios"
-                            className="w-full text-xs text-gray-500 border border-transparent hover:border-gray-200 focus:border-purple-400 bg-transparent focus:bg-white rounded p-1 outline-none transition-colors"
-                          />
-                          <button
-                            type="submit"
-                            className="text-[10px] bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white px-3 py-1.5 rounded-lg font-bold shrink-0 transition-colors border border-purple-100 shadow-sm"
-                          >
-                            Guardar
-                          </button>
+                          <input name="address" defaultValue={loc.address || ""} placeholder="Dirección" className="w-full text-xs text-gray-500 border border-transparent hover:border-gray-200 focus:border-purple-400 bg-transparent focus:bg-white rounded p-1 outline-none" />
+                          <button type="submit" className="text-[10px] bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white px-3 py-1.5 rounded-lg font-bold shrink-0 border border-purple-100">Guardar</button>
                         </div>
                       </form>
                       {!loc.isDefault && (
@@ -1707,35 +2219,17 @@ function TabInventario({ activeFlavors, activeLocations, allLocations, userEmail
                             const isInactivating = !loc.isArchived;
                             if (isInactivating && locStockCount > 0) {
                               e.preventDefault();
-                              alert(
-                                "❌ ERROR: No puedes inactivar esta ubicación porque aún tiene inventario.\n\nTiene " +
-                                locStockCount +
-                                " botellas en total según los registros.\n\n➤ Por favor, realiza un traspaso de su inventario hacia otra ubicación (o da de baja esas piezas) antes de inactivarla."
-                              );
+                              alert(`❌ No puedes inactivar esta bodega porque tiene ${locStockCount} botellas. Realiza un traspaso primero.`);
                               return;
                             }
-                            if (
-                              !confirm(
-                                "¿Estás seguro de cambiar el estado de la sucursal?"
-                              )
-                            )
-                              e.preventDefault();
+                            if (!confirm("¿Estás seguro de cambiar el estado de la bodega?")) e.preventDefault();
                           }}
-                          className="flex justify-end pt-3 border-t border-gray-100 mt-1"
+                          className="flex justify-end pt-2 border-t border-gray-100"
                         >
                           <input type="hidden" name="id" value={loc.id} />
                           <input type="hidden" name="model" value="location" />
-                          <input
-                            type="hidden"
-                            name="currentStatus"
-                            value={String(loc.isArchived)}
-                          />
-                          <button
-                            className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${loc.isArchived
-                              ? "text-green-600 bg-green-50 hover:bg-green-100 border border-green-200"
-                              : "text-red-500 bg-red-50 hover:bg-red-100 border border-red-100"
-                              }`}
-                          >
+                          <input type="hidden" name="currentStatus" value={String(loc.isArchived)} />
+                          <button className={`text-xs px-3 py-1.5 rounded-lg font-bold ${loc.isArchived ? "text-green-600 bg-green-50 border border-green-200" : "text-red-500 bg-red-50 border border-red-100"}`}>
                             {loc.isArchived ? "Activar" : "Inactivar"}
                           </button>
                         </form>
@@ -1747,7 +2241,7 @@ function TabInventario({ activeFlavors, activeLocations, allLocations, userEmail
             </div>
           </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

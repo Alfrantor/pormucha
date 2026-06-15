@@ -8,6 +8,7 @@ import {
   Trash2, User, Package, Beer, Plus, X, ArrowLeft, ShoppingCart, ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
+import { printTicket } from "@/components/pos/ticket-receipt";
 
 const formatMoney = (v: number) =>
   v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -40,6 +41,7 @@ export const PosInterface = ({
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [mobileStep, setMobileStep] = useState<"items" | "payment">("items");
   const [serviceFee, setServiceFee] = useState<number>(0);
+  const [requiresInvoice, setRequiresInvoice] = useState(false);
 
   // ─── Pricing ─────────────────────────────────────────────────────────────
   const getFlavorPrice = (flavor: any) =>
@@ -139,7 +141,7 @@ export const PosInterface = ({
         body: JSON.stringify({
           locationId: selectedLocation,
           clientId: selectedClient?.id ?? null,
-          fullName: selectedClient?.fullName ?? "Cliente Mostrador",
+          fullName: selectedClient?.fullName ?? null,
           email: selectedClient?.email ?? "",
           items: cart,
           paymentMethod,
@@ -148,6 +150,7 @@ export const PosInterface = ({
           subtotal: cartTotal,
           serviceFee,
           originalTotal: cartTotal,
+          requiresInvoice,
         }),
       });
 
@@ -160,10 +163,31 @@ export const PosInterface = ({
           COURTESY: "Cortesía registrada",
         };
         toast.success(labels[paymentMethod]);
+
+        // Imprimir 3 copias del ticket antes de limpiar el estado
+        const locationName = locations.find((l: any) => l.id === selectedLocation)?.name ?? "";
+        printTicket({
+          locationName,
+          clientName: selectedClient?.fullName,
+          items: cart.map(item => ({
+            name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+            subtotal: item.price * item.quantity,
+          })),
+          subtotal: cartTotal,
+          serviceFee,
+          total: chargedTotal,
+          paymentMethod,
+          vendedor: userEmail ?? "",
+          fecha: new Date(),
+        });
+
         setCart([]);
         setSelectedClient(null);
         setPaymentMethod("CASH");
         setServiceFee(0);
+        setRequiresInvoice(false);
         setMobileStep("items");
         setShowMobileCart(false);
         router.refresh();
@@ -336,6 +360,22 @@ export const PosInterface = ({
           </div>
         </div>
 
+        {/* Requiere factura */}
+        <button
+          type="button"
+          onClick={() => setRequiresInvoice(v => !v)}
+          className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 transition-all ${
+            requiresInvoice
+              ? "bg-amber-50 border-amber-400 text-amber-700"
+              : "bg-gray-50 border-gray-200 text-gray-400"
+          }`}
+        >
+          <span className="text-[10px] font-black uppercase tracking-widest">Requiere Factura</span>
+          <div className={`w-9 h-5 rounded-full relative transition-colors ${requiresInvoice ? "bg-amber-400" : "bg-gray-300"}`}>
+            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${requiresInvoice ? "left-[18px]" : "left-0.5"}`} />
+          </div>
+        </button>
+
         {/* Payment method */}
         <div className="space-y-2">
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Forma de Pago</p>
@@ -456,32 +496,29 @@ export const PosInterface = ({
                   <Beer size={15} /> Botellas Individuales
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-                  {flavors.map((f: any) => {
-                    const stock = f.locationStocks.find((s: any) => s.locationId === selectedLocation)?.quantity ?? 0;
-                    const price = getFlavorPrice(f);
-                    const hasWholesale = f.wholesalePrice && Number(f.wholesalePrice) > 0;
-                    return (
-                      <button
-                        key={f.id}
-                        onClick={() => handleAddBottle(f)}
-                        disabled={stock <= 0}
-                        className={`p-3 sm:p-4 rounded-3xl border-2 transition-all text-left ${
-                          stock > 0
-                            ? "bg-white border-transparent hover:border-blue-400 shadow-sm active:scale-95"
-                            : "bg-gray-100 opacity-50 cursor-not-allowed"
-                        }`}
-                      >
-                        <p className="font-black text-gray-800 text-xs sm:text-sm leading-tight">{f.name}</p>
-                        <p className="text-sm font-black text-gray-900 mt-1">${formatMoney(price)}</p>
-                        {hasWholesale && !wholesaleMode && (
-                          <p className="text-[10px] text-blue-500 font-bold">May: ${formatMoney(Number(f.wholesalePrice))}</p>
-                        )}
-                        <div className={`mt-2 text-[10px] font-black px-2 py-1 rounded-lg w-fit ${stock > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                          STOCK: {stock}
-                        </div>
-                      </button>
-                    );
-                  })}
+                  {flavors
+                    .filter((f: any) => (f.locationStocks.find((s: any) => s.locationId === selectedLocation)?.quantity ?? 0) > 0)
+                    .map((f: any) => {
+                      const stock = f.locationStocks.find((s: any) => s.locationId === selectedLocation)?.quantity ?? 0;
+                      const price = getFlavorPrice(f);
+                      const hasWholesale = f.wholesalePrice && Number(f.wholesalePrice) > 0;
+                      return (
+                        <button
+                          key={f.id}
+                          onClick={() => handleAddBottle(f)}
+                          className="p-3 sm:p-4 rounded-3xl border-2 border-transparent bg-white hover:border-blue-400 shadow-sm active:scale-95 transition-all text-left"
+                        >
+                          <p className="font-black text-gray-800 text-xs sm:text-sm leading-tight">{f.name}</p>
+                          <p className="text-sm font-black text-gray-900 mt-1">${formatMoney(price)}</p>
+                          {hasWholesale && !wholesaleMode && (
+                            <p className="text-[10px] text-blue-500 font-bold">May: ${formatMoney(Number(f.wholesalePrice))}</p>
+                          )}
+                          <div className="mt-2 text-[10px] font-black px-2 py-1 rounded-lg w-fit bg-green-100 text-green-700">
+                            STOCK: {stock}
+                          </div>
+                        </button>
+                      );
+                    })}
                 </div>
               </section>
 
@@ -731,6 +768,22 @@ export const PosInterface = ({
                     </div>
                   </div>
 
+                  {/* Requiere factura */}
+                  <button
+                    type="button"
+                    onClick={() => setRequiresInvoice(v => !v)}
+                    className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl border-2 transition-all ${
+                      requiresInvoice
+                        ? "bg-amber-50 border-amber-400 text-amber-700"
+                        : "bg-gray-50 border-gray-200 text-gray-400"
+                    }`}
+                  >
+                    <span className="text-sm font-black uppercase tracking-widest">Requiere Factura</span>
+                    <div className={`w-10 h-6 rounded-full relative transition-colors ${requiresInvoice ? "bg-amber-400" : "bg-gray-300"}`}>
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${requiresInvoice ? "left-5" : "left-1"}`} />
+                    </div>
+                  </button>
+
                   {/* Forma de pago */}
                   <div className="space-y-2">
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Forma de Pago</p>
@@ -840,41 +893,43 @@ export const PosInterface = ({
               </p>
             </div>
             <div className="flex-1 overflow-y-auto space-y-2 sm:space-y-3 pr-1 sm:pr-2">
-              {flavors.map((f: any) => {
-                const qty = packSelection[f.id] ?? 0;
-                const stock = f.locationStocks?.find((s: any) => s.locationId === selectedLocation)?.quantity ?? 0;
-                const totalSelected = Object.values(packSelection).reduce((a: number, b) => a + (b as number), 0);
-                return (
-                  <div
-                    key={f.id}
-                    className={`flex justify-between items-center p-3 sm:p-4 rounded-2xl border transition-all ${stock <= 0 ? "bg-gray-100 opacity-50" : "bg-gray-50 border-transparent"}`}
-                  >
-                    <div>
-                      <p className="font-black text-gray-800 text-sm sm:text-base">{f.name}</p>
-                      <p className={`text-[10px] font-bold ${stock <= 0 ? "text-red-500" : "text-gray-400"}`}>STOCK: {stock}</p>
+              {flavors
+                .filter((f: any) => (f.locationStocks?.find((s: any) => s.locationId === selectedLocation)?.quantity ?? 0) > 0)
+                .map((f: any) => {
+                  const qty = packSelection[f.id] ?? 0;
+                  const stock = f.locationStocks?.find((s: any) => s.locationId === selectedLocation)?.quantity ?? 0;
+                  const totalSelected = Object.values(packSelection).reduce((a: number, b) => a + (b as number), 0);
+                  return (
+                    <div
+                      key={f.id}
+                      className="flex justify-between items-center p-3 sm:p-4 rounded-2xl border border-transparent bg-gray-50 transition-all"
+                    >
+                      <div>
+                        <p className="font-black text-gray-800 text-sm sm:text-base">{f.name}</p>
+                        <p className="text-[10px] font-bold text-gray-400">STOCK: {stock}</p>
+                      </div>
+                      <div className="flex items-center gap-3 sm:gap-4">
+                        <button
+                          onClick={() => setPackSelection(p => ({ ...p, [f.id]: Math.max(0, qty - 1) }))}
+                          className="w-8 h-8 sm:w-9 sm:h-9 bg-white rounded-2xl flex items-center justify-center font-black shadow-sm"
+                        >−</button>
+                        <span className="font-black text-lg sm:text-xl w-5 text-center">{qty}</span>
+                        <button
+                          onClick={() => {
+                            if (totalSelected < showPackModal.quantity && qty < stock)
+                              setPackSelection(p => ({ ...p, [f.id]: qty + 1 }));
+                          }}
+                          disabled={qty >= stock || totalSelected >= showPackModal.quantity}
+                          className={`w-8 h-8 sm:w-9 sm:h-9 rounded-2xl flex items-center justify-center font-black shadow-sm ${
+                            qty >= stock || totalSelected >= showPackModal.quantity
+                              ? "bg-gray-200 text-gray-400"
+                              : "bg-white text-blue-600"
+                          }`}
+                        >+</button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 sm:gap-4">
-                      <button
-                        onClick={() => setPackSelection(p => ({ ...p, [f.id]: Math.max(0, qty - 1) }))}
-                        className="w-8 h-8 sm:w-9 sm:h-9 bg-white rounded-2xl flex items-center justify-center font-black shadow-sm"
-                      >−</button>
-                      <span className="font-black text-lg sm:text-xl w-5 text-center">{qty}</span>
-                      <button
-                        onClick={() => {
-                          if (totalSelected < showPackModal.quantity && qty < stock)
-                            setPackSelection(p => ({ ...p, [f.id]: qty + 1 }));
-                        }}
-                        disabled={stock <= 0 || qty >= stock || totalSelected >= showPackModal.quantity}
-                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-2xl flex items-center justify-center font-black shadow-sm ${
-                          stock <= 0 || qty >= stock || totalSelected >= showPackModal.quantity
-                            ? "bg-gray-200 text-gray-400"
-                            : "bg-white text-blue-600"
-                        }`}
-                      >+</button>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
             <div className="flex gap-3 sm:gap-4 mt-4 sm:mt-6">
               <button onClick={() => setShowPackModal(null)} className="flex-1 py-4 font-black text-gray-400 uppercase text-xs tracking-widest">

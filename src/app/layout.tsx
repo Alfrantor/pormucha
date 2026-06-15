@@ -70,7 +70,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+      fallbackRedirectUrl="/perfil"
+    >
       <html lang="es" className={`${playfair.variable} ${inter.variable}`}>
         <body className="antialiased font-sans bg-[#F5F2EB] text-[#1A1A1A]">
           {/* Mueve el CartProvider ADENTRO del body */}

@@ -345,7 +345,7 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
                 onChange={handleChange}
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Sin giro asignado</option>
+                <option value="">Público en general</option>
                 {giros.map(g => (
                   <option key={g.id} value={g.id}>{g.name}</option>
                 ))}

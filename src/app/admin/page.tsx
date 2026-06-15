@@ -30,8 +30,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const user = await currentUser();
   const userRole = (sessionClaims?.metadata as any)?.role;
 
-  if (userRole !== "admin") {
-    redirect("/perfil"); // ¡Ahora sí lo redirigirá sin mostrar error!
+  if (userRole !== "admin" && userRole !== "vendedor") {
+    redirect("/perfil");
   }
 
   const userEmail = user?.emailAddresses[0]?.emailAddress || "";
@@ -97,7 +97,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       filteredOrders = await db.order.findMany({
         where: dateFilter,
         include: {
-          orderItems: { include: { product: true, flavor: true } }
+          orderItems: { include: { product: true, flavor: true, composition: true } },
+          replacements: { select: { id: true, status: true } },
         },
         orderBy: { createdAt: 'desc' }
       });
@@ -321,7 +322,10 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     }
 
     try {
-      clients = (await db.client.findMany({ orderBy: { createdAt: 'desc' } }))
+      clients = (await db.client.findMany({
+          orderBy: { createdAt: 'desc' },
+          include: { credits: true, giro: { select: { id: true, name: true } } }
+        }))
         .map(c => ({
           ...c,
           creditLimit: Number(c.creditLimit || 0),
@@ -329,6 +333,13 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           globalDiscount: c.globalDiscount ? Number(c.globalDiscount) : null,
           createdAt: c.createdAt?.toISOString() || new Date().toISOString(),
           updatedAt: c.updatedAt?.toISOString() || new Date().toISOString(),
+          credits: c.credits.map((cr: any) => ({
+            ...cr,
+            amount: Number(cr.amount || 0),
+            dueDate: cr.dueDate?.toISOString() || null,
+            createdAt: cr.createdAt?.toISOString() || new Date().toISOString(),
+            updatedAt: cr.updatedAt?.toISOString() || new Date().toISOString(),
+          })),
         }));
     } catch (err) {
       console.error("Error fetching clients:", err);
@@ -342,6 +353,28 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     } catch (err) {
       console.error("Error fetching giros:", err);
       giros = [];
+    }
+
+    // ==========================================
+    // 7. SOLICITUDES DE AJUSTE DE INVENTARIO
+    // ==========================================
+    let adjustmentRequests: any[] = [];
+    try {
+      if ((db as any).adjustmentRequest) {
+        adjustmentRequests = await (db as any).adjustmentRequest.findMany({
+          where: { status: "PENDING" },
+          include: {
+            location: { select: { name: true } },
+            flavor: { select: { name: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        }).then((reqs: any[]) =>
+          reqs.map((r: any) => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() }))
+        );
+      }
+    } catch (err) {
+      console.error("Error fetching adjustment requests:", err);
+      adjustmentRequests = [];
     }
 
     // ==========================================
@@ -373,6 +406,10 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       shippingCost: Number(order.shippingCost || 0),
       createdAt: order.createdAt?.toISOString() || new Date().toISOString(),
       updatedAt: order.updatedAt?.toISOString() || new Date().toISOString(),
+      cancelledAt: order.cancelledAt?.toISOString() || null,
+      cancellationNote: order.cancellationNote || null,
+      replacesOrderId: order.replacesOrderId || null,
+      replacements: order.replacements || [],
 
       // 2. Campos de los Items dentro de la orden
       orderItems: order.orderItems?.map((item: any) => ({
@@ -463,6 +500,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       activeLocations,
       leads,
       userEmail,
+      userRole,
       transfers,
       allSubscriptions,
       users: usersList,
@@ -470,6 +508,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       orders: serializedOrders,
       flavorsWithPricing,
       giros,
+      adjustmentRequests,
     };
 
     // Verificar que stats existe y tiene las propiedades requeridas y más

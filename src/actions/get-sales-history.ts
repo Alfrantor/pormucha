@@ -41,6 +41,7 @@ export async function getSalesHistory({ startDate, endDate, locationId }: GetSal
     status: sale.status,
     paymentMethod: sale.paymentMethod,
     userId: sale.sellerId,
+    fullName: sale.fullName || null,
     locationName: sale.location?.name || "Online",
     items: sale.orderItems.map((item) => ({
       id: item.id,

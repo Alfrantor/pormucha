@@ -67,6 +67,32 @@ model Client {
   updatedAt             DateTime              @updatedAt
 }
 
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model AdjustmentRequest {
+  id          String   @id @default(cuid())
+  locationId  String
+  flavorId    String
+  type        String   // IN | OUT
+  quantity    Int
+  reason      String
+  requestedBy String
+  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedBy  String?
+  reviewNote  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  location    Location @relation(fields: [locationId], references: [id])
+  flavor      Flavor   @relation(fields: [flavorId], references: [id])
+
+  @@index([status])
+  @@index([requestedBy])
+}
+
 model Giro {
   id          String   @id @default(cuid())
   name        String   @unique
@@ -136,8 +162,9 @@ model Location {
   movements     InventoryMovement[]
   orders        Order[]
   stocks        Stock[]
-  transfersFrom Transfer[]          @relation("TransferFrom")
-  transfersTo   Transfer[]          @relation("TransferTo")
+  transfersFrom      Transfer[]          @relation("TransferFrom")
+  transfersTo        Transfer[]          @relation("TransferTo")
+  adjustmentRequests AdjustmentRequest[]
 }
 
 model Stock {
@@ -173,8 +200,9 @@ model Flavor {
   orderItems           OrderItem[]
   locationStocks       Stock[]
   transfers            Transfer[]
-  unitCount            Int                   @default(6)
+  unitCount             Int                    @default(6)
   orderItemCompositions OrderItemComposition[]
+  adjustmentRequests    AdjustmentRequest[]
 }
 
 model FlavorPriceScale {
@@ -339,8 +367,14 @@ model Order {
   locationId      String?
   sellerId        String?
   subscriptionId  String?
-  notes           String?
-  client          Client?       @relation(fields: [clientId], references: [id])
+  notes             String?
+  requiresInvoice   Boolean       @default(false)
+  cancelledAt       DateTime?
+  cancellationNote  String?
+  replacesOrderId   String?
+  replacesOrder     Order?        @relation("OrderReplacement", fields: [replacesOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replacements      Order[]       @relation("OrderReplacement")
+  client            Client?       @relation(fields: [clientId], references: [id])
   location        Location?     @relation(fields: [locationId], references: [id])
   subscription    Subscription? @relation(fields: [subscriptionId], references: [id])
   orderItems      OrderItem[]

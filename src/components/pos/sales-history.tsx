@@ -194,6 +194,7 @@ export const SalesHistory = ({ locations }: SalesHistoryProps) => {
             <thead>
               <tr className="bg-gray-50 border-b">
                 <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase">Fecha / Hora</th>
+                <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase">Cliente</th>
                 <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase">Sucursal</th>
                 <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase">Método</th>
                 <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase">Items</th>
@@ -214,6 +215,13 @@ export const SalesHistory = ({ locations }: SalesHistoryProps) => {
                       <td className="p-4">
                         <p className="font-bold text-sm">{date.toLocaleDateString("es-MX")}</p>
                         <p className="text-xs text-gray-400">{date.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</p>
+                      </td>
+                      <td className="p-4">
+                        <p className="font-bold text-sm text-gray-800 truncate max-w-[140px]">
+                          {sale.fullName && sale.fullName !== "Cliente Mostrador"
+                            ? sale.fullName
+                            : <span className="text-gray-400 font-normal">Mostrador</span>}
+                        </p>
                       </td>
                       <td className="p-4 text-sm">{sale.locationName}</td>
                       <td className="p-4">
