@@ -56,7 +56,7 @@ export default async function ClientesPage({ searchParams }: ClientsPageProps) {
         skip: offset,
       }),
       db.client.count({ where }),
-      db.businessGiro.findMany({ orderBy: { name: "asc" } }),
+      db.giro.findMany({ orderBy: { name: "asc" } }),
     ]);
 
     // Serializar campos Decimal → number plain para Client Components
