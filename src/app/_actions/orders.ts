@@ -30,7 +30,7 @@ export async function cancelOrder(
 
     const result = await db.$transaction(async (tx) => {
       // 1. Cancelar la orden original
-      await tx.order.update({
+      await (tx as any).order.update({
         where: { id: orderId },
         data: {
           status: "CANCELLED",
@@ -64,7 +64,7 @@ export async function cancelOrder(
       // 3. Crear orden de reemplazo si se solicitó
       let replacementOrder = null;
       if (createReplacement) {
-        replacementOrder = await tx.order.create({
+        replacementOrder = await (tx as any).order.create({
           data: {
             channel: order.channel,
             status: "PENDING",
@@ -75,7 +75,7 @@ export async function cancelOrder(
             clientId: order.clientId,
             fullName: order.fullName,
             email: order.email,
-            requiresInvoice: order.requiresInvoice,
+            requiresInvoice: (order as any).requiresInvoice ?? false,
             notes: `Reemplazo de orden #${orderId.slice(-6).toUpperCase()}`,
             replacesOrderId: orderId,
             orderItems: {

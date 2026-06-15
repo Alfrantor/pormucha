@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     const recordedSubtotal = body.originalTotal ?? recordedTotal;
 
     const result = await db.$transaction(async (tx) => {
-      const order = await tx.order.create({
+      const order = await (tx as any).order.create({
         data: {
           channel: "POS",
           status: body.status,

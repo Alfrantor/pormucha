@@ -94,7 +94,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     let topPacks: any[] = [];
 
     try {
-      filteredOrders = await db.order.findMany({
+      filteredOrders = await (db as any).order.findMany({
         where: dateFilter,
         include: {
           orderItems: { include: { product: true, flavor: true, composition: true } },
