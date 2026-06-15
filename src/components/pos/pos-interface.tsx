@@ -155,6 +155,7 @@ export const PosInterface = ({
       });
 
       if (res.ok) {
+        const resData = await res.json();
         const labels: Record<PaymentMethod, string> = {
           CASH: "Venta en efectivo registrada",
           CARD: "Venta con tarjeta registrada",
@@ -169,6 +170,7 @@ export const PosInterface = ({
         printTicket({
           locationName,
           clientName: selectedClient?.fullName,
+          folio: resData.folio,
           items: cart.map(item => ({
             name: item.name,
             quantity: item.quantity,

@@ -368,6 +368,7 @@ model Order {
   sellerId        String?
   subscriptionId  String?
   notes             String?
+  folio             String?       @unique
   requiresInvoice   Boolean       @default(false)
   cancelledAt       DateTime?
   cancellationNote  String?

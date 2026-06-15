@@ -11,6 +11,7 @@ interface TicketItem {
 interface TicketData {
   locationName: string;
   clientName?: string;
+  folio?: string;
   items: TicketItem[];
   subtotal?: number;
   serviceFee?: number;
@@ -30,7 +31,7 @@ const COPIES = [
 ];
 
 export function printTicket(data: TicketData) {
-  const { locationName, clientName, items, subtotal, serviceFee = 0, total, paymentMethod, vendedor, fecha } = data;
+  const { locationName, clientName, folio, items, subtotal, serviceFee = 0, total, paymentMethod, vendedor, fecha } = data;
 
   const fechaStr = fecha.toLocaleDateString("es-MX", { year: "numeric", month: "2-digit", day: "2-digit" });
   const horaStr  = fecha.toLocaleTimeString("es-MX",  { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -70,6 +71,7 @@ export function printTicket(data: TicketData) {
 
     <!-- INFO -->
     <div class="info">
+      ${folio ? `<p style="font-size:16px; letter-spacing:1px;">Folio: <strong>${folio}</strong></p>` : ""}
       <p>Sucursal: ${locationName}</p>
       <p>Cliente: ${clientName || "Mostrador"}</p>
       <p>Fecha: ${fechaStr}</p>
@@ -199,6 +201,7 @@ export function printTicket(data: TicketData) {
 export function reprintTicket(sale: {
   locationName: string;
   fullName?: string | null;
+  folio?: string | null;
   items: { productName: string; quantity: number; price: number; subtotal: number }[];
   subtotal?: number;
   serviceFee?: number;
@@ -210,6 +213,7 @@ export function reprintTicket(sale: {
   printTicket({
     locationName: sale.locationName,
     clientName: sale.fullName || undefined,
+    folio: sale.folio || undefined,
     items: sale.items.map(item => ({
       name: item.productName,
       quantity: item.quantity,

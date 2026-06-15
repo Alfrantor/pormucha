@@ -193,6 +193,7 @@ export const SalesHistory = ({ locations }: SalesHistoryProps) => {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b">
+                <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase">Folio</th>
                 <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase">Fecha / Hora</th>
                 <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase">Cliente</th>
                 <th className="text-left p-4 text-xs font-bold text-gray-500 uppercase">Sucursal</th>
@@ -212,6 +213,11 @@ export const SalesHistory = ({ locations }: SalesHistoryProps) => {
                       className="border-b hover:bg-gray-50 cursor-pointer transition-colors"
                       onClick={() => setExpandedSale(isExpanded ? null : sale.id)}
                     >
+                      <td className="p-4">
+                        <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                          {sale.folio || "—"}
+                        </span>
+                      </td>
                       <td className="p-4">
                         <p className="font-bold text-sm">{date.toLocaleDateString("es-MX")}</p>
                         <p className="text-xs text-gray-400">{date.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</p>
