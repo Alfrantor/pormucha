@@ -49,6 +49,7 @@ export async function POST(request: Request) {
           email: body.email || "",
           folio,
           requiresInvoice: body.requiresInvoice ?? false,
+          isPaid: body.isPaid ?? true,
           orderItems: {
             create: body.items.map((item: any) => ({
               productId: item.productId || null,

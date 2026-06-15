@@ -370,6 +370,7 @@ model Order {
   notes             String?
   folio             String?       @unique
   requiresInvoice   Boolean       @default(false)
+  isPaid            Boolean       @default(true)
   cancelledAt       DateTime?
   cancellationNote  String?
   replacesOrderId   String?

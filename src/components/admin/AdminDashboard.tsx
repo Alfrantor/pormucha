@@ -152,6 +152,7 @@ export default function AdminDashboard({ data }: { data: any }) {
     flavorsWithPricing = [],
     giros = [],
     adjustmentRequests = [],
+    unpaidPosOrders = [],
   } = data;
 
   const memoizedStats = useMemo(() => stats, [stats]);
@@ -289,7 +290,7 @@ export default function AdminDashboard({ data }: { data: any }) {
             <TabProductos {...{ allProducts, allFlavors, priceHistory, userEmail }} />
           )}
           {activeTab === "usuarios" && <TabUsuarios users={users} currentUserRole={userRole} />}
-          {activeTab === "clientes" && <TabClientes clients={clients} orders={orders} giros={giros} />}
+          {activeTab === "clientes" && <TabClientes clients={clients} orders={orders} giros={giros} unpaidPosOrders={unpaidPosOrders} />}
           {activeTab === "precios" && <TabPrecios flavors={flavorsWithPricing} />}
           {activeTab === "pedidos" && <TabPedidos orders={orders} />}
           {activeTab === "giros" && <TabGiros giros={giros} />}
@@ -783,7 +784,7 @@ function TabUsuarios({ users, currentUserRole }: { users: any[]; currentUserRole
 // =====================================================================
 const MONTH_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
-function TabClientes({ clients, orders = [], giros = [] }: { clients: any[]; orders?: any[]; giros?: any[] }) {
+function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }: { clients: any[]; orders?: any[]; giros?: any[]; unpaidPosOrders?: any[] }) {
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [view, setView] = useState<"clientes" | "deudores">("clientes");
 
@@ -799,8 +800,24 @@ function TabClientes({ clients, orders = [], giros = [] }: { clients: any[]; ord
   // ── Deudores ──
   const debtors = useMemo(() => {
     const today = Date.now();
-    return clients
-      .filter((c: any) => c.creditUsed > 0)
+
+    // Agrupar órdenes POS no pagadas por clientId
+    const posDebtMap = new Map<string, { total: number; count: number }>();
+    (unpaidPosOrders || []).forEach((o: any) => {
+      if (o.clientId) {
+        const cur = posDebtMap.get(o.clientId) || { total: 0, count: 0 };
+        posDebtMap.set(o.clientId, { total: cur.total + (o.total || 0), count: cur.count + 1 });
+      }
+    });
+
+    // Clientes con crédito utilizado
+    const creditDebtorIds = new Set(clients.filter((c: any) => c.creditUsed > 0).map((c: any) => c.id));
+
+    // Todos los clientes que tienen crédito O deuda POS
+    const debtorClientIds = new Set([...creditDebtorIds, ...posDebtMap.keys()]);
+    const debtorClients = clients.filter((c: any) => debtorClientIds.has(c.id));
+
+    return debtorClients
       .map((c: any) => {
         const overdueCredits = (c.credits || []).filter((cr: any) =>
           cr.status !== "PAID" && cr.status !== "CANCELLED" && cr.dueDate && new Date(cr.dueDate).getTime() < today
@@ -813,10 +830,12 @@ function TabClientes({ clients, orders = [], giros = [] }: { clients: any[]; ord
         const totalDebt = (c.credits || [])
           .filter((cr: any) => cr.status !== "PAID" && cr.status !== "CANCELLED")
           .reduce((s: number, cr: any) => s + (cr.amount || 0), 0);
-        return { ...c, daysOverdue, totalDebt, isOverdue: daysOverdue > 0 };
+        const posDebt = posDebtMap.get(c.id)?.total || 0;
+        const posOrderCount = posDebtMap.get(c.id)?.count || 0;
+        return { ...c, daysOverdue, totalDebt, posDebt, posOrderCount, isOverdue: daysOverdue > 0 };
       })
-      .sort((a: any, b: any) => b.daysOverdue - a.daysOverdue);
-  }, [clients]);
+      .sort((a: any, b: any) => b.daysOverdue - a.daysOverdue || b.posDebt - a.posDebt);
+  }, [clients, unpaidPosOrders]);
 
   // ── Historial del cliente seleccionado ──
   const clientOrders = useMemo(() => {
@@ -891,7 +910,7 @@ function TabClientes({ clients, orders = [], giros = [] }: { clients: any[]; ord
           {debtors.length === 0 ? (
             <div className="p-12 border-2 border-dashed rounded-3xl text-center text-gray-400">
               <p className="font-bold text-lg">Sin deudores activos</p>
-              <p className="text-sm mt-1">Ningún cliente tiene crédito utilizado actualmente.</p>
+              <p className="text-sm mt-1">Ningún cliente tiene crédito pendiente ni ventas POS sin pagar.</p>
             </div>
           ) : (
             <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
@@ -905,7 +924,8 @@ function TabClientes({ clients, orders = [], giros = [] }: { clients: any[]; ord
                     <th className="px-5 py-3">Cliente</th>
                     <th className="px-5 py-3">Clasificación</th>
                     <th className="px-5 py-3 text-right">Crédito usado</th>
-                    <th className="px-5 py-3 text-right">Deuda en créditos</th>
+                    <th className="px-5 py-3 text-right">Deuda créditos</th>
+                    <th className="px-5 py-3 text-right">Deuda POS</th>
                     <th className="px-5 py-3 text-right">Días atrasado</th>
                     <th className="px-5 py-3 text-center">Estado</th>
                   </tr>
@@ -932,6 +952,16 @@ function TabClientes({ clients, orders = [], giros = [] }: { clients: any[]; ord
                         )}
                       </td>
                       <td className="px-5 py-3 text-right">
+                        {c.posDebt > 0 ? (
+                          <div>
+                            <p className="font-black text-sm text-orange-600">${c.posDebt.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                            <p className="text-[10px] text-gray-400">{c.posOrderCount} venta{c.posOrderCount !== 1 ? "s" : ""}</p>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-right">
                         {c.daysOverdue > 0 ? (
                           <span className="font-black text-sm text-red-600">{c.daysOverdue} días</span>
                         ) : (
@@ -943,6 +973,8 @@ function TabClientes({ clients, orders = [], giros = [] }: { clients: any[]; ord
                           <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-red-100 text-red-700 border border-red-200">Crítico</span>
                         ) : c.daysOverdue > 0 ? (
                           <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-amber-100 text-amber-700 border border-amber-200">Atrasado</span>
+                        ) : c.posDebt > 0 ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-orange-100 text-orange-700 border border-orange-200">POS sin pagar</span>
                         ) : (
                           <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-green-50 text-green-700 border border-green-200">Al corriente</span>
                         )}

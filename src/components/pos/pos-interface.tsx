@@ -42,6 +42,7 @@ export const PosInterface = ({
   const [mobileStep, setMobileStep] = useState<"items" | "payment">("items");
   const [serviceFee, setServiceFee] = useState<number>(0);
   const [requiresInvoice, setRequiresInvoice] = useState(false);
+  const [isPaid, setIsPaid] = useState(true);
 
   // ─── Pricing ─────────────────────────────────────────────────────────────
   const getFlavorPrice = (flavor: any) =>
@@ -151,6 +152,7 @@ export const PosInterface = ({
           serviceFee,
           originalTotal: cartTotal,
           requiresInvoice,
+          isPaid,
         }),
       });
 
@@ -190,6 +192,7 @@ export const PosInterface = ({
         setPaymentMethod("CASH");
         setServiceFee(0);
         setRequiresInvoice(false);
+        setIsPaid(true);
         setMobileStep("items");
         setShowMobileCart(false);
         router.refresh();
@@ -375,6 +378,22 @@ export const PosInterface = ({
           <span className="text-[10px] font-black uppercase tracking-widest">Requiere Factura</span>
           <div className={`w-9 h-5 rounded-full relative transition-colors ${requiresInvoice ? "bg-amber-400" : "bg-gray-300"}`}>
             <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${requiresInvoice ? "left-[18px]" : "left-0.5"}`} />
+          </div>
+        </button>
+
+        {/* Pagado / No pagado */}
+        <button
+          type="button"
+          onClick={() => setIsPaid(v => !v)}
+          className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 transition-all ${
+            isPaid
+              ? "bg-green-50 border-green-400 text-green-700"
+              : "bg-red-50 border-red-400 text-red-700"
+          }`}
+        >
+          <span className="text-[10px] font-black uppercase tracking-widest">{isPaid ? "Pagado" : "No Pagado"}</span>
+          <div className={`w-9 h-5 rounded-full relative transition-colors ${isPaid ? "bg-green-400" : "bg-red-400"}`}>
+            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${isPaid ? "left-[18px]" : "left-0.5"}`} />
           </div>
         </button>
 
@@ -783,6 +802,22 @@ export const PosInterface = ({
                     <span className="text-sm font-black uppercase tracking-widest">Requiere Factura</span>
                     <div className={`w-10 h-6 rounded-full relative transition-colors ${requiresInvoice ? "bg-amber-400" : "bg-gray-300"}`}>
                       <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${requiresInvoice ? "left-5" : "left-1"}`} />
+                    </div>
+                  </button>
+
+                  {/* Pagado / No pagado */}
+                  <button
+                    type="button"
+                    onClick={() => setIsPaid(v => !v)}
+                    className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl border-2 transition-all ${
+                      isPaid
+                        ? "bg-green-50 border-green-400 text-green-700"
+                        : "bg-red-50 border-red-400 text-red-700"
+                    }`}
+                  >
+                    <span className="text-sm font-black uppercase tracking-widest">{isPaid ? "Pagado" : "No Pagado"}</span>
+                    <div className={`w-10 h-6 rounded-full relative transition-colors ${isPaid ? "bg-green-400" : "bg-red-400"}`}>
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${isPaid ? "left-5" : "left-1"}`} />
                     </div>
                   </button>
 

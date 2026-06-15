@@ -356,6 +356,27 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     }
 
     // ==========================================
+    // 7b. ÓRDENES POS NO PAGADAS (para deudores)
+    // ==========================================
+    let unpaidPosOrders: any[] = [];
+    try {
+      unpaidPosOrders = await (db as any).order.findMany({
+        where: { channel: "POS", isPaid: false },
+        select: { id: true, clientId: true, fullName: true, total: true, createdAt: true, folio: true },
+        orderBy: { createdAt: "desc" },
+      }).then((rows: any[]) =>
+        rows.map((o: any) => ({
+          ...o,
+          total: Number(o.total || 0),
+          createdAt: o.createdAt?.toISOString() || new Date().toISOString(),
+        }))
+      );
+    } catch (err) {
+      console.error("Error fetching unpaid POS orders:", err);
+      unpaidPosOrders = [];
+    }
+
+    // ==========================================
     // 7. SOLICITUDES DE AJUSTE DE INVENTARIO
     // ==========================================
     let adjustmentRequests: any[] = [];
@@ -509,6 +530,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       flavorsWithPricing,
       giros,
       adjustmentRequests,
+      unpaidPosOrders,
     };
 
     // Verificar que stats existe y tiene las propiedades requeridas y más
