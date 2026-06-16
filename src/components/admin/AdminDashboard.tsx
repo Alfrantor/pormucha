@@ -29,6 +29,8 @@ import { generateShippingLabel } from "@/actions/admin-actions";
 import { setInventoryPin } from "@/app/_actions/settings";
 import { createAdjustmentRequest, approveAdjustmentRequest, rejectAdjustmentRequest } from "@/app/_actions/inventory";
 import { cancelOrder } from "@/app/_actions/orders";
+import { registerOrderPayment } from "@/app/_actions/payments";
+import { toast } from "sonner";
 
 // ---- Types ----
 type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios" | "giros";
@@ -787,6 +789,13 @@ const MONTH_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct"
 function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }: { clients: any[]; orders?: any[]; giros?: any[]; unpaidPosOrders?: any[] }) {
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [view, setView] = useState<"clientes" | "deudores">("clientes");
+  const [localUnpaidOrders, setLocalUnpaidOrders] = useState<any[]>(unpaidPosOrders);
+  const [expandedDebtorId, setExpandedDebtorId] = useState<string | null>(null);
+  const [payModal, setPayModal] = useState<{ order: any; client: any } | null>(null);
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("CASH");
+  const [payNote, setPayNote] = useState("");
+  const [paying, setPaying] = useState(false);
 
   if (!Array.isArray(clients)) {
     return (
@@ -797,23 +806,37 @@ function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }:
     );
   }
 
+  // ── POS orders por cliente (usable en filas expandidas) ──
+  const posOrdersByClientId = useMemo(() => {
+    const map = new Map<string, any[]>();
+    localUnpaidOrders.forEach((o: any) => {
+      if (o.clientId) {
+        const arr = map.get(o.clientId) || [];
+        arr.push(o);
+        map.set(o.clientId, arr);
+      }
+    });
+    return map;
+  }, [localUnpaidOrders]);
+
   // ── Deudores ──
   const debtors = useMemo(() => {
     const today = Date.now();
 
-    // Agrupar órdenes POS no pagadas por clientId
-    const posDebtMap = new Map<string, { total: number; count: number }>();
-    (unpaidPosOrders || []).forEach((o: any) => {
+    const posDebtMap = new Map<string, { total: number; remaining: number; count: number }>();
+    localUnpaidOrders.forEach((o: any) => {
       if (o.clientId) {
-        const cur = posDebtMap.get(o.clientId) || { total: 0, count: 0 };
-        posDebtMap.set(o.clientId, { total: cur.total + (o.total || 0), count: cur.count + 1 });
+        const cur = posDebtMap.get(o.clientId) || { total: 0, remaining: 0, count: 0 };
+        const remaining = (o.total || 0) - (o.amountPaid || 0);
+        posDebtMap.set(o.clientId, {
+          total: cur.total + (o.total || 0),
+          remaining: cur.remaining + remaining,
+          count: cur.count + 1,
+        });
       }
     });
 
-    // Clientes con crédito utilizado
     const creditDebtorIds = new Set(clients.filter((c: any) => c.creditUsed > 0).map((c: any) => c.id));
-
-    // Todos los clientes que tienen crédito O deuda POS
     const debtorClientIds = new Set([...creditDebtorIds, ...posDebtMap.keys()]);
     const debtorClients = clients.filter((c: any) => debtorClientIds.has(c.id));
 
@@ -830,12 +853,56 @@ function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }:
         const totalDebt = (c.credits || [])
           .filter((cr: any) => cr.status !== "PAID" && cr.status !== "CANCELLED")
           .reduce((s: number, cr: any) => s + (cr.amount || 0), 0);
-        const posDebt = posDebtMap.get(c.id)?.total || 0;
-        const posOrderCount = posDebtMap.get(c.id)?.count || 0;
+        const posInfo = posDebtMap.get(c.id);
+        const posDebt = posInfo?.remaining || 0;
+        const posOrderCount = posInfo?.count || 0;
         return { ...c, daysOverdue, totalDebt, posDebt, posOrderCount, isOverdue: daysOverdue > 0 };
       })
       .sort((a: any, b: any) => b.daysOverdue - a.daysOverdue || b.posDebt - a.posDebt);
-  }, [clients, unpaidPosOrders]);
+  }, [clients, localUnpaidOrders]);
+
+  // ── Registrar pago ──
+  const openPayModal = (order: any, client: any) => {
+    const remaining = order.total - (order.amountPaid || 0);
+    setPayModal({ order, client });
+    setPayAmount(remaining.toFixed(2));
+    setPayMethod("CASH");
+    setPayNote("");
+  };
+
+  const handleRegisterPayment = async () => {
+    if (!payModal) return;
+    const amount = parseFloat(payAmount);
+    if (isNaN(amount) || amount <= 0) { toast.error("Ingresa un monto válido"); return; }
+    setPaying(true);
+    const res = await registerOrderPayment(payModal.order.id, amount, payMethod, payNote || undefined);
+    setPaying(false);
+    if (res.success) {
+      if (res.isPaidNow) {
+        toast.success("¡Orden pagada completamente!");
+        setLocalUnpaidOrders(prev => prev.filter((o: any) => o.id !== payModal.order.id));
+      } else {
+        const fmt = (n: number) => n.toLocaleString("es-MX", { minimumFractionDigits: 2 });
+        toast.success(`Abono registrado. Restante: $${fmt(res.remaining)}`);
+        setLocalUnpaidOrders(prev => prev.map((o: any) =>
+          o.id !== payModal.order.id ? o : {
+            ...o,
+            amountPaid: res.amountPaid,
+            payments: [...(o.payments || []), {
+              id: Date.now().toString(),
+              amount,
+              paymentMethod: payMethod,
+              note: payNote || null,
+              createdAt: new Date().toISOString(),
+            }],
+          }
+        ));
+      }
+      setPayModal(null);
+    } else {
+      toast.error(res.error || "Error al registrar pago");
+    }
+  };
 
   // ── Historial del cliente seleccionado ──
   const clientOrders = useMemo(() => {
@@ -904,6 +971,120 @@ function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }:
         </div>
       </div>
 
+      {/* ── Modal de pago ── */}
+      {payModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-gray-900">Registrar Pago</h3>
+                <p className="text-sm text-gray-400 mt-0.5">{payModal.client.fullName}</p>
+              </div>
+              <button onClick={() => setPayModal(null)} className="p-2 rounded-full hover:bg-gray-100 transition text-gray-400">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Resumen de la orden */}
+            <div className="bg-gray-50 rounded-2xl p-4 space-y-1 text-sm">
+              {payModal.order.folio && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Folio</span>
+                  <span className="font-mono font-black text-blue-600">{payModal.order.folio}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-gray-500">Total de la orden</span>
+                <span className="font-black">${payModal.order.total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+              </div>
+              {payModal.order.amountPaid > 0 && (
+                <div className="flex justify-between text-green-700">
+                  <span>Ya pagado</span>
+                  <span className="font-black">${payModal.order.amountPaid.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-orange-700 font-black border-t pt-1 mt-1">
+                <span>Saldo pendiente</span>
+                <span>${(payModal.order.total - (payModal.order.amountPaid || 0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            {/* Historial de abonos previos */}
+            {(payModal.order.payments || []).length > 0 && (
+              <div className="space-y-1">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Abonos anteriores</p>
+                {payModal.order.payments.map((p: any) => (
+                  <div key={p.id} className="flex items-center justify-between text-xs bg-green-50 rounded-xl px-3 py-2">
+                    <div>
+                      <span className="font-bold text-green-800">${Number(p.amount).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+                      <span className="text-green-600 ml-2">{p.paymentMethod === "CASH" ? "Efectivo" : p.paymentMethod === "CARD" ? "Tarjeta" : "Transferencia"}</span>
+                      {p.note && <span className="text-gray-400 ml-2">· {p.note}</span>}
+                    </div>
+                    <span className="text-gray-400">{new Date(p.createdAt).toLocaleDateString("es-MX")}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Formulario */}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Monto a registrar</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-gray-400">$</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={payAmount}
+                    onChange={e => setPayAmount(e.target.value)}
+                    className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-2xl font-black text-gray-900 focus:outline-none focus:border-gray-400 transition"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Método de pago</label>
+                <select
+                  value={payMethod}
+                  onChange={e => setPayMethod(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl font-bold text-sm text-gray-800 focus:outline-none focus:border-gray-400 transition bg-white"
+                >
+                  <option value="CASH">💵 Efectivo</option>
+                  <option value="CARD">💳 Tarjeta</option>
+                  <option value="TRANSFER">🏦 Transferencia</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Nota (opcional)</label>
+                <input
+                  type="text"
+                  value={payNote}
+                  onChange={e => setPayNote(e.target.value)}
+                  placeholder="Ej: Abono con efectivo, cheque #123..."
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl text-sm text-gray-800 focus:outline-none focus:border-gray-400 transition"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPayModal(null)}
+                className="flex-1 py-3 rounded-2xl border-2 border-gray-200 font-black text-gray-500 hover:bg-gray-50 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleRegisterPayment}
+                disabled={paying}
+                className="flex-1 py-3 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-black transition active:scale-95 disabled:opacity-50"
+              >
+                {paying ? "Registrando..." : "Registrar Pago"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Vista: Deudores ── */}
       {view === "deudores" && (
         <div className="space-y-4">
@@ -916,73 +1097,121 @@ function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }:
             <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b bg-red-50 flex items-center gap-2">
                 <span className="text-red-600 font-black text-sm">{debtors.length} cliente{debtors.length !== 1 ? "s" : ""} con deuda activa</span>
-                <span className="text-red-400 text-xs">· ordenados por días de retraso</span>
+                <span className="text-red-400 text-xs">· clic para ver detalle de ventas</span>
               </div>
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b">
-                    <th className="px-5 py-3">Cliente</th>
-                    <th className="px-5 py-3">Clasificación</th>
-                    <th className="px-5 py-3 text-right">Crédito usado</th>
-                    <th className="px-5 py-3 text-right">Deuda créditos</th>
-                    <th className="px-5 py-3 text-right">Deuda POS</th>
-                    <th className="px-5 py-3 text-right">Días atrasado</th>
-                    <th className="px-5 py-3 text-center">Estado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {debtors.map((c: any) => (
-                    <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-5 py-3">
-                        <p className="font-bold text-sm text-gray-900">{c.fullName}</p>
-                        <p className="text-xs text-gray-400">{c.email}</p>
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className="text-xs text-gray-500">{c.classification}</span>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <p className="font-black text-sm text-gray-900">${c.creditUsed.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
-                        <p className="text-[10px] text-gray-400">límite: ${c.creditLimit.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {c.totalDebt > 0 ? (
-                          <p className="font-black text-sm text-red-600">${c.totalDebt.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {c.posDebt > 0 ? (
-                          <div>
-                            <p className="font-black text-sm text-orange-600">${c.posDebt.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
-                            <p className="text-[10px] text-gray-400">{c.posOrderCount} venta{c.posOrderCount !== 1 ? "s" : ""}</p>
+              <div className="divide-y">
+                {debtors.map((c: any) => {
+                  const isExpanded = expandedDebtorId === c.id;
+                  const clientPosOrders = posOrdersByClientId.get(c.id) || [];
+                  return (
+                    <div key={c.id}>
+                      {/* Fila principal */}
+                      <div
+                        className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] items-center gap-4 px-5 py-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                        onClick={() => setExpandedDebtorId(isExpanded ? null : c.id)}
+                      >
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-gray-900 truncate">{c.fullName}</p>
+                          <p className="text-xs text-gray-400 truncate">{c.email}</p>
+                        </div>
+                        <div className="text-right hidden sm:block">
+                          <p className="text-[10px] text-gray-400 font-bold uppercase">Crédito</p>
+                          {c.totalDebt > 0 ? (
+                            <p className="font-black text-sm text-red-600">${c.totalDebt.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</p>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] text-gray-400 font-bold uppercase">POS pendiente</p>
+                          {c.posDebt > 0 ? (
+                            <div>
+                              <p className="font-black text-sm text-orange-600">${c.posDebt.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</p>
+                              <p className="text-[10px] text-gray-400">{c.posOrderCount} venta{c.posOrderCount !== 1 ? "s" : ""}</p>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                        </div>
+                        <div className="text-right hidden md:block">
+                          {c.daysOverdue > 0 ? (
+                            <span className="font-black text-sm text-red-600">{c.daysOverdue}d</span>
+                          ) : (
+                            <span className="text-xs text-green-600 font-bold">—</span>
+                          )}
+                        </div>
+                        <div>
+                          {c.daysOverdue > 30 ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-red-100 text-red-700 border border-red-200">Crítico</span>
+                          ) : c.daysOverdue > 0 ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-amber-100 text-amber-700 border border-amber-200">Atrasado</span>
+                          ) : c.posDebt > 0 ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-orange-100 text-orange-700 border border-orange-200 whitespace-nowrap">POS sin pagar</span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-green-50 text-green-700 border border-green-200">Al corriente</span>
+                          )}
+                        </div>
+                        <div className="text-gray-400 text-sm">{isExpanded ? "▲" : "▼"}</div>
+                      </div>
+
+                      {/* Detalle expandido: órdenes POS sin pagar */}
+                      {isExpanded && clientPosOrders.length > 0 && (
+                        <div className="bg-orange-50 border-t border-orange-100 px-5 py-4">
+                          <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-3">
+                            Ventas POS pendientes de pago
+                          </p>
+                          <div className="space-y-2">
+                            {clientPosOrders.map((order: any) => {
+                              const remaining = order.total - (order.amountPaid || 0);
+                              const pct = order.total > 0 ? ((order.amountPaid || 0) / order.total) * 100 : 0;
+                              return (
+                                <div key={order.id} className="bg-white rounded-2xl border border-orange-100 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {order.folio && (
+                                        <span className="font-mono text-xs font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{order.folio}</span>
+                                      )}
+                                      <span className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleDateString("es-MX")}</span>
+                                    </div>
+                                    <div className="flex items-center gap-4 mt-2 text-sm flex-wrap">
+                                      <span className="text-gray-500">Total: <span className="font-black text-gray-900">${order.total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span></span>
+                                      {order.amountPaid > 0 && (
+                                        <span className="text-green-600">Abonado: <span className="font-black">${order.amountPaid.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span></span>
+                                      )}
+                                      <span className="text-orange-700 font-black">Pendiente: ${remaining.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                    {/* Barra de progreso */}
+                                    {order.amountPaid > 0 && (
+                                      <div className="mt-2 h-1.5 bg-orange-100 rounded-full overflow-hidden w-full max-w-xs">
+                                        <div
+                                          className="h-full bg-green-400 rounded-full transition-all"
+                                          style={{ width: `${Math.min(pct, 100)}%` }}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => openPayModal(order, c)}
+                                    className="shrink-0 bg-green-600 hover:bg-green-700 text-white text-xs font-black px-4 py-2.5 rounded-xl transition active:scale-95"
+                                  >
+                                    + Registrar Pago
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {c.daysOverdue > 0 ? (
-                          <span className="font-black text-sm text-red-600">{c.daysOverdue} días</span>
-                        ) : (
-                          <span className="text-xs text-green-600 font-bold">Al corriente</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3 text-center">
-                        {c.daysOverdue > 30 ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-red-100 text-red-700 border border-red-200">Crítico</span>
-                        ) : c.daysOverdue > 0 ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-amber-100 text-amber-700 border border-amber-200">Atrasado</span>
-                        ) : c.posDebt > 0 ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-orange-100 text-orange-700 border border-orange-200">POS sin pagar</span>
-                        ) : (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-green-50 text-green-700 border border-green-200">Al corriente</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        </div>
+                      )}
+
+                      {isExpanded && clientPosOrders.length === 0 && c.posDebt === 0 && (
+                        <div className="bg-gray-50 border-t px-5 py-3 text-xs text-gray-400">
+                          Este cliente solo tiene deuda por créditos — gestionar desde el módulo de créditos.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

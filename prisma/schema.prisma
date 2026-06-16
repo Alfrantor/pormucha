@@ -371,6 +371,8 @@ model Order {
   folio             String?       @unique
   requiresInvoice   Boolean       @default(false)
   isPaid            Boolean       @default(true)
+  amountPaid        Decimal       @default(0)
+  payments          OrderPayment[]
   cancelledAt       DateTime?
   cancellationNote  String?
   replacesOrderId   String?
@@ -411,6 +413,18 @@ model OrderItemComposition {
   flavor      Flavor    @relation(fields: [flavorId], references: [id])
   
   quantity    Int       // Cantidad de botellas de este sabor en este item
+}
+
+model OrderPayment {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount        Decimal
+  paymentMethod String
+  note          String?
+  createdAt     DateTime @default(now())
+
+  @@index([orderId])
 }
 
 model Lead {

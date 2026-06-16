@@ -362,12 +362,25 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     try {
       unpaidPosOrders = await (db as any).order.findMany({
         where: { channel: "POS", isPaid: false },
-        select: { id: true, clientId: true, fullName: true, total: true, createdAt: true, folio: true },
+        select: {
+          id: true, clientId: true, fullName: true, total: true,
+          amountPaid: true, createdAt: true, folio: true,
+          payments: {
+            select: { id: true, amount: true, paymentMethod: true, note: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+          },
+        },
         orderBy: { createdAt: "desc" },
       }).then((rows: any[]) =>
         rows.map((o: any) => ({
           ...o,
           total: Number(o.total || 0),
+          amountPaid: Number(o.amountPaid || 0),
+          payments: (o.payments || []).map((p: any) => ({
+            ...p,
+            amount: Number(p.amount || 0),
+            createdAt: p.createdAt?.toISOString() || new Date().toISOString(),
+          })),
           createdAt: o.createdAt?.toISOString() || new Date().toISOString(),
         }))
       );
