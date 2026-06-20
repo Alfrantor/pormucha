@@ -66,7 +66,7 @@ export function printTicket(data: TicketData) {
     <!-- HEADER -->
     <div class="header">
       <h1>PORMUCHA</h1>
-      <h2>Kombucha Artesanal</h2>
+      <h2>Kombucha</h2>
     </div>
 
     <!-- INFO -->
@@ -131,7 +131,7 @@ export function printTicket(data: TicketData) {
   <meta charset="UTF-8">
   <title>Ticket de Venta</title>
   <style>
-    @page { margin: 4mm; size: 80mm auto; }
+    @page { margin: 4mm 4mm 8mm 4mm; size: 80mm auto; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Courier New', Courier, monospace;
