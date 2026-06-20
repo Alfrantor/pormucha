@@ -370,9 +370,13 @@ model Order {
   notes             String?
   folio             String?       @unique
   requiresInvoice   Boolean       @default(false)
+  invoiceNumber     String?
+  invoiceDate       DateTime?
+  invoiceUrl        String?
   isPaid            Boolean       @default(true)
   amountPaid        Decimal       @default(0)
   payments          OrderPayment[]
+  edits             OrderEdit[]
   cancelledAt       DateTime?
   cancellationNote  String?
   replacesOrderId   String?
@@ -415,6 +419,17 @@ model OrderItemComposition {
   quantity    Int       // Cantidad de botellas de este sabor en este item
 }
 
+model OrderEdit {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changes    Json
+  changedBy  String
+  changedAt  DateTime @default(now())
+
+  @@index([orderId])
+}
+
 model OrderPayment {
   id            String   @id @default(cuid())
   orderId       String
@@ -422,6 +437,7 @@ model OrderPayment {
   amount        Decimal
   paymentMethod String
   note          String?
+  proofUrl      String?
   createdAt     DateTime @default(now())
 
   @@index([orderId])

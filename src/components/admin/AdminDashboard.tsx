@@ -29,8 +29,34 @@ import { generateShippingLabel } from "@/actions/admin-actions";
 import { setInventoryPin } from "@/app/_actions/settings";
 import { createAdjustmentRequest, approveAdjustmentRequest, rejectAdjustmentRequest } from "@/app/_actions/inventory";
 import { cancelOrder } from "@/app/_actions/orders";
-import { registerOrderPayment, cancelOrderPayment, recalculateOrderPayment } from "@/app/_actions/payments";
+import { editOrder, getOrderEdits } from "@/app/_actions/order-edits";
+import { registerOrderPayment, cancelOrderPayment, recalculateOrderPayment, getOrderPayments } from "@/app/_actions/payments";
+import { getUploadUrl, getDownloadUrl } from "@/app/_actions/upload";
 import { toast } from "sonner";
+
+async function uploadFileToS3(file: File, folder: "facturas" | "comprobantes"): Promise<string> {
+  const res = await getUploadUrl(file.name, file.type, folder);
+  if ("error" in res && res.error) throw new Error(res.error);
+  await fetch(res.signedUrl!, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+  return res.fileUrl!;
+}
+
+async function openS3File(fileUrl: string) {
+  const res = await getDownloadUrl(fileUrl);
+  if ("error" in res) { toast.error(res.error); return; }
+  window.open(res.url, "_blank");
+}
+
+function S3FileLink({ url, label }: { url: string; label: string }) {
+  return (
+    <button
+      onClick={() => openS3File(url)}
+      className="text-xs text-blue-600 font-bold underline hover:text-blue-800 transition text-left"
+    >
+      {label}
+    </button>
+  );
+}
 
 // ---- Types ----
 type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios" | "giros";
@@ -309,7 +335,7 @@ const PAGE_SIZE = 30;
 
 function TabPedidos({ orders = [] }: { orders: any[] }) {
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
-  const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB" | "CANCELLED">("all");
+  const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB" | "CANCELLED" | "UNPAID">("all");
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -329,6 +355,158 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
 
   // Resetear página al cambiar filtros
   React.useEffect(() => { setPage(1); }, [channelFilter, search, dateFrom, dateTo]);
+
+  // ── Modal de gestión de pagos POS ──
+  const [paymentsModal, setPaymentsModal] = useState<{ orderId: string; orderLabel: string } | null>(null);
+  const [paymentsModalData, setPaymentsModalData] = useState<{ order: any; payments: any[] } | null>(null);
+  const [paymentsModalLoading, setPaymentsModalLoading] = useState(false);
+  const [pmCancelConfirm, setPmCancelConfirm] = useState<{ paymentId: string; amount: number } | null>(null);
+  const [pmCancelling, setPmCancelling] = useState(false);
+  const [pmRecalculating, setPmRecalculating] = useState(false);
+
+  const openPaymentsModal = async (order: any) => {
+    const label = order.folio || `#${order.id.slice(-6).toUpperCase()}`;
+    setPaymentsModal({ orderId: order.id, orderLabel: label });
+    setPaymentsModalData(null);
+    setPmCancelConfirm(null);
+    setPaymentsModalLoading(true);
+    const res = await getOrderPayments(order.id);
+    setPaymentsModalLoading(false);
+    if (res.success && res.order) {
+      setPaymentsModalData({ order: res.order, payments: res.payments || [] });
+    } else {
+      toast.error(res.error || "Error al cargar pagos");
+      setPaymentsModal(null);
+    }
+  };
+
+  const handlePmCancelPayment = async () => {
+    if (!pmCancelConfirm || !paymentsModal) return;
+    setPmCancelling(true);
+    const res = await cancelOrderPayment(pmCancelConfirm.paymentId, paymentsModal.orderId);
+    setPmCancelling(false);
+    if (res.success) {
+      toast.success("Abono cancelado. Saldo recalculado.");
+      setPaymentsModalData(prev => prev ? {
+        order: { ...prev.order, amountPaid: res.amountPaid, isPaid: res.isPaidNow },
+        payments: prev.payments.filter((p: any) => p.id !== pmCancelConfirm.paymentId),
+      } : null);
+      // Actualizar también la fila en la tabla
+      setLocalOrders(prev => prev.map((o: any) =>
+        o.id !== paymentsModal.orderId ? o : { ...o, status: res.isPaidNow ? "PAID" : "PENDING" }
+      ));
+      setPmCancelConfirm(null);
+    } else {
+      toast.error(res.error || "Error al cancelar pago");
+    }
+  };
+
+  // ── Formulario de abono dentro del modal de pagos ──
+  const [pmAddPayment, setPmAddPayment] = useState(false);
+  const [pmPayAmount, setPmPayAmount] = useState("");
+  const [pmPayMethod, setPmPayMethod] = useState("CASH");
+  const [pmPayNote, setPmPayNote] = useState("");
+  const [pmPayProofUrl, setPmPayProofUrl] = useState("");
+  const [pmProofUploading, setPmProofUploading] = useState(false);
+  const [pmPaying, setPmPaying] = useState(false);
+
+  const handlePmRegisterPayment = async () => {
+    if (!paymentsModal || !paymentsModalData) return;
+    const amount = parseFloat(pmPayAmount);
+    if (isNaN(amount) || amount <= 0) { toast.error("Ingresa un monto válido"); return; }
+    setPmPaying(true);
+    const res = await registerOrderPayment(paymentsModal.orderId, amount, pmPayMethod, pmPayNote || undefined, pmPayProofUrl || undefined);
+    setPmPaying(false);
+    if (res.success) {
+      toast.success(res.isPaidNow ? "¡Orden pagada completamente!" : `Abono registrado. Restante: $${res.remaining.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`);
+      const fresh = await getOrderPayments(paymentsModal.orderId);
+      if (fresh.success && fresh.order) setPaymentsModalData({ order: fresh.order, payments: fresh.payments || [] });
+      setLocalOrders(prev => prev.map((o: any) => o.id !== paymentsModal.orderId ? o : { ...o, status: res.isPaidNow ? "PAID" : o.status }));
+      setPmAddPayment(false);
+      setPmPayAmount("");
+      setPmPayNote("");
+      setPmPayMethod("CASH");
+      setPmPayProofUrl("");
+    } else {
+      toast.error(res.error || "Error al registrar abono");
+    }
+  };
+
+  // ── Modal de edición de orden ──
+  const [editModal, setEditModal] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, any>>({});
+  const [editEdits, setEditEdits] = useState<any[]>([]);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [invoiceUploading, setInvoiceUploading] = useState(false);
+
+  const openEditModal = async (order: any) => {
+    setEditModal(order);
+    setEditForm({
+      fullName:        order.fullName        ?? "",
+      email:           order.email           ?? "",
+      phone:           order.phone           ?? "",
+      notes:           order.notes           ?? "",
+      requiresInvoice: !!(order as any).requiresInvoice,
+      paymentMethod:   order.paymentMethod   ?? "CASH",
+      invoiceNumber:   order.invoiceNumber   ?? "",
+      invoiceDate:     order.invoiceDate ? order.invoiceDate.slice(0, 10) : "",
+      invoiceUrl:      order.invoiceUrl      ?? "",
+    });
+    setEditEdits([]);
+    setEditLoading(true);
+    const res = await getOrderEdits(order.id);
+    setEditLoading(false);
+    if (res.success) setEditEdits(res.edits || []);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editModal) return;
+    setEditSaving(true);
+    const res = await editOrder(editModal.id, {
+      fullName:        editForm.fullName        || null,
+      email:           editForm.email           || null,
+      phone:           editForm.phone           || null,
+      notes:           editForm.notes           || null,
+      requiresInvoice: editForm.requiresInvoice,
+      paymentMethod:   editForm.paymentMethod   || null,
+      invoiceNumber:   editForm.invoiceNumber   || null,
+      invoiceDate:     editForm.invoiceDate     ? new Date(editForm.invoiceDate).toISOString() : null,
+      invoiceUrl:      editForm.invoiceUrl      || null,
+    });
+    setEditSaving(false);
+    if (res.success) {
+      toast.success("Orden actualizada correctamente.");
+      setLocalOrders(prev => prev.map((o: any) =>
+        o.id !== editModal.id ? o : { ...o, ...editForm }
+      ));
+      // Recargar historial
+      const fresh = await getOrderEdits(editModal.id);
+      if (fresh.success) setEditEdits(fresh.edits || []);
+    } else {
+      toast.error(res.error || "Error al guardar");
+    }
+  };
+
+  const handlePmRecalculate = async () => {
+    if (!paymentsModal) return;
+    setPmRecalculating(true);
+    const res = await recalculateOrderPayment(paymentsModal.orderId);
+    setPmRecalculating(false);
+    if (res.success) {
+      toast.success(`Recalculado. Pagado: $${res.amountPaid.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`);
+      // Recargar desde DB para tener datos limpios
+      const fresh = await getOrderPayments(paymentsModal.orderId);
+      if (fresh.success && fresh.order) {
+        setPaymentsModalData({ order: fresh.order, payments: fresh.payments || [] });
+      }
+      setLocalOrders(prev => prev.map((o: any) =>
+        o.id !== paymentsModal.orderId ? o : { ...o, status: res.isPaidNow ? "PAID" : "PENDING" }
+      ));
+    } else {
+      toast.error(res.error || "Error al recalcular");
+    }
+  };
 
   const openCancel = (order: any) => {
     setCancelTarget(order);
@@ -391,6 +569,7 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
   const cancelledCount = localOrders.filter(o => o.status === "CANCELLED").length;
   const posCount       = localOrders.filter(o => o.channel === "POS" && o.status !== "CANCELLED").length;
   const webCount       = localOrders.filter(o => o.channel !== "POS" && o.status !== "CANCELLED").length;
+  const unpaidCount    = localOrders.filter(o => !o.isPaid && o.status !== "CANCELLED").length;
 
   const filteredOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -401,9 +580,10 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
       .filter(order => {
         // Canal
         if (channelFilter === "CANCELLED") return order.status === "CANCELLED";
+        if (channelFilter === "UNPAID") return !order.isPaid && order.status !== "CANCELLED";
         if (channelFilter === "POS") return order.channel === "POS" && order.status !== "CANCELLED";
         if (channelFilter === "WEB") return order.channel !== "POS" && order.status !== "CANCELLED";
-        return order.status !== "CANCELLED";
+        return true;
       })
       .filter(order => {
         if (!q) return true;
@@ -446,20 +626,22 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
-          {(["all","POS","WEB","CANCELLED"] as const).map(f => (
+          {(["all","POS","WEB","CANCELLED","UNPAID"] as const).map(f => (
             <button key={f}
               onClick={() => setChannelFilter(f)}
               className={`px-3 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === f
                 ? f === "CANCELLED" ? "bg-white text-red-600 shadow-sm"
+                  : f === "UNPAID" ? "bg-white text-orange-600 shadow-sm"
                   : f === "POS" ? "bg-white text-purple-700 shadow-sm"
                   : f === "WEB" ? "bg-white text-blue-600 shadow-sm"
                   : "bg-white text-black shadow-sm"
                 : "text-gray-500 hover:text-gray-700"}`}
             >
-              {f === "all" ? `Todos (${localOrders.filter(o=>o.status!=="CANCELLED").length})`
+              {f === "all" ? `Todos (${localOrders.length})`
                 : f === "POS" ? `POS (${posCount})`
                 : f === "WEB" ? `Web (${webCount})`
-                : `Cancelados (${cancelledCount})`}
+                : f === "CANCELLED" ? `Cancelados (${cancelledCount})`
+                : `Cuentas por pagar (${unpaidCount})`}
             </button>
           ))}
         </div>
@@ -605,6 +787,26 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
                           </button>
                         )}
 
+                        {/* Botón pagos POS */}
+                        {isPOS && (
+                          <button
+                            onClick={() => openPaymentsModal(order)}
+                            className="text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest border border-green-200 text-green-700 hover:bg-green-50 transition-all"
+                          >
+                            💳 Pagos
+                          </button>
+                        )}
+
+                        {/* Botón editar */}
+                        {!isCancelled && (
+                          <button
+                            onClick={() => openEditModal(order)}
+                            className="text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest border border-blue-200 text-blue-600 hover:bg-blue-50 transition-all"
+                          >
+                            ✏️ Editar
+                          </button>
+                        )}
+
                         {/* Botón cancelar */}
                         {!isCancelled && (
                           <button
@@ -686,6 +888,548 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
             >
               »
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL DE GESTIÓN DE PAGOS POS ── */}
+      {paymentsModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-gray-900">Gestión de Pagos</h3>
+                <p className="text-sm text-gray-400 font-mono mt-0.5">{paymentsModal.orderLabel}</p>
+              </div>
+              <button onClick={() => setPaymentsModal(null)} className="p-2 rounded-full hover:bg-gray-100 transition text-gray-400">
+                <X size={18} />
+              </button>
+            </div>
+
+            {paymentsModalLoading && (
+              <div className="py-12 text-center text-gray-400">
+                <p className="text-2xl mb-2">⏳</p>
+                <p className="text-sm font-bold">Cargando pagos...</p>
+              </div>
+            )}
+
+            {paymentsModalData && (
+              <>
+                {/* Resumen de la orden */}
+                <div className="bg-gray-50 rounded-2xl p-4 space-y-1.5 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Cliente</span>
+                    <span className="font-bold text-gray-900">{paymentsModalData.order.fullName || "Mostrador"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Total de la orden</span>
+                    <span className="font-black">${paymentsModalData.order.total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Pagado (en DB)</span>
+                    <span className={`font-black ${paymentsModalData.order.amountPaid >= paymentsModalData.order.total ? "text-green-600" : "text-orange-600"}`}>
+                      ${paymentsModalData.order.amountPaid.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  {paymentsModalData.order.amountPaid < paymentsModalData.order.total && (
+                    <div className="flex justify-between border-t pt-1.5 mt-1.5">
+                      <span className="text-gray-500">Pendiente</span>
+                      <span className="font-black text-red-600">
+                        ${(paymentsModalData.order.total - paymentsModalData.order.amountPaid).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t pt-1.5 mt-1.5">
+                    <span className="text-gray-500">Estado</span>
+                    <span className={`text-xs font-black px-2 py-0.5 rounded-full ${paymentsModalData.order.isPaid ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>
+                      {paymentsModalData.order.isPaid ? "✓ Pagado" : "Pendiente"}
+                    </span>
+                  </div>
+
+                  {/* Alerta de inconsistencia */}
+                  {paymentsModalData.payments.length === 0 && paymentsModalData.order.amountPaid > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-2">
+                      <p className="text-xs font-bold text-amber-700">
+                        ⚠ El campo "Pagado" tiene un valor pero no hay abonos registrados en la base de datos. Usa ⟳ Recalcular para corregirlo.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Historial de abonos */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                      Abonos registrados ({paymentsModalData.payments.length})
+                    </p>
+                    <button
+                      onClick={handlePmRecalculate}
+                      disabled={pmRecalculating}
+                      className="text-[10px] font-black px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition disabled:opacity-50"
+                    >
+                      {pmRecalculating ? "Calculando..." : "⟳ Recalcular desde DB"}
+                    </button>
+                  </div>
+
+                  {paymentsModalData.payments.length === 0 ? (
+                    <div className="py-6 text-center text-gray-400 border-2 border-dashed rounded-2xl">
+                      <p className="text-sm font-bold">Sin abonos registrados</p>
+                      <p className="text-xs mt-1">Usa ⟳ Recalcular para sincronizar el saldo.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {paymentsModalData.payments.map((p: any) => (
+                        <div key={p.id} className="flex items-center justify-between gap-3 bg-green-50 rounded-xl px-4 py-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-black text-green-800 text-sm">
+                                ${Number(p.amount).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                              </span>
+                              <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                                {p.paymentMethod === "CASH" ? "Efectivo" : p.paymentMethod === "CARD" ? "Tarjeta" : "Transferencia"}
+                              </span>
+                              <span className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleDateString("es-MX")}</span>
+                            </div>
+                            {p.note && <p className="text-xs text-gray-400 mt-0.5 truncate">· {p.note}</p>}
+                            {p.proofUrl && (
+                              <span className="mt-0.5 block">
+                                📎 <S3FileLink url={p.proofUrl} label="Ver comprobante" />
+                              </span>
+                            )}
+                          </div>
+                          {/* Confirmación inline de cancelación */}
+                          {pmCancelConfirm?.paymentId === p.id ? (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="text-xs text-red-600 font-bold">¿Cancelar?</span>
+                              <button
+                                onClick={handlePmCancelPayment}
+                                disabled={pmCancelling}
+                                className="text-[10px] font-black px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition disabled:opacity-50"
+                              >
+                                {pmCancelling ? "..." : "Sí"}
+                              </button>
+                              <button
+                                onClick={() => setPmCancelConfirm(null)}
+                                className="text-[10px] font-black px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition"
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setPmCancelConfirm({ paymentId: p.id, amount: Number(p.amount) })}
+                              className="shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50 w-7 h-7 rounded-full flex items-center justify-center transition font-black text-base"
+                              title="Cancelar este abono"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Formulario de nuevo abono ── */}
+                {!paymentsModalData.order.isPaid && (
+                  <div className="border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden">
+                    {!pmAddPayment ? (
+                      <button
+                        onClick={() => {
+                          const remaining = paymentsModalData.order.total - paymentsModalData.order.amountPaid;
+                          setPmPayAmount(remaining > 0 ? remaining.toFixed(2) : "");
+                          setPmPayMethod("CASH");
+                          setPmPayNote("");
+                          setPmAddPayment(true);
+                        }}
+                        className="w-full py-3 px-4 text-sm font-black text-gray-500 hover:bg-gray-50 transition flex items-center justify-center gap-2"
+                      >
+                        <span className="text-lg">+</span> Registrar Abono
+                      </button>
+                    ) : (
+                      <div className="p-4 space-y-3">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Nuevo Abono</p>
+
+                        {/* Monto */}
+                        <div>
+                          <label className="text-xs font-bold text-gray-500 mb-1 block">Monto</label>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={pmPayAmount}
+                            onChange={e => setPmPayAmount(e.target.value)}
+                            placeholder="0.00"
+                            className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm font-black focus:outline-none focus:border-gray-400"
+                          />
+                        </div>
+
+                        {/* Método de pago */}
+                        <div>
+                          <label className="text-xs font-bold text-gray-500 mb-1 block">Método de pago</label>
+                          <div className="flex gap-2">
+                            {(["CASH", "CARD", "TRANSFER"] as const).map(m => (
+                              <button
+                                key={m}
+                                onClick={() => setPmPayMethod(m)}
+                                className={`flex-1 py-2 rounded-xl text-xs font-black border-2 transition ${
+                                  pmPayMethod === m
+                                    ? "bg-gray-900 text-white border-gray-900"
+                                    : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                                }`}
+                              >
+                                {m === "CASH" ? "Efectivo" : m === "CARD" ? "Tarjeta" : "Transfer."}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Nota */}
+                        <div>
+                          <label className="text-xs font-bold text-gray-500 mb-1 block">Nota (opcional)</label>
+                          <input
+                            type="text"
+                            value={pmPayNote}
+                            onChange={e => setPmPayNote(e.target.value)}
+                            placeholder="Ej: Transferencia BBVA 12:30pm"
+                            className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
+                          />
+                        </div>
+
+                        {/* Comprobante (solo si método es CARD o TRANSFER) */}
+                        {(pmPayMethod === "CARD" || pmPayMethod === "TRANSFER") && (
+                          <div>
+                            <label className="text-xs font-bold text-gray-500 mb-1 block">Comprobante (PDF o imagen)</label>
+                            {pmPayProofUrl ? (
+                              <div className="flex items-center gap-2 bg-white border-2 border-green-200 rounded-xl px-3 py-2">
+                                <span className="text-green-600 text-sm">✓</span>
+                                <span className="flex-1 truncate">
+                                  <S3FileLink url={pmPayProofUrl} label="Ver comprobante" />
+                                </span>
+                                <button onClick={() => setPmPayProofUrl("")} className="text-gray-400 hover:text-red-500 text-lg leading-none shrink-0">×</button>
+                              </div>
+                            ) : (
+                              <label className={`flex items-center gap-2 border-2 border-dashed rounded-xl px-3 py-2.5 cursor-pointer transition ${pmProofUploading ? "border-blue-300 bg-blue-50" : "border-gray-200 hover:border-blue-300 bg-white"}`}>
+                                <input
+                                  type="file"
+                                  accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*"
+                                  className="hidden"
+                                  disabled={pmProofUploading}
+                                  onChange={async e => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    setPmProofUploading(true);
+                                    try {
+                                      const url = await uploadFileToS3(file, "comprobantes");
+                                      setPmPayProofUrl(url);
+                                      toast.success("Comprobante subido correctamente");
+                                    } catch (err: any) {
+                                      toast.error(err.message || "Error al subir comprobante");
+                                    } finally {
+                                      setPmProofUploading(false);
+                                    }
+                                  }}
+                                />
+                                <span className="text-gray-400 text-base">{pmProofUploading ? "⏳" : "📎"}</span>
+                                <span className="text-xs text-gray-500 font-bold">
+                                  {pmProofUploading ? "Subiendo..." : "Adjuntar comprobante"}
+                                </span>
+                              </label>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={handlePmRegisterPayment}
+                            disabled={pmPaying}
+                            className="flex-1 bg-gray-900 text-white py-2.5 rounded-xl text-sm font-black hover:bg-gray-700 transition disabled:opacity-50"
+                          >
+                            {pmPaying ? "Registrando..." : "Confirmar Abono"}
+                          </button>
+                          <button
+                            onClick={() => setPmAddPayment(false)}
+                            disabled={pmPaying}
+                            className="px-4 py-2.5 rounded-xl border-2 border-gray-200 text-sm font-black text-gray-500 hover:bg-gray-50 transition disabled:opacity-50"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setPaymentsModal(null)}
+                  className="w-full py-3 rounded-2xl border-2 border-gray-200 font-black text-gray-500 hover:bg-gray-50 transition"
+                >
+                  Cerrar
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL DE EDICIÓN DE ORDEN ── */}
+      {editModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-gray-900">Editar Orden</h3>
+                <p className="text-sm text-gray-400 font-mono mt-0.5">
+                  {editModal.folio ? `#${editModal.folio}` : `#${editModal.id.slice(-6).toUpperCase()}`}
+                </p>
+              </div>
+              <button onClick={() => setEditModal(null)} className="p-2 rounded-full hover:bg-gray-100 transition text-gray-400">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Campos editables */}
+            <div className="space-y-3">
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Datos del cliente</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-gray-500 mb-1 block">Nombre</label>
+                  <input
+                    type="text"
+                    value={editForm.fullName || ""}
+                    onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))}
+                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 mb-1 block">Email</label>
+                  <input
+                    type="email"
+                    value={editForm.email || ""}
+                    onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 mb-1 block">Teléfono</label>
+                  <input
+                    type="tel"
+                    value={editForm.phone || ""}
+                    onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">Notas</label>
+                <textarea
+                  value={editForm.notes || ""}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  placeholder="Ej: Entregar entre 2-4pm, sin azúcar..."
+                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-gray-400 resize-none"
+                />
+              </div>
+
+              {/* Método de pago */}
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">Método de pago</label>
+                <div className="flex gap-2">
+                  {(["CASH", "CARD", "TRANSFER"] as const).map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setEditForm(f => ({ ...f, paymentMethod: m }))}
+                      className={`flex-1 py-2 rounded-xl text-xs font-black border-2 transition ${
+                        editForm.paymentMethod === m
+                          ? "bg-gray-900 text-white border-gray-900"
+                          : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                      }`}
+                    >
+                      {m === "CASH" ? "Efectivo" : m === "CARD" ? "Tarjeta" : "Transfer."}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Requiere factura */}
+              <div className="flex items-center justify-between bg-gray-50 rounded-2xl px-4 py-3">
+                <div>
+                  <p className="text-sm font-black text-gray-800">Requiere factura</p>
+                  <p className="text-xs text-gray-400">Marcar si el cliente solicitó factura</p>
+                </div>
+                <button
+                  onClick={() => setEditForm(f => ({ ...f, requiresInvoice: !f.requiresInvoice }))}
+                  className={`relative w-12 h-6 rounded-full transition-colors duration-200 ${
+                    editForm.requiresInvoice ? "bg-green-500" : "bg-gray-300"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                    editForm.requiresInvoice ? "translate-x-6" : "translate-x-0"
+                  }`} />
+                </button>
+              </div>
+
+              {/* Datos de factura (visible solo si requiresInvoice) */}
+              {editForm.requiresInvoice && (
+                <div className="border-2 border-blue-100 bg-blue-50/50 rounded-2xl p-4 space-y-3">
+                  <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Datos de Factura</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 mb-1 block"># Factura</label>
+                      <input
+                        type="text"
+                        value={editForm.invoiceNumber || ""}
+                        onChange={e => setEditForm(f => ({ ...f, invoiceNumber: e.target.value }))}
+                        placeholder="Ej: FAC-2024-001"
+                        className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 mb-1 block">Fecha de factura</label>
+                      <input
+                        type="date"
+                        value={editForm.invoiceDate || ""}
+                        onChange={e => setEditForm(f => ({ ...f, invoiceDate: e.target.value }))}
+                        className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 mb-1 block">Archivo de factura (PDF/XML)</label>
+                    {editForm.invoiceUrl ? (
+                      <div className="flex items-center gap-2 bg-white border-2 border-green-200 rounded-xl px-3 py-2">
+                        <span className="text-green-600 text-sm">✓</span>
+                        <span className="flex-1 truncate">
+                          <S3FileLink url={editForm.invoiceUrl} label="Ver factura subida" />
+                        </span>
+                        <button
+                          onClick={() => setEditForm(f => ({ ...f, invoiceUrl: "" }))}
+                          className="text-gray-400 hover:text-red-500 text-lg leading-none shrink-0"
+                        >×</button>
+                      </div>
+                    ) : (
+                      <label className={`flex items-center gap-2 border-2 border-dashed rounded-xl px-3 py-2.5 cursor-pointer transition ${invoiceUploading ? "border-blue-300 bg-blue-50" : "border-gray-200 hover:border-blue-300 bg-white"}`}>
+                        <input
+                          type="file"
+                          accept=".pdf,.xml,application/pdf,text/xml,application/xml"
+                          className="hidden"
+                          disabled={invoiceUploading}
+                          onChange={async e => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setInvoiceUploading(true);
+                            try {
+                              const url = await uploadFileToS3(file, "facturas");
+                              setEditForm(f => ({ ...f, invoiceUrl: url }));
+                              toast.success("Factura subida correctamente");
+                            } catch (err: any) {
+                              toast.error(err.message || "Error al subir factura");
+                            } finally {
+                              setInvoiceUploading(false);
+                            }
+                          }}
+                        />
+                        <span className="text-gray-400 text-base">{invoiceUploading ? "⏳" : "📎"}</span>
+                        <span className="text-xs text-gray-500 font-bold">
+                          {invoiceUploading ? "Subiendo..." : "Seleccionar PDF o XML"}
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Botón guardar */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveEdit}
+                disabled={editSaving}
+                className="flex-1 bg-gray-900 text-white py-3 rounded-2xl font-black hover:bg-gray-700 transition disabled:opacity-50"
+              >
+                {editSaving ? "Guardando..." : "Guardar Cambios"}
+              </button>
+              <button
+                onClick={() => setEditModal(null)}
+                className="px-5 py-3 rounded-2xl border-2 border-gray-200 font-black text-gray-500 hover:bg-gray-50 transition"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {/* Historial de cambios */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                Historial de cambios ({editEdits.length})
+              </p>
+
+              {editLoading && (
+                <div className="py-4 text-center text-gray-400">
+                  <p className="text-sm font-bold">Cargando historial...</p>
+                </div>
+              )}
+
+              {!editLoading && editEdits.length === 0 && (
+                <div className="py-4 text-center text-gray-400 border-2 border-dashed rounded-2xl">
+                  <p className="text-sm font-bold">Sin modificaciones previas</p>
+                </div>
+              )}
+
+              {!editLoading && editEdits.map((edit: any) => {
+                const fieldLabels: Record<string, string> = {
+                  fullName: "Nombre",
+                  email: "Email",
+                  phone: "Teléfono",
+                  notes: "Notas",
+                  requiresInvoice: "Requiere factura",
+                  paymentMethod: "Método de pago",
+                  invoiceNumber: "# Factura",
+                  invoiceDate: "Fecha factura",
+                  invoiceUrl: "Archivo factura",
+                };
+                const methodLabel = (v: string | boolean | null) => {
+                  if (typeof v === "boolean") return v ? "Sí" : "No";
+                  if (v === "CASH") return "Efectivo";
+                  if (v === "CARD") return "Tarjeta";
+                  if (v === "TRANSFER") return "Transferencia";
+                  return v ?? "—";
+                };
+                return (
+                  <div key={edit.id} className="bg-gray-50 rounded-2xl p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-xs font-black text-gray-700">{edit.changedBy}</span>
+                      <span className="text-[10px] text-gray-400">
+                        {new Date(edit.changedAt).toLocaleString("es-MX", {
+                          year: "numeric", month: "2-digit", day: "2-digit",
+                          hour: "2-digit", minute: "2-digit"
+                        })}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {Object.entries(edit.changes as Record<string, { old: any; new: any }>).map(([field, diff]) => (
+                        <div key={field} className="flex items-start gap-2 text-xs">
+                          <span className="font-bold text-gray-500 min-w-[90px] shrink-0">{fieldLabels[field] ?? field}:</span>
+                          <span className="text-red-500 line-through max-w-[120px] truncate" title={String(diff.old)}>
+                            {methodLabel(diff.old)}
+                          </span>
+                          <span className="text-gray-400">→</span>
+                          <span className="text-green-700 font-bold max-w-[120px] truncate" title={String(diff.new)}>
+                            {methodLabel(diff.new)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
           </div>
         </div>
       )}
@@ -1041,7 +1785,7 @@ function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }:
           o.id !== payModal.order.id ? o : {
             ...o,
             amountPaid: res.amountPaid,
-            payments: [...(o.payments || []), {
+            payments: [...(o.payments || []), res.payment ?? {
               id: Date.now().toString(),
               amount,
               paymentMethod: payMethod,
