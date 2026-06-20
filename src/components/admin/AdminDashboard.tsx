@@ -305,9 +305,15 @@ export default function AdminDashboard({ data }: { data: any }) {
 // ── tipos del modal de cancelación ───────────────────────────────────────────
 type CancelStep = "confirm" | "stock" | "replacement" | "note" | "done";
 
+const PAGE_SIZE = 30;
+
 function TabPedidos({ orders = [] }: { orders: any[] }) {
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
   const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB" | "CANCELLED">("all");
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(1);
 
   // Estado del modal de cancelación
   const [cancelTarget, setCancelTarget] = useState<any>(null);
@@ -320,6 +326,9 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
 
   // Sincronizar si cambia el prop (refresco de página)
   React.useEffect(() => { setLocalOrders(orders); }, [orders]);
+
+  // Resetear página al cambiar filtros
+  React.useEffect(() => { setPage(1); }, [channelFilter, search, dateFrom, dateTo]);
 
   const openCancel = (order: any) => {
     setCancelTarget(order);
@@ -383,12 +392,37 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
   const posCount       = localOrders.filter(o => o.channel === "POS" && o.status !== "CANCELLED").length;
   const webCount       = localOrders.filter(o => o.channel !== "POS" && o.status !== "CANCELLED").length;
 
-  const filteredOrders = localOrders.filter(order => {
-    if (channelFilter === "CANCELLED") return order.status === "CANCELLED";
-    if (channelFilter === "POS") return order.channel === "POS" && order.status !== "CANCELLED";
-    if (channelFilter === "WEB") return order.channel !== "POS" && order.status !== "CANCELLED";
-    return order.status !== "CANCELLED";
-  });
+  const filteredOrders = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const from = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
+    const to   = dateTo   ? new Date(dateTo   + "T23:59:59") : null;
+
+    return localOrders
+      .filter(order => {
+        // Canal
+        if (channelFilter === "CANCELLED") return order.status === "CANCELLED";
+        if (channelFilter === "POS") return order.channel === "POS" && order.status !== "CANCELLED";
+        if (channelFilter === "WEB") return order.channel !== "POS" && order.status !== "CANCELLED";
+        return order.status !== "CANCELLED";
+      })
+      .filter(order => {
+        if (!q) return true;
+        const folio = (order.folio || "").toLowerCase();
+        const name  = (order.fullName || "").toLowerCase();
+        const shortId = order.id.slice(-6).toLowerCase();
+        return folio.includes(q) || name.includes(q) || shortId.includes(q);
+      })
+      .filter(order => {
+        const d = new Date(order.createdAt);
+        if (from && d < from) return false;
+        if (to   && d > to)   return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [localOrders, channelFilter, search, dateFrom, dateTo]);
+
+  const totalPages     = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
+  const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const statusBadge = (status: string) => {
     const map: Record<string, string> = {
@@ -402,12 +436,13 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
   };
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
+      {/* ── HEADER ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black italic uppercase tracking-tighter">Gestión de Pedidos</h2>
           <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">
-            {filteredOrders.length} pedidos encontrados
+            {filteredOrders.length} pedidos · mostrando {paginatedOrders.length}
           </p>
         </div>
         <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
@@ -430,11 +465,61 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
         </div>
       </div>
 
+      {/* ── BARRA DE BÚSQUEDA Y FECHAS ── */}
+      <div className="bg-white rounded-2xl border shadow-sm p-4 flex flex-col sm:flex-row gap-3">
+        {/* Buscador */}
+        <div className="relative flex-1">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar por # folio o nombre del cliente..."
+            className="w-full pl-9 pr-4 py-2.5 border-2 border-gray-100 rounded-xl text-sm font-medium text-gray-800 focus:outline-none focus:border-gray-300 transition bg-gray-50"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+          )}
+        </div>
+        {/* Fechas */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1">
+            <label className="text-[10px] font-black text-gray-400 uppercase whitespace-nowrap">Desde</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={e => setDateFrom(e.target.value)}
+              className="p-2 border-2 border-gray-100 rounded-xl text-xs font-mono bg-gray-50 focus:outline-none focus:border-gray-300 transition"
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            <label className="text-[10px] font-black text-gray-400 uppercase whitespace-nowrap">Hasta</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={e => setDateTo(e.target.value)}
+              className="p-2 border-2 border-gray-100 rounded-xl text-xs font-mono bg-gray-50 focus:outline-none focus:border-gray-300 transition"
+            />
+          </div>
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(""); setDateTo(""); }}
+              className="text-xs font-bold text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
+            >
+              Limpiar
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
         <table className="w-full text-left">
           <thead>
             <tr className="bg-gray-50 text-[10px] uppercase font-black text-gray-500 border-b">
-              <th className="px-6 py-4">ID Orden</th>
+              <th className="px-6 py-4">Folio / ID</th>
+              <th className="px-6 py-4">Fecha</th>
               <th className="px-6 py-4">Canal</th>
               <th className="px-6 py-4">Cliente</th>
               <th className="px-6 py-4">Total</th>
@@ -443,8 +528,8 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {filteredOrders.length > 0 ? (
-              filteredOrders.map((order: any) => {
+            {paginatedOrders.length > 0 ? (
+              paginatedOrders.map((order: any) => {
                 const isPOS = order.channel === "POS";
                 const isCancelled = order.status === "CANCELLED";
                 const hasReplacement = order.replacements?.length > 0;
@@ -452,9 +537,15 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
                 return (
                   <tr key={order.id} className={`hover:bg-gray-50/50 transition-colors ${isCancelled ? "opacity-60" : ""}`}>
                     <td className="px-6 py-4">
-                      <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                        #{order.id.slice(-6).toUpperCase()}
-                      </span>
+                      {order.folio ? (
+                        <span className="font-mono text-xs font-black text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                          {order.folio}
+                        </span>
+                      ) : (
+                        <span className="font-mono text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                          #{order.id.slice(-6).toUpperCase()}
+                        </span>
+                      )}
                       {isReplacement && (
                         <p className="text-[9px] text-amber-600 font-bold mt-1">
                           ↩ Reemplazo de #{order.replacesOrderId?.slice(-6).toUpperCase()}
@@ -465,6 +556,11 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
                           ↪ Reemplazada
                         </p>
                       )}
+                    </td>
+
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <p className="text-xs font-bold text-gray-700">{new Date(order.createdAt).toLocaleDateString("es-MX")}</p>
+                      <p className="text-[10px] text-gray-400">{new Date(order.createdAt).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</p>
                     </td>
 
                     <td className="px-6 py-4">
@@ -531,14 +627,68 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
               })
             ) : (
               <tr>
-                <td colSpan={6} className="p-20 text-center">
-                  <p className="text-gray-400 italic font-medium">No hay pedidos con este filtro.</p>
+                <td colSpan={7} className="p-20 text-center">
+                  <p className="text-gray-400 italic font-medium">
+                    {search || dateFrom || dateTo ? "No se encontraron pedidos con ese filtro." : "No hay pedidos con este filtro."}
+                  </p>
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* ── PAGINACIÓN ── */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-1">
+          <p className="text-xs text-gray-400 font-bold">
+            Página {page} de {totalPages} · {filteredOrders.length} pedidos en total
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(1)}
+              disabled={page === 1}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border text-xs font-black text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            >
+              «
+            </button>
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border text-xs font-black text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            >
+              ‹
+            </button>
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+              const p = start + i;
+              return (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-black transition ${p === page ? "bg-gray-900 text-white" : "border text-gray-600 hover:bg-gray-50"}`}
+                >
+                  {p}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border text-xs font-black text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            >
+              ›
+            </button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={page === totalPages}
+              className="w-8 h-8 flex items-center justify-center rounded-lg border text-xs font-black text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            >
+              »
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── MODAL DE CANCELACIÓN ── */}
       {cancelTarget && (
