@@ -29,7 +29,7 @@ import { generateShippingLabel } from "@/actions/admin-actions";
 import { setInventoryPin } from "@/app/_actions/settings";
 import { createAdjustmentRequest, approveAdjustmentRequest, rejectAdjustmentRequest } from "@/app/_actions/inventory";
 import { cancelOrder } from "@/app/_actions/orders";
-import { registerOrderPayment } from "@/app/_actions/payments";
+import { registerOrderPayment, cancelOrderPayment, recalculateOrderPayment } from "@/app/_actions/payments";
 import { toast } from "sonner";
 
 // ---- Types ----
@@ -946,6 +946,9 @@ function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }:
   const [payMethod, setPayMethod] = useState("CASH");
   const [payNote, setPayNote] = useState("");
   const [paying, setPaying] = useState(false);
+  const [cancelPayConfirm, setCancelPayConfirm] = useState<{ paymentId: string; orderId: string; amount: number } | null>(null);
+  const [cancellingPay, setCancellingPay] = useState(false);
+  const [recalculating, setRecalculating] = useState<string | null>(null);
 
   if (!Array.isArray(clients)) {
     return (
@@ -1054,6 +1057,45 @@ function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }:
     }
   };
 
+  const handleCancelPayment = async () => {
+    if (!cancelPayConfirm) return;
+    setCancellingPay(true);
+    const res = await cancelOrderPayment(cancelPayConfirm.paymentId, cancelPayConfirm.orderId);
+    setCancellingPay(false);
+    if (res.success) {
+      toast.success("Pago cancelado. Saldo recalculado desde la base de datos.");
+      setLocalUnpaidOrders(prev => {
+        // Si la orden volvió a no-pagada, asegúrate de que esté en la lista
+        return prev.map((o: any) => {
+          if (o.id !== cancelPayConfirm.orderId) return o;
+          return {
+            ...o,
+            amountPaid: res.amountPaid,
+            payments: (o.payments || []).filter((p: any) => p.id !== cancelPayConfirm.paymentId),
+          };
+        });
+      });
+      setCancelPayConfirm(null);
+    } else {
+      toast.error(res.error || "Error al cancelar el pago");
+    }
+  };
+
+  const handleRecalculate = async (orderId: string) => {
+    setRecalculating(orderId);
+    const res = await recalculateOrderPayment(orderId);
+    setRecalculating(null);
+    if (res.success) {
+      toast.success(`Recalculado. Pagado: $${res.amountPaid.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`);
+      setLocalUnpaidOrders(prev => {
+        if (res.isPaidNow) return prev.filter((o: any) => o.id !== orderId);
+        return prev.map((o: any) => o.id !== orderId ? o : { ...o, amountPaid: res.amountPaid });
+      });
+    } else {
+      toast.error(res.error || "Error al recalcular");
+    }
+  };
+
   // ── Historial del cliente seleccionado ──
   const clientOrders = useMemo(() => {
     if (!selectedClient) return [];
@@ -1120,6 +1162,40 @@ function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }:
           </button>
         </div>
       </div>
+
+      {/* ── Mini-modal: confirmar cancelación de abono ── */}
+      {cancelPayConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-5">
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 mx-auto rounded-full bg-red-100 flex items-center justify-center text-2xl">🗑️</div>
+              <h3 className="text-lg font-black text-gray-900">¿Cancelar este abono?</h3>
+              <p className="text-sm text-gray-500">
+                Se eliminará el pago de{" "}
+                <span className="font-black text-gray-900">
+                  ${cancelPayConfirm.amount.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                </span>{" "}
+                y el saldo se recalculará desde la base de datos.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCancelPayConfirm(null)}
+                className="flex-1 py-3 rounded-2xl border-2 border-gray-200 font-black text-gray-500 hover:bg-gray-50 transition"
+              >
+                No, volver
+              </button>
+              <button
+                onClick={handleCancelPayment}
+                disabled={cancellingPay}
+                className="flex-1 py-3 rounded-2xl bg-red-500 hover:bg-red-600 text-white font-black transition active:scale-95 disabled:opacity-50"
+              >
+                {cancellingPay ? "Cancelando..." : "Sí, cancelar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal de pago ── */}
       {payModal && (
@@ -1310,42 +1386,89 @@ function TabClientes({ clients, orders = [], giros = [], unpaidPosOrders = [] }:
                           <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-3">
                             Ventas POS pendientes de pago
                           </p>
-                          <div className="space-y-2">
+                          <div className="space-y-3">
                             {clientPosOrders.map((order: any) => {
                               const remaining = order.total - (order.amountPaid || 0);
                               const pct = order.total > 0 ? ((order.amountPaid || 0) / order.total) * 100 : 0;
+                              const payments: any[] = order.payments || [];
                               return (
-                                <div key={order.id} className="bg-white rounded-2xl border border-orange-100 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      {order.folio && (
-                                        <span className="font-mono text-xs font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{order.folio}</span>
-                                      )}
-                                      <span className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleDateString("es-MX")}</span>
-                                    </div>
-                                    <div className="flex items-center gap-4 mt-2 text-sm flex-wrap">
-                                      <span className="text-gray-500">Total: <span className="font-black text-gray-900">${order.total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span></span>
-                                      {order.amountPaid > 0 && (
-                                        <span className="text-green-600">Abonado: <span className="font-black">${order.amountPaid.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span></span>
-                                      )}
-                                      <span className="text-orange-700 font-black">Pendiente: ${remaining.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
-                                    </div>
-                                    {/* Barra de progreso */}
-                                    {order.amountPaid > 0 && (
-                                      <div className="mt-2 h-1.5 bg-orange-100 rounded-full overflow-hidden w-full max-w-xs">
-                                        <div
-                                          className="h-full bg-green-400 rounded-full transition-all"
-                                          style={{ width: `${Math.min(pct, 100)}%` }}
-                                        />
+                                <div key={order.id} className="bg-white rounded-2xl border border-orange-100 p-4 space-y-3">
+                                  {/* Cabecera de la orden */}
+                                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {order.folio && (
+                                          <span className="font-mono text-xs font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{order.folio}</span>
+                                        )}
+                                        <span className="text-xs text-gray-400">{new Date(order.createdAt).toLocaleDateString("es-MX")}</span>
                                       </div>
-                                    )}
+                                      <div className="flex items-center gap-4 mt-1.5 text-sm flex-wrap">
+                                        <span className="text-gray-500">Total: <span className="font-black text-gray-900">${order.total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span></span>
+                                        {order.amountPaid > 0 && (
+                                          <span className="text-green-600">Abonado: <span className="font-black">${order.amountPaid.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span></span>
+                                        )}
+                                        <span className="text-orange-700 font-black">Pendiente: ${remaining.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+                                      </div>
+                                      {order.amountPaid > 0 && (
+                                        <div className="mt-2 h-1.5 bg-orange-100 rounded-full overflow-hidden w-full max-w-xs">
+                                          <div className="h-full bg-green-400 rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                                      <button
+                                        onClick={() => handleRecalculate(order.id)}
+                                        disabled={recalculating === order.id}
+                                        title="Recalcular saldo desde la base de datos"
+                                        className="text-[10px] font-black px-3 py-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 transition disabled:opacity-50"
+                                      >
+                                        {recalculating === order.id ? "..." : "⟳ Recalcular"}
+                                      </button>
+                                      <button
+                                        onClick={() => openPayModal(order, c)}
+                                        className="text-xs font-black px-4 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white transition active:scale-95"
+                                      >
+                                        + Registrar Pago
+                                      </button>
+                                    </div>
                                   </div>
-                                  <button
-                                    onClick={() => openPayModal(order, c)}
-                                    className="shrink-0 bg-green-600 hover:bg-green-700 text-white text-xs font-black px-4 py-2.5 rounded-xl transition active:scale-95"
-                                  >
-                                    + Registrar Pago
-                                  </button>
+
+                                  {/* Historial de abonos */}
+                                  {payments.length > 0 && (
+                                    <div className="border-t border-orange-50 pt-2 space-y-1">
+                                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Abonos registrados</p>
+                                      {payments.map((p: any) => (
+                                        <div key={p.id} className="flex items-center justify-between gap-2 text-xs bg-green-50 rounded-xl px-3 py-2">
+                                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                            <span className="font-black text-green-800">${Number(p.amount).toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
+                                            <span className="text-green-600 bg-green-100 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                              {p.paymentMethod === "CASH" ? "Efectivo" : p.paymentMethod === "CARD" ? "Tarjeta" : "Transferencia"}
+                                            </span>
+                                            {p.note && <span className="text-gray-400 truncate">· {p.note}</span>}
+                                            <span className="text-gray-400">{new Date(p.createdAt).toLocaleDateString("es-MX")}</span>
+                                          </div>
+                                          <button
+                                            onClick={() => setCancelPayConfirm({ paymentId: p.id, orderId: order.id, amount: Number(p.amount) })}
+                                            title="Cancelar este abono"
+                                            className="shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50 w-6 h-6 rounded-full flex items-center justify-center transition font-black text-sm"
+                                          >
+                                            ×
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {payments.length === 0 && order.amountPaid > 0 && (
+                                    <div className="border-t border-orange-50 pt-2">
+                                      <p className="text-[10px] text-amber-600 font-bold">
+                                        ⚠ El saldo registrado (${order.amountPaid.toLocaleString("es-MX", { minimumFractionDigits: 2 })}) no tiene abonos en la base de datos.{" "}
+                                        <button onClick={() => handleRecalculate(order.id)} className="underline hover:text-amber-800">
+                                          Haz clic en ⟳ Recalcular para corregirlo.
+                                        </button>
+                                      </p>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
