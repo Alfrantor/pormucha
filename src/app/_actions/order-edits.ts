@@ -4,6 +4,36 @@ import { db } from "@/lib/db";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 
+export async function updateOrderItems(
+  orderId: string,
+  items: { id: string; quantity: number; unitPrice: number }[]
+): Promise<{ success: boolean; newTotal?: number; error?: string }> {
+  try {
+    const result = await db.$transaction(async (tx) => {
+      for (const item of items) {
+        const subtotal = item.quantity * item.unitPrice;
+        await (tx as any).orderItem.update({
+          where: { id: item.id },
+          data: { quantity: item.quantity, unitPrice: item.unitPrice, subtotal },
+        });
+      }
+      // Recalcular total de la orden
+      const order = await (tx as any).order.findUnique({
+        where: { id: orderId },
+        select: { shippingCost: true, orderItems: { select: { subtotal: true } } },
+      });
+      const itemsTotal = order.orderItems.reduce((s: number, i: any) => s + Number(i.subtotal), 0);
+      const newTotal = itemsTotal + Number(order.shippingCost || 0);
+      await (tx as any).order.update({ where: { id: orderId }, data: { total: newTotal } });
+      return newTotal;
+    });
+    revalidatePath("/admin");
+    return { success: true, newTotal: result };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 const EDITABLE_FIELDS = ["fullName", "email", "phone", "notes", "requiresInvoice", "paymentMethod", "invoiceNumber", "invoiceDate", "invoiceUrl"] as const;
 type EditableField = typeof EDITABLE_FIELDS[number];
 

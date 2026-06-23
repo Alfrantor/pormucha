@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   BarChart3, Package, Repeat, Users, ShoppingBag, Truck, Contact2, DollarSign,
   ShoppingCart, ChevronRight, LayoutDashboard, Package2, UserCog, Menu, MonitorCheck,
-  Building2, Pencil, Trash2, Plus, X, TrendingUp, TrendingDown, ArrowUpRight,
+  Building2, Pencil, Trash2, Plus, X, TrendingUp, TrendingDown, ArrowUpRight, Printer,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -29,7 +29,8 @@ import { generateShippingLabel } from "@/actions/admin-actions";
 import { setInventoryPin } from "@/app/_actions/settings";
 import { createAdjustmentRequest, approveAdjustmentRequest, rejectAdjustmentRequest } from "@/app/_actions/inventory";
 import { cancelOrder } from "@/app/_actions/orders";
-import { editOrder, getOrderEdits } from "@/app/_actions/order-edits";
+import { editOrder, getOrderEdits, updateOrderItems } from "@/app/_actions/order-edits";
+import { reprintTicket } from "@/components/pos/ticket-receipt";
 import { registerOrderPayment, cancelOrderPayment, recalculateOrderPayment, getOrderPayments } from "@/app/_actions/payments";
 import { getUploadUrl, getDownloadUrl } from "@/app/_actions/upload";
 import { toast } from "sonner";
@@ -439,6 +440,8 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [invoiceUploading, setInvoiceUploading] = useState(false);
+  const [editItems, setEditItems] = useState<any[]>([]);
+  const [itemsSaving, setItemsSaving] = useState(false);
 
   const openEditModal = async (order: any) => {
     setEditModal(order);
@@ -453,11 +456,42 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
       invoiceDate:     order.invoiceDate ? order.invoiceDate.slice(0, 10) : "",
       invoiceUrl:      order.invoiceUrl      ?? "",
     });
+    setEditItems((order.orderItems || []).map((item: any) => ({
+      id:        item.id,
+      name:      item.productName,
+      quantity:  item.quantity,
+      unitPrice: Number(item.unitPrice),
+      subtotal:  Number(item.subtotal),
+    })));
     setEditEdits([]);
     setEditLoading(true);
     const res = await getOrderEdits(order.id);
     setEditLoading(false);
     if (res.success) setEditEdits(res.edits || []);
+  };
+
+  const handleSaveItems = async () => {
+    if (!editModal) return;
+    setItemsSaving(true);
+    const res = await updateOrderItems(editModal.id, editItems.map(i => ({
+      id: i.id, quantity: i.quantity, unitPrice: i.unitPrice,
+    })));
+    setItemsSaving(false);
+    if (res.success) {
+      toast.success("Productos actualizados.");
+      setLocalOrders(prev => prev.map((o: any) =>
+        o.id !== editModal.id ? o : {
+          ...o,
+          total: res.newTotal,
+          orderItems: o.orderItems.map((oi: any) => {
+            const updated = editItems.find(i => i.id === oi.id);
+            return updated ? { ...oi, quantity: updated.quantity, unitPrice: updated.unitPrice, subtotal: updated.quantity * updated.unitPrice } : oi;
+          }),
+        }
+      ));
+    } else {
+      toast.error(res.error || "Error al actualizar productos");
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -822,6 +856,29 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
                             {order.cancelledAt ? new Date(order.cancelledAt).toLocaleDateString("es-MX") : "—"}
                           </span>
                         )}
+
+                        {/* Botón imprimir */}
+                        <button
+                          onClick={() => reprintTicket({
+                            locationName: "Pormucha",
+                            fullName: order.fullName,
+                            folio: order.folio,
+                            items: (order.orderItems || []).map((item: any) => ({
+                              productName: item.productName,
+                              quantity: item.quantity,
+                              price: Number(item.unitPrice),
+                              subtotal: Number(item.subtotal),
+                            })),
+                            total: Number(order.total),
+                            paymentMethod: order.paymentMethod || "CASH",
+                            userId: null,
+                            createdAt: order.createdAt,
+                          })}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
+                          title="Imprimir ticket"
+                        >
+                          <Printer size={14} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1345,6 +1402,67 @@ function TabPedidos({ orders = [] }: { orders: any[] }) {
                 </div>
               )}
             </div>
+
+            {/* ── Productos del pedido ── */}
+            {editItems.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Productos</p>
+                <div className="space-y-2">
+                  {editItems.map((item, idx) => (
+                    <div key={item.id} className="bg-gray-50 rounded-2xl p-3 space-y-2">
+                      <p className="text-xs font-black text-gray-700 truncate">{item.name}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-400 mb-1 block">Cantidad</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={e => setEditItems(prev => prev.map((it, i) =>
+                              i !== idx ? it : { ...it, quantity: parseInt(e.target.value) || 1, subtotal: (parseInt(e.target.value) || 1) * it.unitPrice }
+                            ))}
+                            className="w-full border-2 border-gray-200 rounded-xl px-2 py-1.5 text-sm font-black text-center focus:outline-none focus:border-gray-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-400 mb-1 block">Precio unit.</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.unitPrice}
+                            onChange={e => setEditItems(prev => prev.map((it, i) =>
+                              i !== idx ? it : { ...it, unitPrice: parseFloat(e.target.value) || 0, subtotal: it.quantity * (parseFloat(e.target.value) || 0) }
+                            ))}
+                            className="w-full border-2 border-gray-200 rounded-xl px-2 py-1.5 text-sm font-black text-center focus:outline-none focus:border-gray-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-400 mb-1 block">Subtotal</label>
+                          <div className="w-full border-2 border-gray-100 rounded-xl px-2 py-1.5 text-sm font-black text-center bg-white text-gray-500">
+                            ${(item.quantity * item.unitPrice).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-xs text-gray-400 font-bold">
+                    Nuevo total: <span className="text-gray-900 font-black">
+                      ${editItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                    </span>
+                  </span>
+                  <button
+                    onClick={handleSaveItems}
+                    disabled={itemsSaving}
+                    className="text-xs px-4 py-2 rounded-xl bg-gray-900 text-white font-black hover:bg-gray-700 transition disabled:opacity-50"
+                  >
+                    {itemsSaving ? "Guardando..." : "Guardar productos"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Botón guardar */}
             <div className="flex gap-2">
