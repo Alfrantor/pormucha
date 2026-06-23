@@ -284,6 +284,7 @@ model Product {
   clubDiscountPercent Int                   @default(10)
   quantity            Int
   isArchived          Boolean               @default(false)
+  sortOrder           Int                   @default(0)
   weight              Decimal               @default(1)
   height              Decimal               @default(10)
   width               Decimal               @default(10)

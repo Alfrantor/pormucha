@@ -458,3 +458,11 @@ export async function generateShippingLabel(orderId: string) {
     return { success: false, error: error.message };
   }
 }
+
+export async function updateProductsSortOrder(items: { id: string; sortOrder: number }[]) {
+  await Promise.all(
+    items.map(({ id, sortOrder }) => db.product.update({ where: { id }, data: { sortOrder } }))
+  );
+  revalidatePath("/admin");
+  revalidatePath("/pos");
+}

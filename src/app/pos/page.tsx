@@ -21,7 +21,7 @@ export default async function PosPage() {
     take: 10
   });
 
-  const rawProducts = await db.product.findMany({ where: { isArchived: false }, orderBy: { name: 'asc' } });
+  const rawProducts = await db.product.findMany({ where: { isArchived: false }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
   const rawFlavors = await db.flavor.findMany({ where: { isArchived: false }, include: { locationStocks: true }, orderBy: { name: 'asc' } });
 
   // --- SANITIZACIÓN EXTREMA ---

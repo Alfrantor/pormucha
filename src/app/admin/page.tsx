@@ -176,7 +176,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     }
 
     try {
-      const rawProducts = await db.product.findMany({ orderBy: { price: 'asc' } });
+      const rawProducts = await db.product.findMany({ orderBy: [{ sortOrder: 'asc' }, { price: 'asc' }] });
       allProducts = rawProducts.map((p: any) => ({
         ...p,
         price: Number(p.price || 0),

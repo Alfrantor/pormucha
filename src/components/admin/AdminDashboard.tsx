@@ -24,7 +24,7 @@ import {
   createLocation, registerMovement, updatePackPrice, updateFlavorPrice,
   createProduct, createFlavor, updateClubDiscountPercent, updateProductDimensions,
   createPlan, updatePlanPrice, updatePlanProduct, deleteLead, updateLocation,
-  createTransfer, receiveTransfer
+  createTransfer, receiveTransfer, updateProductsSortOrder
 } from "@/actions/admin-actions";
 import { generateShippingLabel } from "@/actions/admin-actions";
 import { setInventoryPin } from "@/app/_actions/settings";
@@ -4036,6 +4036,29 @@ function TabProductos({ allProducts, allFlavors, priceHistory, userEmail }: any)
   const safeFlavors = Array.isArray(allFlavors) ? allFlavors : [];
   const safeHistory = Array.isArray(priceHistory) ? priceHistory : [];
 
+  const [showArchived, setShowArchived] = React.useState(false);
+  const [products, setProducts] = React.useState(safeProducts);
+  const [reordering, setReordering] = React.useState(false);
+
+  const visibleProducts = showArchived ? products : products.filter((p: any) => !p.isArchived);
+
+  const moveProduct = async (idx: number, dir: -1 | 1) => {
+    const next = idx + dir;
+    if (next < 0 || next >= visibleProducts.length) return;
+    const newList = [...products];
+    // Encontrar índices reales en la lista completa
+    const aId = visibleProducts[idx].id;
+    const bId = visibleProducts[next].id;
+    const ai = newList.findIndex((p: any) => p.id === aId);
+    const bi = newList.findIndex((p: any) => p.id === bId);
+    [newList[ai], newList[bi]] = [newList[bi], newList[ai]];
+    const updated = newList.map((p: any, i: number) => ({ ...p, sortOrder: i }));
+    setProducts(updated);
+    setReordering(true);
+    await updateProductsSortOrder(updated.map((p: any) => ({ id: p.id, sortOrder: p.sortOrder })));
+    setReordering(false);
+  };
+
   return (
     <section className="space-y-8">
       <h2 className="text-2xl font-black">Productos, Packs & Sabores</h2>
@@ -4043,14 +4066,21 @@ function TabProductos({ allProducts, allFlavors, priceHistory, userEmail }: any)
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         {/* PACKS */}
         <div className="space-y-6">
-          <h3 className="font-bold text-gray-900 border-b pb-2">📦 Packs (Venta Online)</h3>
+          <div className="flex items-center justify-between border-b pb-2">
+            <h3 className="font-bold text-gray-900">📦 Packs (Venta Online)</h3>
+            <button
+              onClick={() => setShowArchived(v => !v)}
+              className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border transition-all ${showArchived ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+            >
+              {showArchived ? "Ocultar inactivos" : `Ver inactivos (${safeProducts.filter((p: any) => p.isArchived).length})`}
+            </button>
+          </div>
           <div className="space-y-3">
-            {safeProducts.length > 0 ? (
-              safeProducts.map((p: any) => (
+            {visibleProducts.length > 0 ? (
+              visibleProducts.map((p: any, idx: number) => (
                 <div
                   key={p.id}
-                  className={`flex flex-col gap-3 bg-white p-4 rounded-xl border ${p.isArchived ? "opacity-50 grayscale bg-gray-100" : ""
-                    }`}
+                  className={`flex flex-col gap-3 bg-white p-4 rounded-xl border ${p.isArchived ? "opacity-50 grayscale bg-gray-100" : ""}`}
                 >
                   <div className="flex justify-between items-center">
                     <div>
@@ -4060,6 +4090,23 @@ function TabProductos({ allProducts, allFlavors, priceHistory, userEmail }: any)
                       <p className="text-xs text-gray-400">{p.quantity} pzs</p>
                     </div>
                     <div className="flex items-center gap-2">
+                      {/* Botones de orden */}
+                      {!p.isArchived && (
+                        <div className="flex flex-col gap-0.5 mr-1">
+                          <button
+                            onClick={() => moveProduct(idx, -1)}
+                            disabled={reordering || idx === 0}
+                            className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-20 transition text-xs"
+                            title="Subir"
+                          >▲</button>
+                          <button
+                            onClick={() => moveProduct(idx, 1)}
+                            disabled={reordering || idx === visibleProducts.filter((x: any) => !x.isArchived).length - 1}
+                            className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-20 transition text-xs"
+                            title="Bajar"
+                          >▼</button>
+                        </div>
+                      )}
                       <span className="text-[10px] text-gray-400 font-bold uppercase w-12 text-right">
                         Precio:
                       </span>
