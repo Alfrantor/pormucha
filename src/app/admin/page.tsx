@@ -390,6 +390,31 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     }
 
     // ==========================================
+    // MATERIA PRIMA
+    // ==========================================
+    let rawMaterials: any[] = [];
+    try {
+      rawMaterials = await (db as any).rawMaterial.findMany({
+        include: {
+          stocks: { include: { location: { select: { id: true, name: true } } } },
+          movements: { orderBy: { createdAt: "desc" }, take: 50 },
+        },
+        orderBy: { name: "asc" },
+      }).then((mats: any[]) => mats.map((m: any) => ({
+        ...m,
+        minStock: Number(m.minStock || 0),
+        cost: m.cost != null ? Number(m.cost) : null,
+        createdAt: m.createdAt.toISOString(),
+        updatedAt: m.updatedAt.toISOString(),
+        stocks: m.stocks.map((s: any) => ({ ...s, quantity: Number(s.quantity) })),
+        movements: m.movements.map((mv: any) => ({ ...mv, quantity: Number(mv.quantity), createdAt: mv.createdAt.toISOString() })),
+      })));
+    } catch (err) {
+      console.error("Error fetching raw materials:", err);
+      rawMaterials = [];
+    }
+
+    // ==========================================
     // 7. SOLICITUDES DE AJUSTE DE INVENTARIO
     // ==========================================
     let adjustmentRequests: any[] = [];
@@ -544,6 +569,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       giros,
       adjustmentRequests,
       unpaidPosOrders,
+      rawMaterials,
     };
 
     // Verificar que stats existe y tiene las propiedades requeridas y más

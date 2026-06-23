@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   BarChart3, Package, Repeat, Users, ShoppingBag, Truck, Contact2, DollarSign,
   ShoppingCart, ChevronRight, LayoutDashboard, Package2, UserCog, Menu, MonitorCheck,
-  Building2, Pencil, Trash2, Plus, X, TrendingUp, TrendingDown, ArrowUpRight, Printer,
+  Building2, Pencil, Trash2, Plus, X, TrendingUp, TrendingDown, ArrowUpRight, Printer, PackageOpen,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -18,6 +18,7 @@ import { TabEnvios } from "@/components/admin/TabEnvios";
 import UserManagement from "@/components/admin/UserManagement";
 import { ClientsTable } from "@/components/admin/ClientsTable";
 import { PricingManager } from "@/components/admin/PricingManager";
+import { TabMateriasPrimas } from "@/components/admin/TabMateriasPrimas";
 import { toggleStatus } from "@/actions/toggle-status";
 import {
   createLocation, registerMovement, updatePackPrice, updateFlavorPrice,
@@ -60,7 +61,7 @@ function S3FileLink({ url, label }: { url: string; label: string }) {
 }
 
 // ---- Types ----
-type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios" | "giros";
+type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios" | "giros" | "materiaprima";
 
 interface Tab {
   id: TabId;
@@ -72,6 +73,7 @@ interface Tab {
 const TABS: Tab[] = [
   { id: "dashboard",    label: "Dashboard",     icon: <LayoutDashboard size={15} />, group: "general" },
   { id: "inventario",   label: "Inventario",    icon: <Package size={15} />,         group: "operaciones" },
+  { id: "materiaprima", label: "Materia Prima", icon: <PackageOpen size={15} />,     group: "operaciones" },
   { id: "envios",       label: "Traspasos",     icon: <Truck size={15} />,           group: "operaciones" },
   { id: "pedidos",      label: "Pedidos",       icon: <ShoppingCart size={15} />,    group: "operaciones" },
   { id: "productos",    label: "Productos",     icon: <Package2 size={15} />,        group: "catalogo" },
@@ -182,6 +184,7 @@ export default function AdminDashboard({ data }: { data: any }) {
     giros = [],
     adjustmentRequests = [],
     unpaidPosOrders = [],
+    rawMaterials = [],
   } = data;
 
   const memoizedStats = useMemo(() => stats, [stats]);
@@ -323,6 +326,7 @@ export default function AdminDashboard({ data }: { data: any }) {
           {activeTab === "precios" && <TabPrecios flavors={flavorsWithPricing} />}
           {activeTab === "pedidos" && <TabPedidos orders={orders} />}
           {activeTab === "giros" && <TabGiros giros={giros} />}
+          {activeTab === "materiaprima" && <TabMateriasPrimas rawMaterials={rawMaterials} locations={activeLocations} />}
         </main>
       </div>
     </div>

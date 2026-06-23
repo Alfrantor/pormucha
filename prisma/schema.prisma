@@ -162,9 +162,11 @@ model Location {
   movements     InventoryMovement[]
   orders        Order[]
   stocks        Stock[]
-  transfersFrom      Transfer[]          @relation("TransferFrom")
-  transfersTo        Transfer[]          @relation("TransferTo")
-  adjustmentRequests AdjustmentRequest[]
+  transfersFrom         Transfer[]            @relation("TransferFrom")
+  transfersTo           Transfer[]            @relation("TransferTo")
+  adjustmentRequests    AdjustmentRequest[]
+  rawMaterialStocks     RawMaterialStock[]
+  rawMaterialMovements  RawMaterialMovement[]
 }
 
 model Stock {
@@ -449,6 +451,47 @@ model Lead {
   email     String   @unique
   phone     String?
   createdAt DateTime @default(now())
+}
+
+model RawMaterial {
+  id          String                  @id @default(cuid())
+  name        String
+  unit        String                  // kg, litros, piezas, gramos, etc.
+  category    String?
+  description String?
+  minStock    Decimal                 @default(0)
+  cost        Decimal?                // Costo unitario referencia
+  isArchived  Boolean                 @default(false)
+  stocks      RawMaterialStock[]
+  movements   RawMaterialMovement[]
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+}
+
+model RawMaterialStock {
+  id              String      @id @default(cuid())
+  rawMaterialId   String
+  rawMaterial     RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Cascade)
+  locationId      String
+  location        Location    @relation(fields: [locationId], references: [id])
+  quantity        Decimal     @default(0)
+
+  @@unique([rawMaterialId, locationId])
+}
+
+model RawMaterialMovement {
+  id              String      @id @default(cuid())
+  rawMaterialId   String
+  rawMaterial     RawMaterial @relation(fields: [rawMaterialId], references: [id])
+  locationId      String?
+  location        Location?   @relation(fields: [locationId], references: [id])
+  type            String      // IN | OUT
+  quantity        Decimal
+  reason          String
+  userId          String?
+  createdAt       DateTime    @default(now())
+
+  @@index([rawMaterialId])
 }
 
 model Transfer {
