@@ -466,3 +466,11 @@ export async function updateProductsSortOrder(items: { id: string; sortOrder: nu
   revalidatePath("/admin");
   revalidatePath("/pos");
 }
+
+export async function updateFlavorsSortOrder(items: { id: string; sortOrder: number }[]) {
+  await Promise.all(
+    items.map(({ id, sortOrder }) => db.flavor.update({ where: { id }, data: { sortOrder } }))
+  );
+  revalidatePath("/admin");
+  revalidatePath("/pos");
+}

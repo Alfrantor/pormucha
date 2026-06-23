@@ -197,6 +197,7 @@ model Flavor {
   discounts            FlavorDiscount[]
 
   isArchived           Boolean               @default(false)
+  sortOrder            Int                   @default(0)
   priceHistory         FlavorPriceHistory[]
   movements            InventoryMovement[]
   orderItems           OrderItem[]

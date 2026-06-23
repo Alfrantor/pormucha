@@ -6,6 +6,7 @@ import {
   BarChart3, Package, Repeat, Users, ShoppingBag, Truck, Contact2, DollarSign,
   ShoppingCart, ChevronRight, LayoutDashboard, Package2, UserCog, Menu, MonitorCheck,
   Building2, Pencil, Trash2, Plus, X, TrendingUp, TrendingDown, ArrowUpRight, Printer, PackageOpen,
+  ChevronUp, ChevronDown,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -24,7 +25,7 @@ import {
   createLocation, registerMovement, updatePackPrice, updateFlavorPrice,
   createProduct, createFlavor, updateClubDiscountPercent, updateProductDimensions,
   createPlan, updatePlanPrice, updatePlanProduct, deleteLead, updateLocation,
-  createTransfer, receiveTransfer, updateProductsSortOrder
+  createTransfer, receiveTransfer, updateProductsSortOrder, updateFlavorsSortOrder
 } from "@/actions/admin-actions";
 import { generateShippingLabel } from "@/actions/admin-actions";
 import { setInventoryPin } from "@/app/_actions/settings";
@@ -4040,13 +4041,17 @@ function TabProductos({ allProducts, allFlavors, priceHistory, userEmail }: any)
   const [products, setProducts] = React.useState(safeProducts);
   const [reordering, setReordering] = React.useState(false);
 
+  const [showArchivedFlavors, setShowArchivedFlavors] = React.useState(false);
+  const [flavors, setFlavors] = React.useState(safeFlavors);
+  const [reorderingFlavors, setReorderingFlavors] = React.useState(false);
+
   const visibleProducts = showArchived ? products : products.filter((p: any) => !p.isArchived);
+  const visibleFlavors = showArchivedFlavors ? flavors : flavors.filter((f: any) => !f.isArchived);
 
   const moveProduct = async (idx: number, dir: -1 | 1) => {
     const next = idx + dir;
     if (next < 0 || next >= visibleProducts.length) return;
     const newList = [...products];
-    // Encontrar índices reales en la lista completa
     const aId = visibleProducts[idx].id;
     const bId = visibleProducts[next].id;
     const ai = newList.findIndex((p: any) => p.id === aId);
@@ -4057,6 +4062,22 @@ function TabProductos({ allProducts, allFlavors, priceHistory, userEmail }: any)
     setReordering(true);
     await updateProductsSortOrder(updated.map((p: any) => ({ id: p.id, sortOrder: p.sortOrder })));
     setReordering(false);
+  };
+
+  const moveFlavor = async (idx: number, dir: -1 | 1) => {
+    const next = idx + dir;
+    if (next < 0 || next >= visibleFlavors.length) return;
+    const newList = [...flavors];
+    const aId = visibleFlavors[idx].id;
+    const bId = visibleFlavors[next].id;
+    const ai = newList.findIndex((f: any) => f.id === aId);
+    const bi = newList.findIndex((f: any) => f.id === bId);
+    [newList[ai], newList[bi]] = [newList[bi], newList[ai]];
+    const updated = newList.map((f: any, i: number) => ({ ...f, sortOrder: i }));
+    setFlavors(updated);
+    setReorderingFlavors(true);
+    await updateFlavorsSortOrder(updated.map((f: any) => ({ id: f.id, sortOrder: f.sortOrder })));
+    setReorderingFlavors(false);
   };
 
   return (
@@ -4092,19 +4113,19 @@ function TabProductos({ allProducts, allFlavors, priceHistory, userEmail }: any)
                     <div className="flex items-center gap-2">
                       {/* Botones de orden */}
                       {!p.isArchived && (
-                        <div className="flex flex-col gap-0.5 mr-1">
+                        <div className="flex flex-col gap-0.5">
                           <button
                             onClick={() => moveProduct(idx, -1)}
                             disabled={reordering || idx === 0}
-                            className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-20 transition text-xs"
+                            className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-700 disabled:opacity-20 transition border border-gray-200"
                             title="Subir"
-                          >▲</button>
+                          ><ChevronUp size={14} strokeWidth={2.5} /></button>
                           <button
                             onClick={() => moveProduct(idx, 1)}
                             disabled={reordering || idx === visibleProducts.filter((x: any) => !x.isArchived).length - 1}
-                            className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-20 transition text-xs"
+                            className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-700 disabled:opacity-20 transition border border-gray-200"
                             title="Bajar"
-                          >▼</button>
+                          ><ChevronDown size={14} strokeWidth={2.5} /></button>
                         </div>
                       )}
                       <span className="text-[10px] text-gray-400 font-bold uppercase w-12 text-right">
@@ -4362,12 +4383,18 @@ function TabProductos({ allProducts, allFlavors, priceHistory, userEmail }: any)
 
         {/* SABORES */}
         <div className="space-y-6">
-          <h3 className="font-bold text-gray-900 border-b pb-2">
-            🍾 Botellas (Unitario)
-          </h3>
+          <div className="flex items-center justify-between border-b pb-2">
+            <h3 className="font-bold text-gray-900">🍾 Botellas (Unitario)</h3>
+            <button
+              onClick={() => setShowArchivedFlavors(v => !v)}
+              className={`text-[10px] font-black uppercase px-3 py-1.5 rounded-lg border transition-all ${showArchivedFlavors ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+            >
+              {showArchivedFlavors ? "Ocultar inactivos" : `Ver inactivos (${safeFlavors.filter((f: any) => f.isArchived).length})`}
+            </button>
+          </div>
           <div className="space-y-3">
-            {safeFlavors.length > 0 ? (
-              safeFlavors.map((f: any) => (
+            {visibleFlavors.length > 0 ? (
+              visibleFlavors.map((f: any, idx: number) => (
                 <div
                   key={f.id}
                   className={`flex justify-between items-center bg-white p-3 rounded-xl border ${f.isArchived ? "opacity-50 grayscale" : ""
@@ -4380,6 +4407,23 @@ function TabProductos({ allProducts, allFlavors, priceHistory, userEmail }: any)
                     <p className="text-xs text-gray-400 font-mono">{f.slug}</p>
                   </div>
                   <div className="flex items-center gap-2">
+                    {/* Botones de orden */}
+                    {!f.isArchived && (
+                      <div className="flex flex-col gap-0.5">
+                        <button
+                          onClick={() => moveFlavor(idx, -1)}
+                          disabled={reorderingFlavors || idx === 0}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-700 disabled:opacity-20 transition border border-gray-200"
+                          title="Subir"
+                        ><ChevronUp size={14} strokeWidth={2.5} /></button>
+                        <button
+                          onClick={() => moveFlavor(idx, 1)}
+                          disabled={reorderingFlavors || idx === visibleFlavors.filter((x: any) => !x.isArchived).length - 1}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-700 disabled:opacity-20 transition border border-gray-200"
+                          title="Bajar"
+                        ><ChevronDown size={14} strokeWidth={2.5} /></button>
+                      </div>
+                    )}
                     <form
                       action={updateFlavorPrice}
                       onSubmit={(e) => {
