@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { auth } from "@clerk/nextjs/server";
+import { closeOrderCredit, syncClientCreditUsage } from "@/lib/credits";
 
 export async function cancelOrder(
   orderId: string,
@@ -16,12 +17,13 @@ export async function cancelOrder(
   }
 
   try {
-    const order = await db.order.findUnique({
+    const order = await (db as any).order.findUnique({
       where: { id: orderId },
       include: {
         orderItems: {
           include: { composition: true },
         },
+        credit: true,
       },
     });
 
@@ -38,6 +40,10 @@ export async function cancelOrder(
           cancellationNote: cancellationNote || null,
         },
       });
+
+      if (order.credit) {
+        await closeOrderCredit(tx, orderId, "CANCELLED");
+      }
 
       // 2. Regresar stock si se solicitó
       if (returnStock && order.locationId) {
@@ -59,6 +65,10 @@ export async function cancelOrder(
             });
           }
         }
+      }
+
+      if (order.clientId) {
+        await syncClientCreditUsage(tx, order.clientId);
       }
 
       // 3. Crear orden de reemplazo si se solicitó

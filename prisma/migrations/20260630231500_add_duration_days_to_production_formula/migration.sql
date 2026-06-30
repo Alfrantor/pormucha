@@ -1,0 +1,2 @@
+ALTER TABLE "ProductionFormula"
+ADD COLUMN "durationDays" INTEGER NOT NULL DEFAULT 0;

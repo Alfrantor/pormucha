@@ -205,7 +205,7 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
                   </td>
                   <td className="px-5 py-3 text-center" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-center gap-1">
-                      <Link href={`/admin/clientes/${client.id}`} className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg transition" title="Ver detalles">
+                      <Link href={`/admin/clients/${client.id}`} className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg transition" title="Ver detalles">
                         <Eye size={15} />
                       </Link>
                       <button

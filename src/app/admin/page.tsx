@@ -1,599 +1,201 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
-import { auth, currentUser } from "@clerk/nextjs/server";
-import AdminDashboard from "@/components/admin/AdminDashboard";
-import { redirect } from "next/navigation";
-import { createClerkClient } from "@clerk/backend";
+import { currentUser } from "@clerk/nextjs/server";
+import {
+  ArrowRight,
+  Boxes,
+  BriefcaseBusiness,
+  CreditCard,
+  FlaskConical,
+  RefreshCcw,
+  ShieldCheck,
+  ShoppingCart,
+  Tags,
+  Truck,
+  Users,
+} from "lucide-react";
 
-// --- Types ---
-type AnalyticsData = {
-  totalRevenue: number;
-  totalOrders: number;
-  flavorStats: Record<string, { name: string; count: number }>;
-  packStats: Record<string, { name: string; count: number }>;
-};
+const MODULES = [
+  { href: "/admin/orders", title: "Pedidos", desc: "Ventas web, POS, pagos y cancelaciones", icon: <ShoppingCart size={18} /> },
+  { href: "/admin/inventory", title: "Inventarios", desc: "Productos, materia prima, en proceso y traspasos", icon: <Boxes size={18} /> },
+  { href: "/admin/catalog", title: "Catálogo", desc: "Productos, suscripciones y catálogo comercial", icon: <Tags size={18} /> },
+  { href: "/admin/clients", title: "Clientes", desc: "CRM, crédito, direcciones e historial", icon: <BriefcaseBusiness size={18} /> },
+  { href: "/admin/production", title: "Producción", desc: "Tanques, lotes y parámetros", icon: <FlaskConical size={18} /> },
+  { href: "/admin/users", title: "Usuarios", desc: "Equipo interno y roles", icon: <ShieldCheck size={18} /> },
+];
 
-interface AdminPageProps {
-  searchParams: {
-    from?: string;
-    to?: string;
-  };
-}
-
-// Inicializamos Clerk Backend
-const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
-
-export default async function AdminPage({ searchParams }: AdminPageProps) {
-  // ==========================================
-  // 1. SEGURIDAD AFUERA DEL TRY-CATCH
-  // ==========================================
-  const { sessionClaims } = await auth();
+export default async function AdminHomePage() {
   const user = await currentUser();
-  const userRole = (sessionClaims?.metadata as any)?.role;
 
-  if (userRole !== "admin" && userRole !== "vendedor") {
-    redirect("/perfil");
-  }
+  const [
+    ordersCount,
+    clientsCount,
+    flavorsCount,
+    productsCount,
+    rawMaterialsCount,
+    locationsCount,
+    openTransfersCount,
+    activeProductionsCount,
+    recentOrders,
+  ] = await Promise.all([
+    db.order.count(),
+    db.client.count(),
+    db.flavor.count(),
+    db.product.count(),
+    db.rawMaterial.count(),
+    db.location.count({ where: { isArchived: false } }),
+    db.transfer.count({ where: { status: "PENDING" } }),
+    db.production.count({ where: { status: "IN_PROGRESS" } }),
+    db.order.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      select: {
+        id: true,
+        folio: true,
+        status: true,
+        channel: true,
+        total: true,
+        createdAt: true,
+        fullName: true,
+      },
+    }),
+  ]);
 
-  const userEmail = user?.emailAddresses[0]?.emailAddress || "";
+  const revenueAgg = await db.order.aggregate({
+    _sum: { total: true },
+  });
+  const revenue = Number(revenueAgg._sum.total || 0);
 
-  try {
-    // 👇 ESTAS 3 LÍNEAS SON LAS QUE FALTAN 👇
-    const resolvedParams = await searchParams;
-    const from = resolvedParams?.from;
-    const to = resolvedParams?.to;
+  const kpis = [
+    { label: "Ingresos", value: revenue.toLocaleString("es-MX", { style: "currency", currency: "MXN" }), icon: <CreditCard size={16} />, tone: "from-slate-950 to-slate-700" },
+    { label: "Pedidos", value: ordersCount.toLocaleString("es-MX"), icon: <ShoppingCart size={16} />, tone: "from-blue-700 to-cyan-500" },
+    { label: "Clientes", value: clientsCount.toLocaleString("es-MX"), icon: <Users size={16} />, tone: "from-violet-700 to-fuchsia-500" },
+    { label: "Ubicaciones", value: locationsCount.toLocaleString("es-MX"), icon: <Truck size={16} />, tone: "from-emerald-700 to-teal-500" },
+  ];
 
-    // ==========================================
-    // 0. DATOS DE LOGÍSTICA
-    // ==========================================
-    let allLocations: any[] = [];
-    let activeLocations: any[] = [];
+  return (
+    <div className="space-y-8">
+      <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
+        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.35fr_0.65fr]">
+          <div className="relative overflow-hidden rounded-[2rem] bg-[linear-gradient(135deg,_#0f172a_0%,_#111827_35%,_#1d4ed8_100%)] p-6 text-white sm:p-8">
+            <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.22)_0,transparent_26%),radial-gradient(circle_at_80%_0%,rgba(56,189,248,0.22)_0,transparent_24%),radial-gradient(circle_at_100%_100%,rgba(168,85,247,0.18)_0,transparent_25%)]" />
+            <div className="relative">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.3em] text-cyan-100">
+                <RefreshCcw size={12} />
+                Admin modular
+              </div>
+              <h2 className="mt-4 max-w-2xl text-3xl font-black tracking-tight sm:text-5xl">
+                Un centro de control más limpio para ventas, inventarios, producción y CRM.
+              </h2>
+              <p className="mt-4 max-w-xl text-sm leading-6 text-slate-200 sm:text-base">
+                Estamos dividiendo el admin en rutas específicas para que cada equipo trabaje más rápido, vea menos ruido y llegue directo a la tarea correcta.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link href="/admin/orders" className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-950 transition hover:scale-[1.01]">
+                  Abrir pedidos
+                  <ArrowRight size={14} />
+                </Link>
+                <Link href="/admin/inventory" className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/15">
+                  Ver inventarios
+                </Link>
+              </div>
+            </div>
+          </div>
 
-    try {
-      allLocations = await db.location.findMany({ orderBy: { isDefault: 'desc' } });
-      activeLocations = allLocations.filter(l => !l.isArchived);
-    } catch (err) {
-      console.error("Error fetching locations:", err);
-    }
-
-    // ==========================================
-    // 1. FILTRADO POR FECHAS
-    // ==========================================
-
-
-    // Iniciamos el filtro solo con el estatus
-    const dateFilter: any = {};
-
-    // SOLO añadimos el rango de fechas si el usuario realmente las seleccionó
-    if (from || to) {
-      dateFilter.createdAt = {};
-      if (from) {
-        dateFilter.createdAt.gte = new Date(from);
-      }
-      if (to) {
-        const toDate = new Date(to);
-        toDate.setHours(23, 59, 59, 999);
-        dateFilter.createdAt.lte = toDate;
-      }
-    }
-
-    // ==========================================
-    // 2. ANALYTICS (CORREGIDO)
-    // ==========================================
-    let filteredOrders: any[] = [];
-    let stats: AnalyticsData = {
-      totalRevenue: 0,
-      totalOrders: 0,
-      flavorStats: {},
-      packStats: {}
-    };
-    let totalFlavorsSold = 0;
-    let totalPacksSold = 0;
-
-    // Declaramos estas variables aquí afuera para que dataObject las vea
-    let topFlavors: any[] = [];
-    let topPacks: any[] = [];
-
-    try {
-      filteredOrders = await (db as any).order.findMany({
-        where: dateFilter,
-        include: {
-          orderItems: { include: { product: true, flavor: true, composition: true } },
-          replacements: { select: { id: true, status: true } },
-        },
-        orderBy: { createdAt: 'desc' }
-      });
-
-      // --- DEPURACIÓN ---
-      console.log("📦 PEDIDOS EN DB:", filteredOrders.length);
-      // ------------------
-
-      stats = {
-        totalRevenue: 0,
-        totalOrders: filteredOrders.length,
-        flavorStats: {},
-        packStats: {}
-      };
-
-      filteredOrders.forEach((order: any) => {
-        stats.totalRevenue += Number(order.total || 0);
-        order.orderItems.forEach((item: any) => {
-          if (item.product) {
-            const packName = item.product.name;
-            if (!stats.packStats[packName]) stats.packStats[packName] = { name: packName, count: 0 };
-            stats.packStats[packName].count += item.quantity;
-            totalPacksSold += item.quantity;
-          }
-          if (item.flavor) {
-            const slug = item.flavor.slug;
-            if (!stats.flavorStats[slug]) stats.flavorStats[slug] = { name: item.flavor.name, count: 0 };
-            stats.flavorStats[slug].count += item.quantity;
-            totalFlavorsSold += item.quantity;
-          }
-        });
-      });
-
-      // Asignamos los valores a las variables de afuera y cambios en any
-      topFlavors = Object.values(stats.flavorStats).sort((a, b) => b.count - a.count);
-      topPacks = Object.values(stats.packStats).sort((a, b) => b.count - a.count);
-
-    } catch (err) {
-      console.error("❌ Error en Analytics:", err);
-    }
-
-    // ==========================================
-    // 3. INVENTARIO Y CATÁLOGO
-    // ==========================================
-    let allFlavors: any[] = [];
-    let allProducts: any[] = [];
-    let allPlans: any[] = [];
-
-    try {
-      // 👇 AGREGA "as any[]" AQUÍ AL FINAL 👇
-      const rawFlavors = await db.flavor.findMany({
-        include: {
-          movements: { orderBy: { createdAt: 'desc' }, take: 100 },
-          locationStocks: { include: { location: true } }
-        },
-        orderBy: { name: 'asc' }
-      }) as any[];
-
-      allFlavors = rawFlavors.map((f: any) => ({
-        ...f,
-        price: f.price ? Number(f.price) : 0,
-        basePrice: f.basePrice ? Number(f.basePrice) : 0,
-        wholesalePrice: f.wholesalePrice ? Number(f.wholesalePrice) : null,
-        createdAt: f.createdAt?.toISOString() || new Date().toISOString(),
-        updatedAt: f.updatedAt?.toISOString() || new Date().toISOString(),
-        locationStocks: f.locationStocks.map((s: any) => ({
-          ...s,
-          createdAt: s.createdAt?.toISOString() || new Date().toISOString(),
-          updatedAt: s.updatedAt?.toISOString() || new Date().toISOString(),
-        }))
-      }));
-    } catch (err) {
-      console.error("Error fetching flavors:", err);
-      allFlavors = [];
-    }
-
-    try {
-      const rawProducts = await db.product.findMany({ orderBy: [{ sortOrder: 'asc' }, { price: 'asc' }] });
-      allProducts = rawProducts.map((p: any) => ({
-        ...p,
-        price: Number(p.price || 0),
-        weight: Number(p.weight || 0),
-        height: Number(p.height || 0),
-        width: Number(p.width || 0),
-        length: Number(p.length || 0),
-        createdAt: p.createdAt?.toISOString() || new Date().toISOString(),
-        updatedAt: p.updatedAt?.toISOString() || new Date().toISOString(),
-      }));
-    } catch (err) {
-      console.error("Error fetching products:", err);
-      allProducts = [];
-    }
-
-    try {
-      const rawPlans = await db.plan.findMany({
-        orderBy: { createdAt: 'desc' },
-        include: { product: true }
-      });
-
-      allPlans = rawPlans.map((p: any) => ({
-        ...p,
-        price: Number(p.price || 0),
-        createdAt: p.createdAt?.toISOString() || new Date().toISOString(),
-        updatedAt: p.updatedAt?.toISOString() || new Date().toISOString(),
-        product: p.product ? {
-          ...p.product,
-          price: Number(p.product.price || 0),
-          weight: Number(p.product.weight || 0),
-          height: Number(p.product.height || 0),
-          width: Number(p.product.width || 0),
-          length: Number(p.product.length || 0),
-          createdAt: p.product.createdAt?.toISOString() || new Date().toISOString(),
-          updatedAt: p.product.updatedAt?.toISOString() || new Date().toISOString(),
-        } : null
-      }));
-    } catch (err) {
-      console.error("Error fetching plans:", err);
-      allPlans = [];
-    }
-
-    // ==========================================
-    // 4. HISTORIAL DE PRECIOS
-    // ==========================================
-    let priceHistory: any[] = [];
-
-    try {
-      const flavorPH = await db.flavorPriceHistory.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: { flavor: true }
-      });
-      const productPH = await db.productPriceHistory.findMany({
-        take: 5,
-        orderBy: { createdAt: 'desc' },
-        include: { product: true }
-      });
-
-      priceHistory = [
-        ...flavorPH.map((h: any) => ({
-          id: h.id,
-          createdAt: h.createdAt.toISOString(),
-          oldPrice: Number(h.oldPrice || 0),
-          newPrice: Number(h.newPrice || 0),
-          flavor: { name: h.flavor.name },
-          product: null,
-          userId: h.userId
-        })),
-        ...productPH.map((h: any) => ({
-          id: h.id,
-          createdAt: h.createdAt.toISOString(),
-          oldPrice: Number(h.oldPrice || 0),
-          newPrice: Number(h.newPrice || 0),
-          product: { name: h.product.name },
-          flavor: null,
-          userId: h.userId
-        })),
-      ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    } catch (err) {
-      console.error("Error fetching price history:", err);
-      priceHistory = [];
-    }
-
-    // =============================================
-    // 5. LEADS, TRANSFERS, SUBSCRIPTIONS Y USUARIOS
-    // =============================================
-    let leads: any[] = [];
-    let transfers: any[] = [];
-    let allSubscriptions: any[] = [];
-    let clients: any[] = [];
-    let usersList: any[] = [];
-    let giros: any[] = [];
-
-    try {
-      leads = (await db.lead.findMany({ orderBy: { createdAt: 'desc' } }))
-        .map(l => ({ ...l, createdAt: l.createdAt.toISOString() }));
-    } catch (err) {
-      console.error("Error fetching leads:", err);
-      leads = [];
-    }
-
-    try {
-      transfers = (await db.transfer.findMany({
-        include: { flavor: true, fromLocation: true, toLocation: true },
-        orderBy: { createdAt: 'desc' }
-      })).map(t => ({
-        ...t,
-        flavor: t.flavor ? {
-          ...t.flavor,
-          price: Number(t.flavor.price || 0),
-          basePrice: Number(t.flavor.basePrice || 0),
-          wholesalePrice: t.flavor.wholesalePrice ? Number(t.flavor.wholesalePrice) : null,
-        } : null,
-        createdAt: t.createdAt.toISOString(),
-        updatedAt: t.updatedAt.toISOString(),
-      }));
-    } catch (err) {
-      console.error("Error fetching transfers:", err);
-      transfers = [];
-    }
-
-    try {
-      allSubscriptions = (await db.subscription.findMany({
-        include: { client: true, plan: true },
-        orderBy: { createdAt: 'desc' }
-      })).map(s => ({
-        ...s,
-        createdAt: s.createdAt.toISOString(),
-        updatedAt: s.updatedAt.toISOString(),
-        currentPeriodEnd: s.currentPeriodEnd.toISOString(),
-        plan: s.plan ? {
-          ...s.plan,
-          price: Number(s.plan.price || 0),
-          createdAt: s.plan.createdAt.toISOString(),
-          updatedAt: s.plan.updatedAt.toISOString(),
-        } : null,
-        client: s.client ? { ...s.client } : null
-      }));
-    } catch (err) {
-      console.error("Error fetching subscriptions:", err);
-      allSubscriptions = [];
-    }
-
-    try {
-      clients = (await db.client.findMany({
-          orderBy: { createdAt: 'desc' },
-          include: { credits: true, giro: { select: { id: true, name: true } } }
-        }))
-        .map(c => ({
-          ...c,
-          creditLimit: Number(c.creditLimit || 0),
-          creditUsed: Number(c.creditUsed || 0),
-          globalDiscount: c.globalDiscount ? Number(c.globalDiscount) : null,
-          createdAt: c.createdAt?.toISOString() || new Date().toISOString(),
-          updatedAt: c.updatedAt?.toISOString() || new Date().toISOString(),
-          credits: c.credits.map((cr: any) => ({
-            ...cr,
-            amount: Number(cr.amount || 0),
-            dueDate: cr.dueDate?.toISOString() || null,
-            createdAt: cr.createdAt?.toISOString() || new Date().toISOString(),
-            updatedAt: cr.updatedAt?.toISOString() || new Date().toISOString(),
-          })),
-        }));
-    } catch (err) {
-      console.error("Error fetching clients:", err);
-      clients = [];
-    }
-
-    try {
-      if ((db as any).giro) {
-        giros = await (db as any).giro.findMany({ orderBy: { name: 'asc' } });
-      }
-    } catch (err) {
-      console.error("Error fetching giros:", err);
-      giros = [];
-    }
-
-    // ==========================================
-    // 7b. ÓRDENES POS NO PAGADAS (para deudores)
-    // ==========================================
-    let unpaidPosOrders: any[] = [];
-    try {
-      unpaidPosOrders = await (db as any).order.findMany({
-        where: { channel: "POS", isPaid: false },
-        select: {
-          id: true, clientId: true, fullName: true, total: true,
-          amountPaid: true, createdAt: true, folio: true,
-          payments: {
-            select: { id: true, amount: true, paymentMethod: true, note: true, createdAt: true },
-            orderBy: { createdAt: "asc" },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      }).then((rows: any[]) =>
-        rows.map((o: any) => ({
-          ...o,
-          total: Number(o.total || 0),
-          amountPaid: Number(o.amountPaid || 0),
-          payments: (o.payments || []).map((p: any) => ({
-            ...p,
-            amount: Number(p.amount || 0),
-            createdAt: p.createdAt?.toISOString() || new Date().toISOString(),
-          })),
-          createdAt: o.createdAt?.toISOString() || new Date().toISOString(),
-        }))
-      );
-    } catch (err) {
-      console.error("Error fetching unpaid POS orders:", err);
-      unpaidPosOrders = [];
-    }
-
-    // ==========================================
-    // MATERIA PRIMA
-    // ==========================================
-    let rawMaterials: any[] = [];
-    try {
-      rawMaterials = await (db as any).rawMaterial.findMany({
-        include: {
-          stocks: { include: { location: { select: { id: true, name: true } } } },
-          movements: { orderBy: { createdAt: "desc" }, take: 50 },
-        },
-        orderBy: { name: "asc" },
-      }).then((mats: any[]) => mats.map((m: any) => ({
-        ...m,
-        minStock: Number(m.minStock || 0),
-        cost: m.cost != null ? Number(m.cost) : null,
-        createdAt: m.createdAt.toISOString(),
-        updatedAt: m.updatedAt.toISOString(),
-        stocks: m.stocks.map((s: any) => ({ ...s, quantity: Number(s.quantity) })),
-        movements: m.movements.map((mv: any) => ({ ...mv, quantity: Number(mv.quantity), createdAt: mv.createdAt.toISOString() })),
-      })));
-    } catch (err) {
-      console.error("Error fetching raw materials:", err);
-      rawMaterials = [];
-    }
-
-    // ==========================================
-    // 7. SOLICITUDES DE AJUSTE DE INVENTARIO
-    // ==========================================
-    let adjustmentRequests: any[] = [];
-    try {
-      if ((db as any).adjustmentRequest) {
-        adjustmentRequests = await (db as any).adjustmentRequest.findMany({
-          where: { status: "PENDING" },
-          include: {
-            location: { select: { name: true } },
-            flavor: { select: { name: true } },
-          },
-          orderBy: { createdAt: "asc" },
-        }).then((reqs: any[]) =>
-          reqs.map((r: any) => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() }))
-        );
-      }
-    } catch (err) {
-      console.error("Error fetching adjustment requests:", err);
-      adjustmentRequests = [];
-    }
-
-    // ==========================================
-    // 6. LISTA DE USUARIOS DESDE CLERK
-    // ==========================================
-    try {
-      const clerkUsersResponse = await clerk.users.getUserList();
-      usersList = clerkUsersResponse.data.map(u => ({
-        id: u.id,
-        email: u.emailAddresses[0]?.emailAddress || "Sin email",
-        firstName: u.firstName || "Usuario",
-        lastName: u.lastName || "",
-        role: (u.publicMetadata as any)?.role || "cliente",
-        imageUrl: u.imageUrl
-      }));
-    } catch (err) {
-      console.error("Error fetching Clerk users:", err);
-      usersList = [];
-    }
-
-    // ==========================================
-    // LIMPIEZA PROFUNDA DE ÓRDENES (Adiós Decimals)
-    // ==========================================
-    const serializedOrders = filteredOrders.map((order: any) => ({
-      ...order,
-      // 1. Campos de la Orden
-      total: Number(order.total || 0),
-      subtotal: Number(order.subtotal || 0),
-      shippingCost: Number(order.shippingCost || 0),
-      createdAt: order.createdAt?.toISOString() || new Date().toISOString(),
-      updatedAt: order.updatedAt?.toISOString() || new Date().toISOString(),
-      cancelledAt: order.cancelledAt?.toISOString() || null,
-      cancellationNote: order.cancellationNote || null,
-      replacesOrderId: order.replacesOrderId || null,
-      replacements: order.replacements || [],
-
-      // 2. Campos de los Items dentro de la orden
-      orderItems: order.orderItems?.map((item: any) => ({
-        ...item,
-        unitPrice: Number(item.unitPrice || 0),
-        subtotal: Number(item.subtotal || 0),
-
-        // 3. Si el item trae el producto/sabor incluido, también lo limpiamos
-        product: item.product ? {
-          ...item.product,
-          price: Number(item.product.price || 0),
-          weight: Number(item.product.weight || 0),
-          height: Number(item.product.height || 0),
-          width: Number(item.product.width || 0),
-          length: Number(item.product.length || 0),
-        } : null,
-
-        flavor: item.flavor ? {
-          ...item.flavor,
-          price: Number(item.flavor.price || 0),
-          basePrice: Number(item.flavor.basePrice || 0),
-          wholesalePrice: item.flavor.wholesalePrice ? Number(item.flavor.wholesalePrice) : null,
-        } : null
-      })) || []
-    }));
-
-    // ==========================================
-    // FLAVORS CON PRECIOS (para tab de precios)
-    // ==========================================
-    let flavorsWithPricing: any[] = [];
-    try {
-      flavorsWithPricing = await db.flavor.findMany({
-        where: { isArchived: false },
-        include: {
-          priceScales: { orderBy: { minQuantity: 'asc' } },
-          discounts: { orderBy: { createdAt: 'desc' } },
-          priceHistory: { take: 5, orderBy: { createdAt: 'desc' } }
-        },
-        orderBy: { name: 'asc' }
-      }).then(flavors =>
-        flavors.map(f => ({
-          ...f,
-          price: Number(f.price || 0),
-          basePrice: Number(f.basePrice || 0),
-          wholesalePrice: f.wholesalePrice ? Number(f.wholesalePrice) : null,
-          priceScales: f.priceScales.map(ps => ({
-            ...ps,
-            price: Number(ps.price || 0)
-          })),
-          discounts: f.discounts.map(d => ({
-            ...d,
-            discountPercent: d.discountPercent || 0,
-            fixedPrice: d.fixedPrice ? Number(d.fixedPrice) : null,
-            validUntil: d.validUntil?.toISOString() || null
-          })),
-          priceHistory: f.priceHistory.map(ph => ({
-            ...ph,
-            oldBasePrice: Number(ph.oldBasePrice || 0),
-            newBasePrice: Number(ph.newBasePrice || 0),
-            oldWholesale: ph.oldWholesale ? Number(ph.oldWholesale) : null,
-            newWholesale: ph.newWholesale ? Number(ph.newWholesale) : null,
-            createdAt: ph.createdAt.toISOString()
-          }))
-        }))
-      );
-    } catch (err) {
-      console.error("Error fetching flavors with pricing:", err);
-      flavorsWithPricing = [];
-    }
-
-    // ==========================================
-    // DATA OBJECT FINAL
-    // ==========================================
-    const dataObject = {
-      stats,
-      topFlavors,
-      topPacks,
-      totalFlavorsSold,
-      totalPacksSold,
-      from: from || null,
-      to: to || null,
-      allFlavors,
-      activeFlavors: allFlavors.filter(f => !f.isArchived),
-      allProducts,
-      allPlans,
-      priceHistory,
-      allLocations,
-      activeLocations,
-      leads,
-      userEmail,
-      userRole,
-      transfers,
-      allSubscriptions,
-      users: usersList,
-      clients,
-      orders: serializedOrders,
-      flavorsWithPricing,
-      giros,
-      adjustmentRequests,
-      unpaidPosOrders,
-      rawMaterials,
-    };
-
-    // Verificar que stats existe y tiene las propiedades requeridas y más
-    if (!dataObject.stats || typeof dataObject.stats !== 'object') {
-      throw new Error("Stats object is invalid");
-    }
-
-    return <AdminDashboard data={dataObject} />;
-
-  } catch (error) {
-    console.error("Critical error in AdminPage:", error);
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-8 max-w-lg w-full">
-          <h2 className="text-2xl font-black text-red-800 mb-4">Error al cargar el panel</h2>
-          <p className="text-red-700 mb-4">Ocurrió un error inesperado al cargar los datos.</p>
-          <details className="bg-white p-4 rounded border border-red-200">
-            <summary className="font-bold cursor-pointer text-red-700">Ver detalles</summary>
-            <pre className="mt-2 text-xs text-gray-600 overflow-auto">
-              {error instanceof Error ? error.message : String(error)}
-            </pre>
-          </details>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            {kpis.map((kpi) => (
+              <div key={kpi.label} className={`rounded-[1.6rem] bg-gradient-to-br ${kpi.tone} p-5 text-white shadow-lg`}>
+                <div className="flex items-center justify-between text-white/80">
+                  <span className="text-xs font-black uppercase tracking-[0.28em]">{kpi.label}</span>
+                  <span className="rounded-full bg-white/15 p-2">{kpi.icon}</span>
+                </div>
+                <p className="mt-4 text-2xl font-black tracking-tight">{kpi.value}</p>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-    );
-  }
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {MODULES.map((mod) => (
+          <Link
+            key={mod.href}
+            href={mod.href}
+            className="group rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="rounded-2xl bg-slate-950 p-3 text-white shadow-lg shadow-slate-950/10">
+                {mod.icon}
+              </div>
+              <ArrowRight className="mt-2 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-700" size={16} />
+            </div>
+            <h3 className="mt-5 text-xl font-black tracking-tight text-slate-950">{mod.title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{mod.desc}</p>
+          </Link>
+        ))}
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-[1.6rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Pedidos recientes</p>
+              <h3 className="mt-1 text-xl font-black text-slate-950">Actividad más reciente</h3>
+            </div>
+            <Link href="/admin/orders" className="text-sm font-bold text-blue-700 hover:text-blue-900">
+              Ver todo
+            </Link>
+          </div>
+          <div className="mt-4 space-y-3">
+            {recentOrders.map((order) => (
+              <div key={order.id} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
+                <div>
+                  <p className="font-bold text-slate-950">
+                    {order.folio || `#${order.id.slice(-6).toUpperCase()}`}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {order.channel} · {order.fullName || "Sin cliente"} · {new Date(order.createdAt).toLocaleDateString("es-MX")}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-black text-slate-950">
+                    {Number(order.total || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" })}
+                  </p>
+                  <span className={`text-[10px] font-black uppercase tracking-[0.25em] ${order.status === "PAID" ? "text-emerald-600" : order.status === "CANCELLED" ? "text-rose-600" : "text-amber-600"}`}>
+                    {order.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[1.6rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Resumen operativo</p>
+          <div className="mt-4 space-y-3">
+            {[
+              { label: "Sabores", value: flavorsCount },
+              { label: "Productos", value: productsCount },
+              { label: "Materia prima", value: rawMaterialsCount },
+              { label: "Traspasos abiertos", value: openTransfersCount },
+              { label: "Producciones activas", value: activeProductionsCount },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                <span className="text-sm font-semibold text-slate-600">{item.label}</span>
+                <span className="text-lg font-black text-slate-950">{item.value}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-700">Usuario actual</p>
+            <p className="mt-1 text-lg font-black text-slate-950">
+              {user?.firstName || "Admin"} {user?.lastName || ""}
+            </p>
+            <p className="text-xs text-slate-500">{user?.emailAddresses[0]?.emailAddress || "Sin correo"}</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }

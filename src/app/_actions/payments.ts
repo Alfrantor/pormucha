@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { closeOrderCredit, syncClientCreditUsage } from "@/lib/credits";
 
 // Recalcula amountPaid e isPaid desde la suma real de OrderPayment en DB
 async function syncOrderPayment(tx: any, orderId: string) {
@@ -57,6 +58,19 @@ export async function registerOrderPayment(
       });
 
       const { newAmountPaid, isPaidNow } = await syncOrderPayment(tx, orderId);
+
+      if (isPaidNow) {
+        await closeOrderCredit(tx, orderId, "PAID");
+      } else {
+        const order = await (tx as any).order.findUnique({
+          where: { id: orderId },
+          select: { clientId: true },
+        });
+        if (order?.clientId) {
+          await syncClientCreditUsage(tx, order.clientId);
+        }
+      }
+
       return {
         isPaidNow,
         amountPaid: newAmountPaid,
@@ -94,6 +108,20 @@ export async function cancelOrderPayment(
       await (tx as any).orderPayment.delete({ where: { id: paymentId } });
 
       const { newAmountPaid, isPaidNow } = await syncOrderPayment(tx, orderId);
+
+      const order = await (tx as any).order.findUnique({
+        where: { id: orderId },
+        select: { clientId: true },
+      });
+
+      if (order?.clientId) {
+        await syncClientCreditUsage(tx, order.clientId);
+      }
+
+      if (isPaidNow) {
+        await closeOrderCredit(tx, orderId, "PAID");
+      }
+
       return { amountPaid: newAmountPaid, isPaidNow };
     });
 
@@ -151,6 +179,20 @@ export async function recalculateOrderPayment(
       const order = await (tx as any).order.findUnique({ where: { id: orderId }, select: { total: true } });
       if (!order) throw new Error("Orden no encontrada");
       const { newAmountPaid, isPaidNow } = await syncOrderPayment(tx, orderId);
+
+      const orderWithClient = await (tx as any).order.findUnique({
+        where: { id: orderId },
+        select: { clientId: true },
+      });
+
+      if (orderWithClient?.clientId) {
+        await syncClientCreditUsage(tx, orderWithClient.clientId);
+      }
+
+      if (isPaidNow) {
+        await closeOrderCredit(tx, orderId, "PAID");
+      }
+
       return { amountPaid: newAmountPaid, isPaidNow };
     });
     revalidatePath("/admin");

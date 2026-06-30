@@ -20,6 +20,7 @@ import UserManagement from "@/components/admin/UserManagement";
 import { ClientsTable } from "@/components/admin/ClientsTable";
 import { PricingManager } from "@/components/admin/PricingManager";
 import { TabMateriasPrimas } from "@/components/admin/TabMateriasPrimas";
+import TabProduccion from "@/components/admin/TabProduccion";
 import { toggleStatus } from "@/actions/toggle-status";
 import {
   createLocation, registerMovement, updatePackPrice, updateFlavorPrice,
@@ -62,7 +63,7 @@ function S3FileLink({ url, label }: { url: string; label: string }) {
 }
 
 // ---- Types ----
-type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios" | "giros" | "materiaprima";
+type TabId = "dashboard" | "inventario" | "envios" | "suscripciones" | "leads" | "productos" | "usuarios" | "pedidos" | "clientes" | "precios" | "giros" | "materiaprima" | "produccion";
 
 interface Tab {
   id: TabId;
@@ -75,6 +76,7 @@ const TABS: Tab[] = [
   { id: "dashboard",    label: "Dashboard",     icon: <LayoutDashboard size={15} />, group: "general" },
   { id: "inventario",   label: "Inventario",    icon: <Package size={15} />,         group: "operaciones" },
   { id: "materiaprima", label: "Materia Prima", icon: <PackageOpen size={15} />,     group: "operaciones" },
+  { id: "produccion",   label: "Producción",    icon: <Package2 size={15} />,        group: "operaciones" },
   { id: "envios",       label: "Traspasos",     icon: <Truck size={15} />,           group: "operaciones" },
   { id: "pedidos",      label: "Pedidos",       icon: <ShoppingCart size={15} />,    group: "operaciones" },
   { id: "productos",    label: "Productos",     icon: <Package2 size={15} />,        group: "catalogo" },
@@ -186,6 +188,8 @@ export default function AdminDashboard({ data }: { data: any }) {
     adjustmentRequests = [],
     unpaidPosOrders = [],
     rawMaterials = [],
+    tanks = [],
+    productions = [],
   } = data;
 
   const memoizedStats = useMemo(() => stats, [stats]);
@@ -328,6 +332,7 @@ export default function AdminDashboard({ data }: { data: any }) {
           {activeTab === "pedidos" && <TabPedidos orders={orders} />}
           {activeTab === "giros" && <TabGiros giros={giros} />}
           {activeTab === "materiaprima" && <TabMateriasPrimas rawMaterials={rawMaterials} locations={activeLocations} />}
+          {activeTab === "produccion" && <TabProduccion tanks={tanks} productions={productions} rawMaterials={rawMaterials} locations={activeLocations} userEmail={userEmail} />}
         </main>
       </div>
     </div>
@@ -339,7 +344,7 @@ type CancelStep = "confirm" | "stock" | "replacement" | "note" | "done";
 
 const PAGE_SIZE = 30;
 
-function TabPedidos({ orders = [] }: { orders: any[] }) {
+export function TabPedidos({ orders = [] }: { orders: any[] }) {
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
   const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB" | "CANCELLED" | "UNPAID">("all");
   const [search, setSearch] = useState("");

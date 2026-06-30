@@ -127,6 +127,8 @@ model Credit {
   id        String   @id @default(cuid())
   clientId  String
   client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  orderId   String?  @unique
+  order     Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   amount    Decimal
   dueDate   DateTime
@@ -165,8 +167,12 @@ model Location {
   transfersFrom         Transfer[]            @relation("TransferFrom")
   transfersTo           Transfer[]            @relation("TransferTo")
   adjustmentRequests    AdjustmentRequest[]
-  rawMaterialStocks     RawMaterialStock[]
-  rawMaterialMovements  RawMaterialMovement[]
+  rawMaterialStocks       RawMaterialStock[]
+  rawMaterialMovements    RawMaterialMovement[]
+  productionIngredients   ProductionIngredient[]
+  productionAdditions     ProductionAddition[]
+  gasificationBatches     GasificationBatch[]
+  labelingBatches         LabelingBatch[]
 }
 
 model Stock {
@@ -206,6 +212,8 @@ model Flavor {
   unitCount             Int                    @default(6)
   orderItemCompositions OrderItemComposition[]
   adjustmentRequests    AdjustmentRequest[]
+  gasificationBatches   GasificationBatch[]
+  labelingBatches       LabelingBatch[]
 }
 
 model FlavorPriceScale {
@@ -381,6 +389,7 @@ model Order {
   amountPaid        Decimal       @default(0)
   payments          OrderPayment[]
   edits             OrderEdit[]
+  credit            Credit?
   cancelledAt       DateTime?
   cancellationNote  String?
   replacesOrderId   String?
@@ -466,8 +475,181 @@ model RawMaterial {
   isArchived  Boolean                 @default(false)
   stocks      RawMaterialStock[]
   movements   RawMaterialMovement[]
+  productionIngredients ProductionIngredient[]
+  productionAdditions   ProductionAddition[]
+  productionFormulaItems ProductionFormulaItem[]
   createdAt   DateTime                @default(now())
   updatedAt   DateTime                @updatedAt
+}
+
+// ===== PRODUCCIÓN =====
+
+model Tank {
+  id          String       @id @default(cuid())
+  name        String
+  capacityLt  Decimal?
+  isActive    Boolean      @default(true)
+  productions Production[]
+  gasificationBatches GasificationBatch[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model ProductionFormula {
+  id             String                  @id @default(cuid())
+  code           String                  @unique // A | B | C
+  name           String
+  description    String?
+  formulaSummary String?
+  durationDays   Int                     @default(0)
+  durationHours  Int
+  phMin          Decimal
+  phMax          Decimal
+  brixMin        Decimal
+  brixMax        Decimal
+  temperatureMin Decimal
+  temperatureMax Decimal
+  acidityMin     Decimal
+  acidityMax     Decimal
+  isActive       Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  items          ProductionFormulaItem[]
+  productions    Production[]
+}
+
+model ProductionFormulaItem {
+  id                String             @id @default(cuid())
+  formulaId         String
+  formula           ProductionFormula  @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+  rawMaterialId     String
+  rawMaterial       RawMaterial        @relation(fields: [rawMaterialId], references: [id])
+  quantity          Decimal
+  defaultLocationId String?
+  defaultLocation   Location?          @relation(fields: [defaultLocationId], references: [id], onDelete: SetNull)
+  notes             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([formulaId])
+  @@index([rawMaterialId])
+}
+
+model GasificationBatch {
+  id               String    @id @default(cuid())
+  name             String
+  flavorId         String?
+  flavor           Flavor?   @relation(fields: [flavorId], references: [id], onDelete: SetNull)
+  tankId           String?
+  tank             Tank?     @relation(fields: [tankId], references: [id], onDelete: SetNull)
+  locationId       String?
+  location         Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  status           String    @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED | CANCELLED
+  startedAt        DateTime
+  completedAt      DateTime?
+  litersProcessed  Decimal?
+  pressurePsi      Decimal?
+  carbonationVol   Decimal?
+  notes            String?
+  createdBy        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status])
+  @@index([tankId])
+  @@index([flavorId])
+}
+
+model LabelingBatch {
+  id             String    @id @default(cuid())
+  name           String
+  flavorId       String?
+  flavor         Flavor?   @relation(fields: [flavorId], references: [id], onDelete: SetNull)
+  locationId     String?
+  location       Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  status         String    @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED | CANCELLED
+  startedAt      DateTime
+  completedAt    DateTime?
+  unitsReceived  Int?
+  unitsLabeled   Int?
+  labelsUsed     Int?
+  notes          String?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status])
+  @@index([flavorId])
+  @@index([locationId])
+}
+
+model Production {
+  id              String    @id @default(cuid())
+  name            String
+  productType     String    // A | B | C
+  productionFormulaId String?
+  productionFormula   ProductionFormula? @relation(fields: [productionFormulaId], references: [id], onDelete: SetNull)
+  tankId          String
+  tank            Tank      @relation(fields: [tankId], references: [id])
+  status          String    @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED | CANCELLED
+  startedAt       DateTime
+  completedAt     DateTime?
+  litersProduced  Decimal?
+  notes           String?
+  createdBy       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  ingredients     ProductionIngredient[]
+  additions       ProductionAddition[]
+  parameters      ProductionParameter[]
+
+  @@index([tankId])
+  @@index([status])
+  @@index([productionFormulaId])
+}
+
+model ProductionIngredient {
+  id            String      @id @default(cuid())
+  productionId  String
+  production    Production  @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  rawMaterialId String
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id])
+  quantity      Decimal
+  locationId    String?
+  location      Location?   @relation(fields: [locationId], references: [id])
+}
+
+model ProductionAddition {
+  id            String      @id @default(cuid())
+  productionId  String
+  production    Production  @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  rawMaterialId String
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id])
+  quantity      Decimal
+  locationId    String?
+  location      Location?   @relation(fields: [locationId], references: [id])
+  notes         String?
+  addedAt       DateTime    @default(now())
+  addedBy       String?
+
+  @@index([productionId])
+}
+
+model ProductionParameter {
+  id           String     @id @default(cuid())
+  productionId String
+  production   Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  measuredAt   DateTime   @default(now())
+  ph           Decimal?
+  brix         Decimal?
+  temperature  Decimal?
+  acidity      Decimal?
+  notes        String?
+  recordedBy   String?
+
+  @@index([productionId])
 }
 
 model RawMaterialStock {

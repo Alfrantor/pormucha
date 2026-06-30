@@ -131,6 +131,11 @@ export const PosInterface = ({
   // ─── Checkout ─────────────────────────────────────────────────────────────
   const executeCheckout = async () => {
     if (cart.length === 0) return;
+    const requiresCreditClient = paymentMethod === "CONSIGNMENT" || !isPaid;
+    if (requiresCreditClient && !selectedClient) {
+      toast.error("Selecciona un cliente para vender a cr\u00e9dito.");
+      return;
+    }
     setShowConfirm(false);
     setShowMobileCart(false);
     setIsProcessing(true);
