@@ -7,7 +7,6 @@ import {
   BriefcaseBusiness,
   CreditCard,
   FlaskConical,
-  RefreshCcw,
   ShieldCheck,
   ShoppingCart,
   Tags,
@@ -18,9 +17,9 @@ import {
 const MODULES = [
   { href: "/admin/orders", title: "Pedidos", desc: "Ventas web, POS, pagos y cancelaciones", icon: <ShoppingCart size={18} /> },
   { href: "/admin/inventory", title: "Inventarios", desc: "Productos, materia prima, en proceso y traspasos", icon: <Boxes size={18} /> },
-  { href: "/admin/catalog", title: "Catálogo", desc: "Productos, suscripciones y catálogo comercial", icon: <Tags size={18} /> },
-  { href: "/admin/clients", title: "Clientes", desc: "CRM, crédito, direcciones e historial", icon: <BriefcaseBusiness size={18} /> },
-  { href: "/admin/production", title: "Producción", desc: "Tanques, lotes y parámetros", icon: <FlaskConical size={18} /> },
+  { href: "/admin/catalog", title: "Catalogo", desc: "Productos, suscripciones y catalogo comercial", icon: <Tags size={18} /> },
+  { href: "/admin/clients", title: "Clientes", desc: "CRM, credito, direcciones e historial", icon: <BriefcaseBusiness size={18} /> },
+  { href: "/admin/production", title: "Produccion", desc: "Tanques, lotes y parametros", icon: <FlaskConical size={18} /> },
   { href: "/admin/users", title: "Usuarios", desc: "Equipo interno y roles", icon: <ShieldCheck size={18} /> },
 ];
 
@@ -75,44 +74,17 @@ export default async function AdminHomePage() {
 
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
-        <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.35fr_0.65fr]">
-          <div className="relative overflow-hidden rounded-[2rem] bg-[linear-gradient(135deg,_#0f172a_0%,_#111827_35%,_#1d4ed8_100%)] p-6 text-white sm:p-8">
-            <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.22)_0,transparent_26%),radial-gradient(circle_at_80%_0%,rgba(56,189,248,0.22)_0,transparent_24%),radial-gradient(circle_at_100%_100%,rgba(168,85,247,0.18)_0,transparent_25%)]" />
-            <div className="relative">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.3em] text-cyan-100">
-                <RefreshCcw size={12} />
-                Admin modular
+      <section className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-6 shadow-[0_24px_80px_rgba(15,23,42,0.08)] sm:p-8">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {kpis.map((kpi) => (
+            <div key={kpi.label} className={`rounded-[1.6rem] bg-gradient-to-br ${kpi.tone} p-5 text-white shadow-lg`}>
+              <div className="flex items-center justify-between text-white/80">
+                <span className="text-xs font-black uppercase tracking-[0.28em]">{kpi.label}</span>
+                <span className="rounded-full bg-white/15 p-2">{kpi.icon}</span>
               </div>
-              <h2 className="mt-4 max-w-2xl text-3xl font-black tracking-tight sm:text-5xl">
-                Un centro de control más limpio para ventas, inventarios, producción y CRM.
-              </h2>
-              <p className="mt-4 max-w-xl text-sm leading-6 text-slate-200 sm:text-base">
-                Estamos dividiendo el admin en rutas específicas para que cada equipo trabaje más rápido, vea menos ruido y llegue directo a la tarea correcta.
-              </p>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link href="/admin/orders" className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-950 transition hover:scale-[1.01]">
-                  Abrir pedidos
-                  <ArrowRight size={14} />
-                </Link>
-                <Link href="/admin/inventory" className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/15">
-                  Ver inventarios
-                </Link>
-              </div>
+              <p className="mt-4 text-2xl font-black tracking-tight">{kpi.value}</p>
             </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            {kpis.map((kpi) => (
-              <div key={kpi.label} className={`rounded-[1.6rem] bg-gradient-to-br ${kpi.tone} p-5 text-white shadow-lg`}>
-                <div className="flex items-center justify-between text-white/80">
-                  <span className="text-xs font-black uppercase tracking-[0.28em]">{kpi.label}</span>
-                  <span className="rounded-full bg-white/15 p-2">{kpi.icon}</span>
-                </div>
-                <p className="mt-4 text-2xl font-black tracking-tight">{kpi.value}</p>
-              </div>
-            ))}
-          </div>
+          ))}
         </div>
       </section>
 
@@ -140,7 +112,7 @@ export default async function AdminHomePage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Pedidos recientes</p>
-              <h3 className="mt-1 text-xl font-black text-slate-950">Actividad más reciente</h3>
+              <h3 className="mt-1 text-xl font-black text-slate-950">Actividad mas reciente</h3>
             </div>
             <Link href="/admin/orders" className="text-sm font-bold text-blue-700 hover:text-blue-900">
               Ver todo
