@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState } from "react";
 import { ArrowRight, Package, Truck, Check } from "lucide-react";
 import { createTransfer, receiveTransfer } from "@/actions/admin-actions";
