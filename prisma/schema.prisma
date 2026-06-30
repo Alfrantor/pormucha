@@ -171,6 +171,7 @@ model Location {
   rawMaterialMovements    RawMaterialMovement[]
   productionIngredients   ProductionIngredient[]
   productionAdditions     ProductionAddition[]
+  productionFormulaItems  ProductionFormulaItem[]
   gasificationBatches     GasificationBatch[]
   labelingBatches         LabelingBatch[]
 }
