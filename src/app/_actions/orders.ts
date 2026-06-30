@@ -4,6 +4,19 @@ import { db } from "@/lib/db";
 import { auth } from "@clerk/nextjs/server";
 import { closeOrderCredit, syncClientCreditUsage } from "@/lib/credits";
 
+type ReplacementOrderItem = {
+  productId: string | null;
+  flavorId: string | null;
+  productName: string;
+  quantity: number;
+  unitPrice: unknown;
+  subtotal: unknown;
+  composition: Array<{
+    flavorId: string;
+    quantity: number;
+  }>;
+};
+
 export async function cancelOrder(
   orderId: string,
   returnStock: boolean,
@@ -89,7 +102,7 @@ export async function cancelOrder(
             notes: `Reemplazo de orden #${orderId.slice(-6).toUpperCase()}`,
             replacesOrderId: orderId,
             orderItems: {
-              create: order.orderItems.map((item) => ({
+              create: order.orderItems.map((item: ReplacementOrderItem) => ({
                 productId: item.productId,
                 flavorId: item.flavorId,
                 productName: item.productName,
@@ -98,7 +111,7 @@ export async function cancelOrder(
                 subtotal: item.subtotal,
                 composition: item.composition.length > 0
                   ? {
-                      create: item.composition.map((c) => ({
+                      create: item.composition.map((c: ReplacementOrderItem["composition"][number]) => ({
                         flavorId: c.flavorId,
                         quantity: c.quantity,
                       })),
