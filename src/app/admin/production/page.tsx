@@ -125,12 +125,15 @@ export default async function ProductionPage() {
     }
   });
 
-  const productionsWithPhases = productions.map((production: any) => ({
-    ...production,
-    productionFormulaId: formulaRefByProductionId.get(production.id) || null,
-    formula: formulaById.get(formulaRefByProductionId.get(production.id)) || null,
-    secondPhaseRecords: phasesByProductionId.get(production.id) || [],
-  }));
+  const productionsWithPhases = productions.map((production: any) => {
+    const productionFormulaId = formulaRefByProductionId.get(production.id);
+    return {
+      ...production,
+      productionFormulaId: productionFormulaId || null,
+      formula: productionFormulaId ? formulaById.get(productionFormulaId) || null : null,
+      secondPhaseRecords: phasesByProductionId.get(production.id) || [],
+    };
+  });
 
   return (
     <div className="space-y-6">
