@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { Decimal } from "@prisma/client/runtime/library";
-
 function buildFolioPrefix(date: Date): string {
   const month = date.getMonth() + 1;
   const year = date.getFullYear() % 100;
@@ -21,7 +19,7 @@ export async function POST(request: Request) {
       const client = body.clientId
         ? await (tx as any).client.findUnique({
             where: { id: body.clientId },
-            select: { id: true, creditLimit: true, creditUsed: true, paymentTerms: true },
+            select: { id: true },
           })
         : null;
 
@@ -77,35 +75,6 @@ export async function POST(request: Request) {
           },
         },
       });
-
-      if (isCreditSale && client) {
-        const dueDate = new Date();
-        dueDate.setDate(dueDate.getDate() + (client.paymentTerms || 30));
-
-        const existingCredit = await (tx as any).credit.findUnique({
-          where: { orderId: order.id },
-        });
-
-        if (!existingCredit) {
-          await (tx as any).credit.create({
-            data: {
-              clientId: client.id,
-              orderId: order.id,
-              amount: new Decimal(recordedTotal),
-              dueDate,
-              status: "PENDING",
-              notes: `Venta a credito POS - Folio ${order.folio}`,
-            },
-          });
-        }
-
-        await (tx as any).client.update({
-          where: { id: client.id },
-          data: {
-            creditUsed: { increment: new Decimal(recordedTotal) },
-          },
-        });
-      }
 
       for (const item of body.items) {
         if (item.composition) {
