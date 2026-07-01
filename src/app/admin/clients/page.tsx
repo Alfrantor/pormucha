@@ -7,7 +7,6 @@ interface ClientsPageProps {
   searchParams: {
     search?: string;
     classification?: string;
-    offset?: string;
   };
 }
 
@@ -22,7 +21,6 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
   const resolvedParams = await searchParams;
   const search = resolvedParams?.search;
   const classification = resolvedParams?.classification;
-  const offset = resolvedParams?.offset ? parseInt(resolvedParams.offset) : 0;
 
   const where: any = {};
 
@@ -49,8 +47,6 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
         giro: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },
-      take: 20,
-      skip: offset,
     }),
     db.client.count({ where }),
     db.giro.findMany({ orderBy: { name: "asc" } }),

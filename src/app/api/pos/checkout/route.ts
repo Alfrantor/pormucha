@@ -29,18 +29,6 @@ export async function POST(request: Request) {
         if (!client) {
           throw new Error("Debes seleccionar un cliente para vender a credito.");
         }
-
-        const creditLimit = Number(client.creditLimit || 0);
-        const creditUsed = Number(client.creditUsed || 0);
-        const availableCredit = creditLimit - creditUsed;
-
-        if (creditLimit <= 0) {
-          throw new Error("Este cliente no tiene limite de credito configurado.");
-        }
-
-        if (recordedTotal > availableCredit + 0.01) {
-          throw new Error(`Credito insuficiente. Disponible: $${availableCredit.toFixed(2)}`);
-        }
       }
 
       const now = new Date();
