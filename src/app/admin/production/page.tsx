@@ -35,7 +35,7 @@ export default async function ProductionPage() {
     redirect("/perfil");
   }
 
-  const [tanks, productions, rawMaterials, locations, flavors, gasRows, labelRows, phaseRows, formulas, productionFormulaRefs] = await Promise.all([
+  const [tanks, productions, rawMaterials, locations, flavors, gasRows, labelRows, phaseRows, formulas, productionFormulaRefs, productionInputLitersRows, baseBeverageInventory] = await Promise.all([
     db.tank.findMany({ orderBy: { createdAt: "asc" } }),
     db.production.findMany({
       include: {
@@ -51,7 +51,11 @@ export default async function ProductionPage() {
       orderBy: { name: "asc" },
     }),
     db.location.findMany({ where: { isArchived: false }, orderBy: { isDefault: "desc" } }),
-    db.flavor.findMany({ where: { isArchived: false }, orderBy: { name: "asc" } }),
+    db.flavor.findMany({
+      where: { isArchived: false },
+      include: { locationStocks: { include: { location: true } } },
+      orderBy: { name: "asc" },
+    }),
     db.$queryRawUnsafe(`
       SELECT
         gb.*,
@@ -82,7 +86,6 @@ export default async function ProductionPage() {
     db.$queryRawUnsafe(`
       SELECT *
       FROM "ProductionPhaseRecord"
-      WHERE "phase" = 2
       ORDER BY "measuredAt" DESC
     `).catch(() => []),
     loadProductionFormulas().catch(() => []),
@@ -90,6 +93,23 @@ export default async function ProductionPage() {
       SELECT "id", "productionFormulaId"
       FROM "Production"
       WHERE "productionFormulaId" IS NOT NULL
+    `).catch(() => []),
+    db.$queryRawUnsafe(`
+      SELECT "id", "inputLiters"
+      FROM "Production"
+      WHERE "inputLiters" IS NOT NULL
+    `).catch(() => []),
+    db.$queryRawUnsafe(`
+      SELECT
+        bbi.*,
+        t.id AS tank_id_ref,
+        t.name AS tank_name,
+        p.id AS production_id_ref,
+        p.name AS production_name
+      FROM "BaseBeverageInventory" bbi
+      LEFT JOIN "Tank" t ON t.id = bbi."tankId"
+      LEFT JOIN "Production" p ON p.id = bbi."productionId"
+      ORDER BY bbi."createdAt" DESC
     `).catch(() => []),
   ]);
 
@@ -104,6 +124,12 @@ export default async function ProductionPage() {
     ...row,
     flavor: row.flavor_id_ref ? { id: row.flavor_id_ref, name: row.flavor_name } : null,
     location: row.location_id_ref ? { id: row.location_id_ref, name: row.location_name } : null,
+  }));
+
+  const baseBeverageInventoryRows = (baseBeverageInventory as any[]).map((row) => ({
+    ...row,
+    tank: row.tank_id_ref ? { id: row.tank_id_ref, name: row.tank_name } : null,
+    production: row.production_id_ref ? { id: row.production_id_ref, name: row.production_name } : null,
   }));
 
   const phasesByProductionId = new Map<string, any[]>();
@@ -125,11 +151,19 @@ export default async function ProductionPage() {
     }
   });
 
+  const inputLitersByProductionId = new Map<string, number>();
+  (productionInputLitersRows as any[]).forEach((row) => {
+    if (row.inputLiters != null) {
+      inputLitersByProductionId.set(row.id, Number(row.inputLiters));
+    }
+  });
+
   const productionsWithPhases = productions.map((production: any) => {
     const productionFormulaId = formulaRefByProductionId.get(production.id);
     return {
       ...production,
       productionFormulaId: productionFormulaId || null,
+      inputLiters: inputLitersByProductionId.get(production.id) ?? null,
       formula: productionFormulaId ? formulaById.get(productionFormulaId) || null : null,
       secondPhaseRecords: phasesByProductionId.get(production.id) || [],
     };
@@ -154,6 +188,7 @@ export default async function ProductionPage() {
         flavors={serialize(flavors)}
         gasificationBatches={serialize(gasificationBatches)}
         labelingBatches={serialize(labelingBatches)}
+        baseBeverageInventory={serialize(baseBeverageInventoryRows)}
         userEmail={user?.emailAddresses[0]?.emailAddress || ""}
       />
     </div>

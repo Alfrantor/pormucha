@@ -12,7 +12,7 @@ import {
   updateTank,
   type IngredientInput,
 } from "@/app/_actions/production";
-import { createProductionSecondPhase } from "@/app/_actions/production-phase";
+import { createProductionSecondPhase, createProductionThirdPhase } from "@/app/_actions/production-phase";
 import { formatProductionName } from "@/lib/production-naming";
 import {
   evaluateProductionParametersWithFormula,
@@ -45,12 +45,13 @@ function buildIngredientsFromFormula(formula: ProductionFormulaView | null | und
   }));
 }
 
-export default function TabProduccion({ tanks, productions, rawMaterials, locations, formulas, userEmail }: any) {
+export default function TabProduccion({ tanks, productions, rawMaterials, locations, formulas, baseBeverageInventory, userEmail }: any) {
   const safeTanks = Array.isArray(tanks) ? tanks : [];
   const safeProductions = Array.isArray(productions) ? productions : [];
   const safeRM = Array.isArray(rawMaterials) ? rawMaterials : [];
   const safeLocations = Array.isArray(locations) ? locations : [];
   const safeFormulas = Array.isArray(formulas) ? formulas : [];
+  const safeBaseBeverageInventory = Array.isArray(baseBeverageInventory) ? baseBeverageInventory : [];
 
   const [nfcBaseUrl, setNfcBaseUrl] = useState("");
   React.useEffect(() => {
@@ -71,6 +72,8 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [prodView, setProdView] = useState<ProdView>("params");
   const [showSecondPhaseModal, setShowSecondPhaseModal] = useState(false);
   const [secondPhaseTarget, setSecondPhaseTarget] = useState<any | null>(null);
+  const [showThirdPhaseModal, setShowThirdPhaseModal] = useState(false);
+  const [thirdPhaseTarget, setThirdPhaseTarget] = useState<any | null>(null);
   const [newTankName, setNewTankName] = useState("");
   const [newTankCapacity, setNewTankCapacity] = useState("");
   const [tankSaving, setTankSaving] = useState(false);
@@ -79,6 +82,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [newProdType, setNewProdType] = useState<ProductionType>("A");
   const [newProdTank, setNewProdTank] = useState("");
   const [newProdStart, setNewProdStart] = useState(() => new Date().toISOString().slice(0, 16));
+  const [newProdInputLiters, setNewProdInputLiters] = useState("");
   const [newProdNotes, setNewProdNotes] = useState("");
   const [ingredients, setIngredients] = useState<IngredientInput[]>([]);
   const [prodSaving, setProdSaving] = useState(false);
@@ -116,11 +120,28 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [phase2Notes, setPhase2Notes] = useState("");
   const [phase2Saving, setPhase2Saving] = useState(false);
   const [phase2Error, setPhase2Error] = useState("");
+  const [phase2Additions, setPhase2Additions] = useState<IngredientInput[]>([]);
+  const [phase3Date, setPhase3Date] = useState(() => new Date().toISOString().slice(0, 16));
+  const [phase3RemainingLiters, setPhase3RemainingLiters] = useState("");
+  const [phase3Notes, setPhase3Notes] = useState("");
+  const [phase3Saving, setPhase3Saving] = useState(false);
+  const [phase3Error, setPhase3Error] = useState("");
 
   const filteredProds = useMemo(() => {
     if (statusFilter === "ALL") return safeProductions;
     return safeProductions.filter((p: any) => p.status === statusFilter);
   }, [safeProductions, statusFilter]);
+
+  const baseInventoryTotals = useMemo(() => {
+    return safeBaseBeverageInventory.reduce(
+      (acc: { produced: number; remaining: number }, row: any) => {
+        acc.produced += Number(row.litersProduced || 0);
+        acc.remaining += Number(row.litersRemaining || 0);
+        return acc;
+      },
+      { produced: 0, remaining: 0 }
+    );
+  }, [safeBaseBeverageInventory]);
 
   const formulasByCode = useMemo(() => {
     const map = new Map<string, any>();
@@ -150,6 +171,9 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     temperature: parseNum(phase2Temp),
     acidity: parseNum(phase2Acid),
   });
+  const selectedPhaseRecords = Array.isArray(selectedProd?.secondPhaseRecords) ? selectedProd.secondPhaseRecords : [];
+  const selectedProdPhase2 = selectedPhaseRecords.find((record: any) => Number(record.phase) === 2) || null;
+  const selectedProdPhase3 = selectedPhaseRecords.find((record: any) => Number(record.phase) === 3) || null;
 
   useEffect(() => {
     setIngredients(buildIngredientsFromFormula(selectedFormula));
@@ -196,6 +220,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       productionFormulaId: selectedFormula?.id,
       tankId: newProdTank,
       startedAt: newProdStart,
+      inputLiters: newProdInputLiters.trim() ? Number(newProdInputLiters) : undefined,
       notes: newProdNotes,
       createdBy: userEmail,
       ingredients: validIngredients,
@@ -211,6 +236,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     setNewProdType("A");
     setNewProdTank("");
     setNewProdStart(new Date().toISOString().slice(0, 16));
+    setNewProdInputLiters("");
     setNewProdNotes("");
     setIngredients([]);
     window.location.reload();
@@ -342,6 +368,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     setPhase2Temp("");
     setPhase2Acid("");
     setPhase2Notes("");
+    setPhase2Additions([]);
     setPhase2Error("");
     setShowSecondPhaseModal(true);
   };
@@ -367,6 +394,13 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       temperature: parseNum(phase2Temp),
       acidity: parseNum(phase2Acid),
       notes: phase2Notes,
+      additions: phase2Additions
+        .filter((item) => item.rawMaterialId && item.quantity > 0)
+        .map((item) => ({
+          rawMaterialId: item.rawMaterialId,
+          quantity: item.quantity,
+          locationId: item.locationId || undefined,
+        })),
     });
     setPhase2Saving(false);
 
@@ -382,6 +416,54 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     }
 
     setShowSecondPhaseModal(false);
+    window.location.reload();
+  };
+
+  const addPhase2IngredientRow = () => {
+    setPhase2Additions((prev) => [...prev, { rawMaterialId: "", quantity: 0, locationId: safeLocations[0]?.id || "" }]);
+  };
+
+  const removePhase2IngredientRow = (index: number) => {
+    setPhase2Additions((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const openThirdPhase = (prod: any) => {
+    const phase3 = Array.isArray(prod.secondPhaseRecords)
+      ? prod.secondPhaseRecords.find((record: any) => Number(record.phase) === 3)
+      : null;
+
+    setThirdPhaseTarget(prod);
+    setPhase3Date(new Date().toISOString().slice(0, 16));
+    setPhase3RemainingLiters(phase3?.remainingLiters != null ? String(Number(phase3.remainingLiters)) : "");
+    setPhase3Notes("");
+    setPhase3Error("");
+    setShowThirdPhaseModal(true);
+  };
+
+  const handleThirdPhase = async () => {
+    if (!thirdPhaseTarget) return;
+    setPhase3Error("");
+    if (!phase3RemainingLiters.trim()) {
+      setPhase3Error("Indica cuantos litros quedan en el contenedor");
+      return;
+    }
+
+    setPhase3Saving(true);
+    const res = await createProductionThirdPhase({
+      productionId: thirdPhaseTarget.id,
+      measuredAt: phase3Date,
+      remainingLiters: Number(phase3RemainingLiters),
+      notes: phase3Notes,
+      startedBy: userEmail,
+    });
+    setPhase3Saving(false);
+
+    if (res.error) {
+      setPhase3Error(res.error);
+      return;
+    }
+
+    setShowThirdPhaseModal(false);
     window.location.reload();
   };
 
@@ -409,11 +491,31 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
             </button>
           </div>
 
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Inventario bebida base</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{safeBaseBeverageInventory.length}</p>
+              <p className="text-xs text-slate-500">lotes listos</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Litros producidos</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{baseInventoryTotals.produced.toLocaleString("es-MX")}</p>
+              <p className="text-xs text-slate-500">litros terminados</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Litros remanentes</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{baseInventoryTotals.remaining.toLocaleString("es-MX")}</p>
+              <p className="text-xs text-slate-500">segun fase 3</p>
+            </div>
+          </div>
+
           <div className="space-y-3">
             {filteredProds.length === 0 && <p className="py-10 text-center text-sm italic text-slate-400">Sin lotes en este estado</p>}
             {filteredProds.map((prod: any) => {
               const formulaForProd = prod.formula || formulasByCode.get(prod.productType) || null;
               const profileForProdResolved = profileFromFormula(formulaForProd, prod.productType);
+              const productionAdditions = Array.isArray(prod.additions) ? prod.additions : [];
+              const phase2AdditionsForProd = productionAdditions.filter((addition: any) => isPhase2Addition(addition));
               const lastParam = prod.parameters?.length
                 ? [...prod.parameters].sort((a: any, b: any) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())[0]
                 : null;
@@ -425,7 +527,13 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                     acidity: lastParam.acidity != null ? Number(lastParam.acidity) : undefined,
                   })
                 : null;
-              const phase2 = prod.secondPhaseRecords?.length ? prod.secondPhaseRecords[0] : null;
+              const phaseRecords = Array.isArray(prod.secondPhaseRecords) ? prod.secondPhaseRecords : [];
+              const phase2 = phaseRecords.find((record: any) => Number(record.phase) === 2) || null;
+              const phase3 = phaseRecords.find((record: any) => Number(record.phase) === 3) || null;
+              const enteredLiters = prod.inputLiters != null ? Number(prod.inputLiters) : null;
+              const producedLiters = prod.litersProduced != null ? Number(prod.litersProduced) : null;
+              const remainingLiters = phase3?.remainingLiters != null ? Number(phase3.remainingLiters) : null;
+              const processLoss = enteredLiters != null && producedLiters != null ? Math.max(enteredLiters - producedLiters, 0) : null;
 
               return (
                 <div key={prod.id} className="rounded-xl border bg-white p-5 shadow-sm">
@@ -447,7 +555,8 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         <span>Tanque: {prod.tank?.name || "-"}</span>
                         <span>Inicio: {fmtDate(prod.startedAt)}</span>
                         <span>Duracion objetivo: {formatFormulaDuration(profileForProdResolved)}</span>
-                        {prod.litersProduced != null && <span>Salida: {Number(prod.litersProduced)} Lt</span>}
+                        {enteredLiters != null && <span>Entrada: {enteredLiters} Lt</span>}
+                        {producedLiters != null && <span>Salida: {producedLiters} Lt</span>}
                       </div>
                       <p className="max-w-3xl text-sm text-slate-600">{profileForProdResolved.formulaSummary}</p>
                       <div className="flex flex-wrap gap-2">
@@ -460,6 +569,18 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                           <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700">Sin insumos iniciales registrados</span>
                         )}
                       </div>
+                      {phase2AdditionsForProd.length > 0 && (
+                        <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-500">Adiciones de fase 2</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {phase2AdditionsForProd.map((addition: any) => (
+                              <span key={addition.id} className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-violet-700">
+                                {addition.rawMaterial?.name} {Number(addition.quantity)} {addition.rawMaterial?.unit}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                         {(Object.entries(profileForProdResolved.parameters) as [ParameterKey, any][]).map(([key, range]) => (
                           <div key={key} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -467,6 +588,25 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                             <p>{range.min} - {range.max}</p>
                           </div>
                         ))}
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                          <p className="font-black uppercase tracking-[0.2em] text-slate-400">Fase 1</p>
+                          <p>Entrada: {enteredLiters != null ? `${enteredLiters} Lt` : "-"}</p>
+                        </div>
+                        <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
+                          <p className="font-black uppercase tracking-[0.2em] text-violet-400">Fase 2</p>
+                          <p>{phase2 ? fmtDate(phase2.measuredAt) : "Pendiente"}</p>
+                        </div>
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                          <p className="font-black uppercase tracking-[0.2em] text-emerald-400">Fase 3</p>
+                          <p>{remainingLiters != null ? `${remainingLiters} Lt restantes` : "Pendiente"}</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          <p className="font-black uppercase tracking-[0.2em] text-slate-400">Resultado</p>
+                          <p>{producedLiters != null ? `${producedLiters} Lt` : "-"}</p>
+                          {processLoss != null && <p>Diferencia: {processLoss} Lt</p>}
+                        </div>
                       </div>
                       {lastParam && (
                         <div className={`rounded-lg border px-3 py-2 text-xs ${lastCheck && !lastCheck.ok ? "border-amber-200 bg-amber-50 text-amber-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
@@ -479,6 +619,11 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                           Fase dos iniciada por {phase2.startedBy || "-"} | Recibio: {phase2.receivedBy || "-"} | Midio: {phase2.measuredBy || "-"} | Estado recibido: {phase2.receivedCondition || "-"}
                         </div>
                       )}
+                      {phase3 && (
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                          Fase tres registrada el {fmtDate(phase3.measuredAt)} | Litros restantes en contenedor: {phase3.remainingLiters != null ? Number(phase3.remainingLiters) : "-"} Lt
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex min-w-[170px] flex-col gap-2">
@@ -486,8 +631,24 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         <>
                           <button onClick={() => { setSelectedProd(prod); setProdView("params"); }} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Parametros</button>
                           <button onClick={() => { setSelectedProd(prod); setProdView("additions"); }} className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white hover:bg-amber-600">Agregar insumo</button>
-                          <button onClick={() => openSecondPhase(prod)} className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white hover:bg-violet-700">Iniciar segunda fase</button>
-                          <button onClick={() => { setSelectedProd(prod); setProdView("complete"); }} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">Completar</button>
+                          {!phase2 && (
+                            <button onClick={() => openSecondPhase(prod)} className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white hover:bg-violet-700">Iniciar segunda fase</button>
+                          )}
+                          {phase2 && !phase3 && (
+                            <button onClick={() => openThirdPhase(prod)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">Iniciar fase 3: extraccion</button>
+                          )}
+                          {phase3 && (
+                            <button
+                              onClick={() => {
+                                setSelectedProd(prod);
+                                setProdView("complete");
+                                setCompleteLt(phase3?.remainingLiters != null ? String(Number(phase3.remainingLiters)) : "");
+                              }}
+                              className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
+                            >
+                              Completar
+                            </button>
+                          )}
                           <button onClick={() => handleCancel(prod.id)} className="rounded-lg bg-rose-100 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-200">Cancelar</button>
                         </>
                       )}
@@ -572,6 +733,9 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                     </Field>
                     <Field label="Inicio">
                       <input type="datetime-local" value={newProdStart} onChange={(e) => setNewProdStart(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
+                    </Field>
+                    <Field label="Litros ingresados">
+                      <input type="number" min="0" step="0.1" value={newProdInputLiters} onChange={(e) => setNewProdInputLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
                     </Field>
                   </div>
                   <p className="text-xs text-slate-500">
@@ -703,11 +867,30 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 <button onClick={() => setSelectedProd(null)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
               </div>
 
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="rounded-xl bg-slate-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Fase 1</p>
+                  <p className="mt-2 text-sm font-bold text-slate-900">{selectedProd.inputLiters != null ? `${Number(selectedProd.inputLiters)} Lt` : "-"}</p>
+                </div>
+                <div className="rounded-xl bg-violet-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-400">Fase 2</p>
+                  <p className="mt-2 text-sm font-bold text-violet-900">{selectedProdPhase2 ? fmtDate(selectedProdPhase2.measuredAt) : "Pendiente"}</p>
+                </div>
+                <div className="rounded-xl bg-emerald-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">Fase 3</p>
+                  <p className="mt-2 text-sm font-bold text-emerald-900">{selectedProdPhase3?.remainingLiters != null ? `${Number(selectedProdPhase3.remainingLiters)} Lt` : "Pendiente"}</p>
+                </div>
+                <div className="rounded-xl bg-slate-950 px-4 py-3 text-white">
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/60">Salida final</p>
+                  <p className="mt-2 text-sm font-bold">{selectedProd.litersProduced != null ? `${Number(selectedProd.litersProduced)} Lt` : "-"}</p>
+                </div>
+              </div>
+
               {selectedProd.status === "IN_PROGRESS" && (
                 <div className="flex gap-2 border-b pb-3">
                   <button onClick={() => setProdView("params")} className={subTabClass(prodView === "params")}>Parametros</button>
                   <button onClick={() => setProdView("additions")} className={subTabClass(prodView === "additions")}>Insumos</button>
-                  <button onClick={() => setProdView("complete")} className={subTabClass(prodView === "complete")}>Completar</button>
+                  {selectedProdPhase3 && <button onClick={() => setProdView("complete")} className={subTabClass(prodView === "complete")}>Completar</button>}
                 </div>
               )}
 
@@ -785,6 +968,41 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
               {prodView === "additions" && selectedProd.status === "IN_PROGRESS" && (
                 <div className="space-y-4">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-sm font-black text-slate-900">Insumos iniciales</p>
+                      <div className="mt-3 space-y-2">
+                        {selectedProd.ingredients?.length ? selectedProd.ingredients.map((ing: any) => (
+                          <div key={ing.id} className="rounded-lg bg-white px-3 py-2 text-sm text-slate-600">
+                            {ing.rawMaterial?.name} {Number(ing.quantity)} {ing.rawMaterial?.unit}
+                          </div>
+                        )) : (
+                          <p className="text-xs italic text-slate-400">Sin insumos iniciales registrados.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+                      <p className="text-sm font-black text-violet-900">Adiciones de fase 2</p>
+                      <div className="mt-3 space-y-2">
+                        {selectedProd.additions?.filter((addition: any) => isPhase2Addition(addition)).length ? selectedProd.additions
+                          .filter((addition: any) => isPhase2Addition(addition))
+                          .map((addition: any) => (
+                            <div key={addition.id} className="rounded-lg bg-white px-3 py-2 text-sm text-violet-700">
+                              <div className="font-semibold">
+                                {addition.rawMaterial?.name} {Number(addition.quantity)} {addition.rawMaterial?.unit}
+                              </div>
+                              <div className="mt-1 text-xs text-violet-500">
+                                {addition.location?.name || "Sin ubicacion"} | {fmtDate(addition.addedAt)}
+                              </div>
+                            </div>
+                          )) : (
+                          <p className="text-xs italic text-violet-500">Todavia no hay adiciones registradas en fase 2.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <Field label="Insumo">
                     <select value={addRM} onChange={(e) => setAddRM(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
                       <option value="">Selecciona</option>
@@ -813,7 +1031,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 </div>
               )}
 
-              {prodView === "complete" && selectedProd.status === "IN_PROGRESS" && (
+              {prodView === "complete" && selectedProd.status === "IN_PROGRESS" && selectedProdPhase3 && (
                 <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
                   <p className="text-sm font-black text-emerald-800">Finalizar produccion</p>
                   <div className="mt-3 grid grid-cols-2 gap-3">
@@ -881,6 +1099,58 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 </div>
               )}
 
+              <div className="rounded-xl border border-violet-100 bg-violet-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-violet-900">Insumos adicionales de fase 2</p>
+                    <p className="text-xs text-violet-700">Aqui puedes agregar productos extra que entren justo al iniciar esta fase.</p>
+                  </div>
+                  <button onClick={addPhase2IngredientRow} type="button" className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100">
+                    Agregar producto
+                  </button>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {phase2Additions.map((ing, index) => (
+                    <div key={index} className="flex flex-wrap gap-2">
+                      <select
+                        value={ing.rawMaterialId}
+                        onChange={(e) => setPhase2Additions((prev) => prev.map((row, idx) => idx === index ? { ...row, rawMaterialId: e.target.value } : row))}
+                        className="min-w-[220px] flex-1 rounded-lg border p-2 text-xs"
+                      >
+                        <option value="">Producto / insumo</option>
+                        {safeRM.filter((rm: any) => !rm.isArchived).map((rm: any) => (
+                          <option key={rm.id} value={rm.id}>{rm.name} ({rm.unit})</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={ing.quantity || ""}
+                        onChange={(e) => setPhase2Additions((prev) => prev.map((row, idx) => idx === index ? { ...row, quantity: Number(e.target.value) } : row))}
+                        className="w-28 rounded-lg border p-2 text-xs text-center"
+                        placeholder="Cantidad"
+                      />
+                      <select
+                        value={ing.locationId}
+                        onChange={(e) => setPhase2Additions((prev) => prev.map((row, idx) => idx === index ? { ...row, locationId: e.target.value } : row))}
+                        className="min-w-[180px] rounded-lg border p-2 text-xs"
+                      >
+                        <option value="">Ubicacion</option>
+                        {safeLocations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                      </select>
+                      <button onClick={() => removePhase2IngredientRow(index)} type="button" className="rounded-lg px-3 text-rose-600 hover:bg-rose-100">
+                        x
+                      </button>
+                    </div>
+                  ))}
+                  {phase2Additions.length === 0 && (
+                    <p className="text-xs italic text-violet-700/80">No hay productos adicionales capturados para esta fase.</p>
+                  )}
+                </div>
+              </div>
+
               <Field label="Notas">
                 <textarea value={phase2Notes} onChange={(e) => setPhase2Notes(e.target.value)} rows={3} className="w-full rounded-lg border p-2 text-sm" />
               </Field>
@@ -891,6 +1161,44 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 <button onClick={() => setShowSecondPhaseModal(false)} className="flex-1 rounded-lg border py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
                 <button onClick={handleSecondPhase} disabled={phase2Saving} className="flex-1 rounded-lg bg-violet-600 py-2 text-sm font-bold text-white hover:bg-violet-700 disabled:bg-slate-300">
                   {phase2Saving ? "Guardando..." : "Guardar fase dos"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showThirdPhaseModal && thirdPhaseTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="space-y-4 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-slate-950">Iniciar fase 3: extraccion</h3>
+                  <p className="text-xs text-slate-500">{thirdPhaseTarget.name} | Tipo {thirdPhaseTarget.productType}</p>
+                </div>
+                <button onClick={() => setShowThirdPhaseModal(false)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Fecha y hora de extraccion">
+                  <input type="datetime-local" value={phase3Date} onChange={(e) => setPhase3Date(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
+                </Field>
+                <Field label="Litros que quedan en el contenedor">
+                  <input type="number" min="0" step="0.1" value={phase3RemainingLiters} onChange={(e) => setPhase3RemainingLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
+                </Field>
+              </div>
+
+              <Field label="Notas">
+                <textarea value={phase3Notes} onChange={(e) => setPhase3Notes(e.target.value)} rows={3} className="w-full rounded-lg border p-2 text-sm" />
+              </Field>
+
+              {phase3Error && <p className="text-sm font-semibold text-rose-600">{phase3Error}</p>}
+
+              <div className="flex gap-3">
+                <button onClick={() => setShowThirdPhaseModal(false)} className="flex-1 rounded-lg border py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
+                <button onClick={handleThirdPhase} disabled={phase3Saving} className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:bg-slate-300">
+                  {phase3Saving ? "Guardando..." : "Guardar fase 3"}
                 </button>
               </div>
             </div>
@@ -920,6 +1228,10 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       )}
     </section>
   );
+}
+
+function isPhase2Addition(addition: any) {
+  return typeof addition?.notes === "string" && addition.notes.toLowerCase().startsWith("fase 2");
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

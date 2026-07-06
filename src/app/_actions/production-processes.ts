@@ -114,19 +114,85 @@ export async function completeLabelingBatch(
   data?: { unitsReceived?: number; unitsLabeled?: number; labelsUsed?: number; notes?: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    await db.$executeRaw`
-      UPDATE "LabelingBatch"
-      SET "status" = 'COMPLETED',
-          "completedAt" = NOW(),
-          "unitsReceived" = COALESCE(${data?.unitsReceived ?? null}, "unitsReceived"),
-          "unitsLabeled" = COALESCE(${data?.unitsLabeled ?? null}, "unitsLabeled"),
-          "labelsUsed" = COALESCE(${data?.labelsUsed ?? null}, "labelsUsed"),
-          "notes" = COALESCE(${data?.notes ?? null}, "notes"),
-          "updatedAt" = NOW()
-      WHERE "id" = ${batchId}
-    `;
+    await db.$transaction(async (tx) => {
+      const batch = await tx.labelingBatch.findUnique({
+        where: { id: batchId },
+        include: {
+          flavor: true,
+          location: true,
+        },
+      });
+
+      if (!batch) {
+        throw new Error("El proceso de etiquetado no existe");
+      }
+
+      if (batch.status === "COMPLETED") {
+        return;
+      }
+
+      const unitsLabeled = data?.unitsLabeled ?? batch.unitsLabeled ?? 0;
+      const unitsReceived = data?.unitsReceived ?? batch.unitsReceived ?? null;
+      const labelsUsed = data?.labelsUsed ?? batch.labelsUsed ?? null;
+      const notes = data?.notes ?? batch.notes ?? null;
+
+      if (!batch.flavorId) {
+        throw new Error("El etiquetado necesita un sabor para entrar al inventario");
+      }
+
+      if (!batch.locationId) {
+        throw new Error("El etiquetado necesita una ubicacion para entrar al inventario");
+      }
+
+      if (!unitsLabeled || unitsLabeled <= 0) {
+        throw new Error("Indica cuantas botellas etiquetadas se produjeron antes de completar el proceso");
+      }
+
+      await tx.labelingBatch.update({
+        where: { id: batchId },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+          unitsReceived,
+          unitsLabeled,
+          labelsUsed,
+          notes,
+        },
+      });
+
+      await tx.stock.upsert({
+        where: {
+          flavorId_locationId: {
+            flavorId: batch.flavorId,
+            locationId: batch.locationId,
+          },
+        },
+        create: {
+          flavorId: batch.flavorId,
+          locationId: batch.locationId,
+          quantity: unitsLabeled,
+        },
+        update: {
+          quantity: { increment: unitsLabeled },
+        },
+      });
+
+      await tx.inventoryMovement.create({
+        data: {
+          flavorId: batch.flavorId,
+          locationId: batch.locationId,
+          type: "IN",
+          quantity: unitsLabeled,
+          reason: `Entrada por etiquetado: ${batch.name}`,
+          userId: batch.createdBy || null,
+        },
+      });
+    });
 
     revalidatePath("/admin/production");
+    revalidatePath("/admin/inventory");
+    revalidatePath("/admin/inventory/products");
+    revalidatePath("/pos");
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message || "Error al completar el etiquetado" };

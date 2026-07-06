@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SalesHistory } from "@/components/pos/sales-history";
@@ -14,6 +14,13 @@ const formatMoney = (v: number) =>
   v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type PaymentMethod = "CASH" | "CARD" | "TRANSFER" | "CONSIGNMENT" | "COURTESY";
+
+type PosClient = {
+  id: string;
+  fullName: string;
+  email?: string | null;
+  rfc?: string | null;
+};
 
 const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; emoji: string }[] = [
   { value: "CASH",        label: "Efectivo",      emoji: "💵" },
@@ -230,24 +237,7 @@ export const PosInterface = ({
           )}
         </div>
         <div className="bg-white p-3 rounded-2xl border-2 border-dashed border-gray-200 flex items-center gap-2">
-          <div className={`p-1.5 rounded-lg shrink-0 ${selectedClient ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400"}`}>
-            <User size={15} />
-          </div>
-          <select
-            value={selectedClient?.id ?? ""}
-            onChange={e => setSelectedClient(clients.find((c: any) => c.id === e.target.value) ?? null)}
-            className="flex-1 bg-transparent outline-none font-bold text-xs text-gray-700 cursor-pointer min-w-0"
-          >
-            <option value="">Cliente Mostrador</option>
-            {clients.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.fullName}</option>
-            ))}
-          </select>
-          {selectedClient && (
-            <button onClick={() => setSelectedClient(null)} className="text-gray-300 hover:text-red-500 shrink-0">
-              <X size={13} strokeWidth={3} />
-            </button>
-          )}
+          <ClientSearchSelect clients={clients} selectedClient={selectedClient} onSelectClient={setSelectedClient} compact />
         </div>
       </div>
 
@@ -643,24 +633,7 @@ export const PosInterface = ({
                 {/* Cliente */}
                 <div className="px-4 py-3 bg-gray-50 border-b shrink-0">
                   <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-dashed border-gray-200">
-                    <div className={`p-1.5 rounded-lg shrink-0 ${selectedClient ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400"}`}>
-                      <User size={14} />
-                    </div>
-                    <select
-                      value={selectedClient?.id ?? ""}
-                      onChange={e => setSelectedClient(clients.find((c: any) => c.id === e.target.value) ?? null)}
-                      className="flex-1 bg-transparent outline-none font-bold text-xs text-gray-700 cursor-pointer"
-                    >
-                      <option value="">Cliente Mostrador</option>
-                      {clients.map((c: any) => (
-                        <option key={c.id} value={c.id}>{c.fullName}</option>
-                      ))}
-                    </select>
-                    {selectedClient && (
-                      <button onClick={() => setSelectedClient(null)} className="text-gray-300 hover:text-red-500 shrink-0">
-                        <X size={12} strokeWidth={3} />
-                      </button>
-                    )}
+                    <ClientSearchSelect clients={clients} selectedClient={selectedClient} onSelectClient={setSelectedClient} compact />
                   </div>
                 </div>
 
@@ -997,6 +970,116 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between text-sm">
       <span className="text-gray-400 font-bold">{label}</span>
       <span className="text-gray-800 font-black">{value}</span>
+    </div>
+  );
+}
+
+function ClientSearchSelect({
+  clients,
+  selectedClient,
+  onSelectClient,
+  compact = false,
+}: {
+  clients: PosClient[];
+  selectedClient: PosClient | null;
+  onSelectClient: (client: PosClient | null) => void;
+  compact?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setQuery(selectedClient?.fullName ?? "");
+  }, [selectedClient]);
+
+  const filteredClients = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return clients.slice(0, 12);
+
+    return clients.filter((client) => {
+      const name = client.fullName?.toLowerCase() || "";
+      const email = client.email?.toLowerCase() || "";
+      const rfc = client.rfc?.toLowerCase() || "";
+      return name.includes(normalized) || email.includes(normalized) || rfc.includes(normalized);
+    }).slice(0, 12);
+  }, [clients, query]);
+
+  return (
+    <div className="relative flex-1 min-w-0">
+      <div className="flex items-center gap-2">
+        <div className={`p-1.5 rounded-lg shrink-0 ${selectedClient ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400"}`}>
+          <User size={compact ? 14 : 15} />
+        </div>
+        <input
+          value={query}
+          onChange={(e) => {
+            const nextValue = e.target.value;
+            setQuery(nextValue);
+            setOpen(true);
+            if (!nextValue.trim()) {
+              onSelectClient(null);
+            }
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder="Cliente Mostrador o busca cliente..."
+          className={`flex-1 bg-transparent outline-none text-gray-700 min-w-0 ${compact ? "font-bold text-xs" : "font-bold text-sm"}`}
+        />
+        {selectedClient && (
+          <button
+            type="button"
+            onClick={() => {
+              onSelectClient(null);
+              setQuery("");
+              setOpen(false);
+            }}
+            className="text-gray-300 hover:text-red-500 shrink-0"
+          >
+            <X size={compact ? 12 : 13} strokeWidth={3} />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-[calc(100%+0.45rem)] z-20 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              onSelectClient(null);
+              setQuery("");
+              setOpen(false);
+            }}
+            className="flex w-full items-center justify-between border-b border-gray-100 px-3 py-2 text-left text-xs font-bold text-gray-500 hover:bg-gray-50"
+          >
+            <span>Cliente Mostrador</span>
+            {!selectedClient && <span className="text-[10px] uppercase tracking-widest text-green-600">Actual</span>}
+          </button>
+
+          <div className="max-h-64 overflow-y-auto">
+            {filteredClients.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-gray-400">No hay clientes con esa busqueda.</div>
+            ) : (
+              filteredClients.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onSelectClient(client);
+                    setQuery(client.fullName);
+                    setOpen(false);
+                  }}
+                  className={`block w-full px-3 py-2 text-left hover:bg-blue-50 ${selectedClient?.id === client.id ? "bg-blue-50" : ""}`}
+                >
+                  <p className="text-xs font-bold text-gray-800">{client.fullName}</p>
+                  <p className="text-[11px] text-gray-400">{client.email || client.rfc || "Sin dato adicional"}</p>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

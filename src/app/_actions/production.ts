@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { formatProductionName } from "@/lib/production-naming";
 import { revalidatePath } from "next/cache";
@@ -122,12 +123,13 @@ export async function createProduction(
     productionFormulaId?: string;
     tankId: string;
     startedAt: string;
+    inputLiters?: number;
     notes?: string;
     createdBy?: string;
     ingredients: IngredientInput[];
   }
 ): Promise<{ success: boolean; id?: string; error?: string }> {
-  const { productType, productionFormulaId, tankId, startedAt, notes, createdBy, ingredients } = data;
+  const { productType, productionFormulaId, tankId, startedAt, inputLiters, notes, createdBy, ingredients } = data;
 
   if (!tankId) return { success: false, error: "Selecciona un tanque" };
   if (!startedAt) return { success: false, error: "La fecha de inicio es requerida" };
@@ -167,6 +169,19 @@ export async function createProduction(
         await tx.$executeRaw`
           UPDATE "Production"
           SET "productionFormulaId" = ${productionFormulaId}
+          WHERE "id" = ${prod.id}
+        `;
+      }
+
+      if (inputLiters != null) {
+        await tx.$executeRawUnsafe(`
+          ALTER TABLE "Production"
+          ADD COLUMN IF NOT EXISTS "inputLiters" DECIMAL(65,30)
+        `).catch(() => null);
+
+        await tx.$executeRaw`
+          UPDATE "Production"
+          SET "inputLiters" = ${inputLiters}
           WHERE "id" = ${prod.id}
         `;
       }
@@ -312,17 +327,91 @@ export async function completeProduction(
   notes?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    await db.production.update({
-      where: { id: productionId },
-      data: {
-        status: "COMPLETED",
-        completedAt: new Date(),
-        litersProduced,
-        notes,
-      },
+    await db.$transaction(async (tx) => {
+      const productionRows = await tx.$queryRaw<{
+        id: string;
+        productType: string;
+        tankId: string | null;
+        inputLiters: number | string | null;
+        notes: string | null;
+      }[]>`
+        SELECT "id", "productType", "tankId", "inputLiters", "notes"
+        FROM "Production"
+        WHERE "id" = ${productionId}
+        LIMIT 1
+      `;
+
+      const production = productionRows[0];
+
+      if (!production) {
+        throw new Error("La produccion no existe");
+      }
+
+      const phaseThreeRows = await tx.$queryRaw<{ remainingLiters: number | string | null }[]>`
+        SELECT "remainingLiters"
+        FROM "ProductionPhaseRecord"
+        WHERE "productionId" = ${productionId}
+          AND "phase" = 3
+        ORDER BY "measuredAt" DESC
+        LIMIT 1
+      `;
+
+      const remainingLitersValue = phaseThreeRows[0]?.remainingLiters;
+      const remainingLiters = remainingLitersValue != null ? Number(remainingLitersValue) : null;
+
+      await tx.production.update({
+        where: { id: productionId },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+          litersProduced,
+          notes,
+        },
+      });
+
+      await tx.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "BaseBeverageInventory" (
+          "id" TEXT NOT NULL,
+          "productionId" TEXT NOT NULL,
+          "productType" TEXT NOT NULL,
+          "tankId" TEXT,
+          "litersEntered" DECIMAL(65,30),
+          "litersProduced" DECIMAL(65,30) NOT NULL,
+          "litersRemaining" DECIMAL(65,30),
+          "status" TEXT NOT NULL DEFAULT 'AVAILABLE',
+          "notes" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "BaseBeverageInventory_pkey" PRIMARY KEY ("id")
+        )
+      `);
+
+      await tx.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS "BaseBeverageInventory_productionId_key"
+        ON "BaseBeverageInventory"("productionId")
+      `);
+
+      await tx.$executeRaw`
+        INSERT INTO "BaseBeverageInventory"
+        ("id","productionId","productType","tankId","litersEntered","litersProduced","litersRemaining","status","notes","createdAt","updatedAt")
+        VALUES
+        (${randomUUID()}, ${productionId}, ${production.productType}, ${production.tankId}, ${production.inputLiters != null ? Number(production.inputLiters) : null}, ${litersProduced}, ${remainingLiters}, 'AVAILABLE', ${notes?.trim() || production.notes || null}, NOW(), NOW())
+        ON CONFLICT ("productionId")
+        DO UPDATE SET
+          "tankId" = EXCLUDED."tankId",
+          "litersEntered" = EXCLUDED."litersEntered",
+          "litersProduced" = EXCLUDED."litersProduced",
+          "litersRemaining" = EXCLUDED."litersRemaining",
+          "status" = 'AVAILABLE',
+          "notes" = EXCLUDED."notes",
+          "updatedAt" = NOW()
+      `;
     });
 
     revalidatePath("/admin");
+    revalidatePath("/admin/production");
+    revalidatePath("/admin/inventory");
+    revalidatePath("/admin/inventory/base-beverage");
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message || "Error al completar la producción" };

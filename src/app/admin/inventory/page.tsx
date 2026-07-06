@@ -4,6 +4,7 @@ import { Boxes, FlaskConical, Package2, Truck, ArrowRight } from "lucide-react";
 
 const SECTIONS = [
   { href: "/admin/inventory/products", title: "Inventario de productos", desc: "Botellas etiquetadas y packs", icon: <Package2 size={18} /> },
+  { href: "/admin/inventory/base-beverage", title: "Bebida base", desc: "Litros terminados por lote y tanque", icon: <FlaskConical size={18} /> },
   { href: "/admin/inventory/raw-materials", title: "Materia prima", desc: "Stock por almacén", icon: <Boxes size={18} /> },
   { href: "/admin/production", title: "Producción", desc: "Tanques, lotes y parámetros", icon: <FlaskConical size={18} /> },
   { href: "/admin/inventory/transfers", title: "Traspasos", desc: "Entre ubicaciones y almacenes", icon: <Truck size={18} /> },
@@ -28,7 +29,7 @@ export default async function InventoryPage() {
         </p>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {[
           { label: "Ubicaciones", value: locations },
           { label: "Sabores", value: flavors },

@@ -28,6 +28,7 @@ export default function ProductionWorkspace({
   flavors,
   gasificationBatches,
   labelingBatches,
+  baseBeverageInventory,
   userEmail,
 }: any) {
   const router = useRouter();
@@ -50,6 +51,7 @@ export default function ProductionWorkspace({
           rawMaterials={rawMaterials}
           locations={locations}
           formulas={formulas}
+          baseBeverageInventory={baseBeverageInventory}
           userEmail={userEmail}
         />
       )}
@@ -241,6 +243,19 @@ function LabelingPanel({ locations, flavors, batches, userEmail, onRefresh }: an
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const bottleInventory = React.useMemo(() => {
+    return (flavors || [])
+      .map((flavor: any) => {
+        const total = (flavor.locationStocks || []).reduce((sum: number, stock: any) => sum + Number(stock.quantity || 0), 0);
+        return {
+          ...flavor,
+          total,
+        };
+      })
+      .filter((flavor: any) => flavor.total > 0)
+      .sort((a: any, b: any) => b.total - a.total);
+  }, [flavors]);
+  const totalLabeledBottles = bottleInventory.reduce((sum: number, flavor: any) => sum + flavor.total, 0);
 
   const submit = async () => {
     setSaving(true);
@@ -276,46 +291,92 @@ function LabelingPanel({ locations, flavors, batches, userEmail, onRefresh }: an
 
   return (
     <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Nuevo proceso</p>
-        <h3 className="mt-2 text-2xl font-black text-slate-950">Etiquetado</h3>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <Field label="Nombre del lote">
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
+      <div className="space-y-6">
+        <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Nuevo proceso</p>
+          <h3 className="mt-2 text-2xl font-black text-slate-950">Etiquetado</h3>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Field label="Nombre del lote">
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
+            </Field>
+            <Field label="Sabor">
+              <select value={form.flavorId} onChange={(e) => setForm({ ...form, flavorId: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm">
+                <option value="">Selecciona</option>
+                {flavors.map((flavor: any) => <option key={flavor.id} value={flavor.id}>{flavor.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Ubicacion">
+              <select value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm">
+                <option value="">Selecciona</option>
+                {locations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Inicio">
+              <input type="datetime-local" value={form.startedAt} onChange={(e) => setForm({ ...form, startedAt: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
+            </Field>
+            <Field label="Botellas recibidas">
+              <input type="number" value={form.unitsReceived} onChange={(e) => setForm({ ...form, unitsReceived: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
+            </Field>
+            <Field label="Botellas etiquetadas">
+              <input type="number" value={form.unitsLabeled} onChange={(e) => setForm({ ...form, unitsLabeled: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
+            </Field>
+            <Field label="Etiquetas usadas">
+              <input type="number" value={form.labelsUsed} onChange={(e) => setForm({ ...form, labelsUsed: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
+            </Field>
+          </div>
+          <Field label="Notas">
+            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
           </Field>
-          <Field label="Sabor">
-            <select value={form.flavorId} onChange={(e) => setForm({ ...form, flavorId: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm">
-              <option value="">Selecciona</option>
-              {flavors.map((flavor: any) => <option key={flavor.id} value={flavor.id}>{flavor.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Ubicacion">
-            <select value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm">
-              <option value="">Selecciona</option>
-              {locations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Inicio">
-            <input type="datetime-local" value={form.startedAt} onChange={(e) => setForm({ ...form, startedAt: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-          </Field>
-          <Field label="Botellas recibidas">
-            <input type="number" value={form.unitsReceived} onChange={(e) => setForm({ ...form, unitsReceived: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-          </Field>
-          <Field label="Botellas etiquetadas">
-            <input type="number" value={form.unitsLabeled} onChange={(e) => setForm({ ...form, unitsLabeled: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-          </Field>
-          <Field label="Etiquetas usadas">
-            <input type="number" value={form.labelsUsed} onChange={(e) => setForm({ ...form, labelsUsed: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-          </Field>
-        </div>
-        <Field label="Notas">
-          <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-        </Field>
-        {error && <p className="mt-3 text-sm font-semibold text-rose-600">{error}</p>}
-        <button onClick={submit} disabled={saving} className="mt-4 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300">
-          {saving ? "Guardando..." : "Crear proceso de etiquetado"}
-        </button>
-      </section>
+          {error && <p className="mt-3 text-sm font-semibold text-rose-600">{error}</p>}
+          <button onClick={submit} disabled={saving} className="mt-4 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300">
+            {saving ? "Guardando..." : "Crear proceso de etiquetado"}
+          </button>
+        </section>
+
+        <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Inventario generado</p>
+              <h4 className="mt-2 text-xl font-black text-slate-950">Botellas etiquetadas</h4>
+              <p className="mt-2 text-sm text-slate-500">
+                Cada proceso de etiquetado completado entra aqui y queda disponible para envasado, gasificado o movimientos posteriores.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-950 px-4 py-3 text-right text-white">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/60">Total</p>
+              <p className="mt-2 text-3xl font-black">{totalLabeledBottles}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {bottleInventory.length === 0 && (
+              <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                Aun no hay botellas etiquetadas registradas en inventario.
+              </div>
+            )}
+            {bottleInventory.map((flavor: any) => (
+              <div key={flavor.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-black text-slate-950">{flavor.name}</p>
+                    <p className="text-xs text-slate-400">Stock disponible para procesos posteriores</p>
+                  </div>
+                  <p className="text-2xl font-black text-slate-950">{flavor.total}</p>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(flavor.locationStocks || [])
+                    .filter((stock: any) => Number(stock.quantity || 0) > 0)
+                    .map((stock: any) => (
+                      <span key={stock.id} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">
+                        {stock.location?.name || "Sin ubicacion"}: {Number(stock.quantity)}
+                      </span>
+                    ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
 
       <BatchList
         title="Etiquetados registrados"

@@ -491,6 +491,7 @@ model Tank {
   capacityLt  Decimal?
   isActive    Boolean      @default(true)
   productions Production[]
+  baseBeverageInventories BaseBeverageInventory[]
   gasificationBatches GasificationBatch[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -595,6 +596,7 @@ model Production {
   tank            Tank      @relation(fields: [tankId], references: [id])
   status          String    @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED | CANCELLED
   startedAt       DateTime
+  inputLiters     Decimal?
   completedAt     DateTime?
   litersProduced  Decimal?
   notes           String?
@@ -605,10 +607,31 @@ model Production {
   ingredients     ProductionIngredient[]
   additions       ProductionAddition[]
   parameters      ProductionParameter[]
+  baseBeverageInventory BaseBeverageInventory?
 
   @@index([tankId])
   @@index([status])
   @@index([productionFormulaId])
+}
+
+model BaseBeverageInventory {
+  id             String     @id @default(cuid())
+  productionId   String     @unique
+  production     Production @relation(fields: [productionId], references: [id], onDelete: Cascade)
+  productType    String
+  tankId         String?
+  tank           Tank?      @relation(fields: [tankId], references: [id], onDelete: SetNull)
+  litersEntered  Decimal?
+  litersProduced Decimal
+  litersRemaining Decimal?
+  status         String     @default("AVAILABLE")
+  notes          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status])
+  @@index([productType])
+  @@index([tankId])
 }
 
 model ProductionIngredient {
