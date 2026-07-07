@@ -138,11 +138,27 @@ export async function createProduction(
     const production = await db.$transaction(async (tx) => {
       const tank = await tx.tank.findUnique({
         where: { id: tankId },
-        select: { id: true, name: true },
+        select: { id: true, name: true, isActive: true },
       });
 
       if (!tank) {
-        throw new Error("El tanque seleccionado no existe");
+        throw new Error("La cubeta seleccionada no existe");
+      }
+
+      if (!tank.isActive) {
+        throw new Error("La cubeta seleccionada esta inactiva");
+      }
+
+      const activeProduction = await tx.production.findFirst({
+        where: {
+          tankId,
+          status: "IN_PROGRESS",
+        },
+        select: { id: true, name: true },
+      });
+
+      if (activeProduction) {
+        throw new Error(`La cubeta ya esta ocupada por el proceso ${activeProduction.name}`);
       }
 
       const productionName = formatProductionName(startedAt, tank.name, productType);

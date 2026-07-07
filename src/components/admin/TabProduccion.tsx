@@ -22,6 +22,8 @@ import {
   type ProductionFormulaView,
   type ProductionType,
 } from "@/lib/production-profiles";
+import { getContainerStatus, getContainerStatusClasses, getContainerStatusLabel } from "@/lib/container-status";
+import { resolvePublicAppUrl } from "@/lib/public-app-url";
 
 type ProdView = "params" | "additions" | "complete";
 
@@ -57,7 +59,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
   const [nfcBaseUrl, setNfcBaseUrl] = useState("");
   React.useEffect(() => {
-    setNfcBaseUrl(window.location.origin);
+    setNfcBaseUrl(resolvePublicAppUrl(window.location.origin));
   }, []);
 
   const [showPinModal, setShowPinModal] = useState(false);
@@ -134,6 +136,13 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     return safeProductions.filter((p: any) => p.status === statusFilter);
   }, [safeProductions, statusFilter]);
 
+  const availableTanks = useMemo(() => {
+    return safeTanks.filter((tank: any) => {
+      const activeProd = safeProductions.find((p: any) => p.tankId === tank.id && p.status === "IN_PROGRESS");
+      return tank.isActive && !activeProd;
+    });
+  }, [safeTanks, safeProductions]);
+
   const baseInventoryTotals = useMemo(() => {
     return safeBaseBeverageInventory.reduce(
       (acc: { produced: number; remaining: number }, row: any) => {
@@ -209,7 +218,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const handleCreateProd = async () => {
     setProdError("");
     if (!newProdTank) {
-      setProdError("Selecciona un tanque");
+      setProdError("Selecciona una cubeta");
       return;
     }
 
@@ -475,7 +484,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
         <h2 className="text-2xl font-black text-slate-950">Produccion de bebida base</h2>
         <div className="flex gap-2">
           <button onClick={() => setView("producciones")} className={tabClass(view === "producciones")}>Lotes</button>
-          <button onClick={() => setView("tanques")} className={tabClass(view === "tanques")}>Tanques</button>
+          <button onClick={() => setView("tanques")} className={tabClass(view === "tanques")}>Cubetas</button>
           <button onClick={() => setShowPinModal(true)} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">PIN NFC</button>
         </div>
       </div>
@@ -669,28 +678,49 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       {view === "tanques" && (
         <div className="space-y-4">
           <div className="flex justify-end">
-            <button onClick={() => setShowCreateTank(true)} className="rounded-lg bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800">Nuevo tanque</button>
+            <button onClick={() => setShowCreateTank(true)} className="rounded-lg bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800">Nueva cubeta</button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {safeTanks.map((tank: any) => {
               const activeProd = safeProductions.find((p: any) => p.tankId === tank.id && p.status === "IN_PROGRESS");
+              const status = getContainerStatus(tank, activeProd);
               return (
                 <div key={tank.id} className={`rounded-xl border bg-white p-4 ${!tank.isActive ? "opacity-60" : ""}`}>
                   <div className="flex items-center justify-between">
                     <p className="font-black text-slate-950">{tank.name}</p>
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${tank.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                      {tank.isActive ? "Activo" : "Inactivo"}
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${getContainerStatusClasses(status)}`}>
+                      {getContainerStatusLabel(status)}
                     </span>
                   </div>
                   <p className="mt-2 text-xs text-slate-500">Capacidad: {tank.capacityLt != null ? Number(tank.capacityLt) : "-"} Lt</p>
-                  {nfcBaseUrl && <p className="mt-2 truncate rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">{nfcBaseUrl}/tanque/{tank.id}</p>}
-                  <p className="mt-2 text-xs text-slate-500">{activeProd ? `En proceso: ${activeProd.name}` : "Disponible"}</p>
+                  {nfcBaseUrl && (
+                    <div className="mt-3 flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">QR de cubeta</p>
+                        <p className="mt-2 truncate text-[11px] text-slate-500">{nfcBaseUrl}/cubeta/{tank.id}</p>
+                      </div>
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${nfcBaseUrl}/cubeta/${tank.id}`)}`}
+                        alt={`QR de ${tank.name}`}
+                        className="h-16 w-16 rounded-lg border border-white bg-white"
+                      />
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-slate-500">{activeProd ? `Proceso activo: ${activeProd.name}` : tank.isActive ? "Lista para usarse" : "Fuera de operación"}</p>
                   <button
                     onClick={() => handleToggleTankActive(tank)}
                     className="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
                   >
                       {tank.isActive ? "Desactivar" : "Activar"}
                   </button>
+                  <a
+                    href={`/cubeta/${tank.id}/etiqueta`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
+                  >
+                    Imprimir QR
+                  </a>
                 </div>
               );
             })}
@@ -725,10 +755,10 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         <option value="C">C</option>
                       </select>
                     </Field>
-                    <Field label="Tanque">
+                    <Field label="Cubeta">
                       <select value={newProdTank} onChange={(e) => setNewProdTank(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
                         <option value="">Selecciona</option>
-                        {safeTanks.filter((tank: any) => tank.isActive).map((tank: any) => (
+                        {availableTanks.map((tank: any) => (
                           <option key={tank.id} value={tank.id}>{tank.name}</option>
                         ))}
                       </select>
@@ -836,7 +866,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
             <div className="space-y-4 p-6">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-black text-slate-950">Nuevo tanque</h3>
+                <h3 className="text-lg font-black text-slate-950">Nueva cubeta</h3>
                 <button type="button" onClick={() => setShowCreateTank(false)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
               </div>
               <Field label="Nombre">
@@ -864,7 +894,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-black text-slate-950">{selectedProd.name}</h3>
-                  <p className="text-xs text-slate-500">Tipo {selectedProd.productType} | {selectedProd.tank?.name || "-"}</p>
+                  <p className="text-xs text-slate-500">Tipo {selectedProd.productType} | Cubeta {selectedProd.tank?.name || "-"}</p>
                 </div>
                 <button onClick={() => setSelectedProd(null)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
               </div>

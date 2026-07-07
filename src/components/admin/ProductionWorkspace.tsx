@@ -38,7 +38,7 @@ export default function ProductionWorkspace({
     <div className="space-y-6">
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap gap-2">
-          <TabButton active={tab === "bebida"} onClick={() => setTab("bebida")} title="Bebida base" desc="Tanques, lotes e insumos" />
+          <TabButton active={tab === "bebida"} onClick={() => setTab("bebida")} title="Bebida base" desc="Cubetas, lotes e insumos" />
           <TabButton active={tab === "gasificado"} onClick={() => setTab("gasificado")} title="Gasificado" desc="Carbonatacion y cierre" />
           <TabButton active={tab === "etiquetado"} onClick={() => setTab("etiquetado")} title="Etiquetado" desc="Botellas, etiquetas y salida" />
         </div>
@@ -168,7 +168,7 @@ function GasificationPanel({ tanks, locations, flavors, batches, userEmail, onRe
               {flavors.map((flavor: any) => <option key={flavor.id} value={flavor.id}>{flavor.name}</option>)}
             </select>
           </Field>
-          <Field label="Tanque">
+          <Field label="Cubeta">
             <select value={form.tankId} onChange={(e) => setForm({ ...form, tankId: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm">
               <option value="">Selecciona</option>
               {tanks.map((tank: any) => <option key={tank.id} value={tank.id}>{tank.name}</option>)}
@@ -208,7 +208,7 @@ function GasificationPanel({ tanks, locations, flavors, batches, userEmail, onRe
         batches={batches}
         stats={(batch: any) => [
           `Sabor: ${batch.flavor?.name || "-"}`,
-          `Tanque: ${batch.tank?.name || "-"}`,
+          `Cubeta: ${batch.tank?.name || "-"}`,
           `Litros: ${batch.litersProcessed ?? "-"}`,
           `PSI: ${batch.pressurePsi ?? "-"}`,
         ]}
