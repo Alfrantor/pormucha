@@ -8,6 +8,16 @@ import { revalidatePath } from "next/cache";
 const PIN_SETTING_KEY = "produccion_pin";
 const DEFAULT_PIN = "1234";
 
+function isDecimalLike(value: unknown): value is { toNumber: () => number } {
+  if (!value || typeof value !== "object") return false;
+  return (
+    "s" in value &&
+    "e" in value &&
+    "d" in value &&
+    typeof (value as { toNumber?: unknown }).toNumber === "function"
+  );
+}
+
 export async function getProduccionPin(): Promise<string> {
   try {
     const setting = await db.systemSetting.findUnique({ where: { key: PIN_SETTING_KEY } });
@@ -56,7 +66,7 @@ export async function getTankWithProduction(tankId: string) {
       if (obj === null || obj === undefined) return obj;
       if (obj instanceof Date) return obj.toISOString();
       if (typeof obj === "bigint") return Number(obj);
-      if (obj?.constructor?.name === "Decimal") return Number(obj);
+      if (isDecimalLike(obj)) return obj.toNumber();
       if (Array.isArray(obj)) return obj.map(serialize);
       if (typeof obj === "object") {
         return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, serialize(v)]));
