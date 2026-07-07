@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 
 type FormulaItemInput = {
-  rawMaterialId: string;
+  sourceKind: "RAW_MATERIAL" | "BASE_BEVERAGE";
+  sourceProductionType?: "A" | "B" | "C" | null;
+  rawMaterialId?: string | null;
   quantity: number;
   defaultLocationId?: string | null;
   notes?: string;
@@ -39,7 +41,24 @@ export async function saveProductionFormula(data: {
       return { success: false, error: "La duracion debe ser mayor a cero" };
     }
 
-    const validItems = data.items.filter((item) => item.rawMaterialId && Number(item.quantity) > 0);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormulaItem"
+      ADD COLUMN IF NOT EXISTS "sourceKind" TEXT NOT NULL DEFAULT 'RAW_MATERIAL'
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormulaItem"
+      ADD COLUMN IF NOT EXISTS "sourceProductionType" TEXT
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormulaItem"
+      ALTER COLUMN "rawMaterialId" DROP NOT NULL
+    `).catch(() => null);
+
+    const validItems = data.items.filter((item) => {
+      if (!(Number(item.quantity) > 0)) return false;
+      if (item.sourceKind === "BASE_BEVERAGE") return !!item.sourceProductionType;
+      return !!item.rawMaterialId;
+    });
 
     await db.$transaction(async (tx) => {
       const existing = await tx.$queryRaw<{ id: string }[]>`
@@ -83,9 +102,9 @@ export async function saveProductionFormula(data: {
       for (const item of validItems) {
         await tx.$executeRaw`
           INSERT INTO "ProductionFormulaItem"
-          ("id","formulaId","rawMaterialId","quantity","defaultLocationId","notes","createdAt","updatedAt")
+          ("id","formulaId","sourceKind","sourceProductionType","rawMaterialId","quantity","defaultLocationId","notes","createdAt","updatedAt")
           VALUES
-          (${randomUUID()}, ${formulaId}, ${item.rawMaterialId}, ${item.quantity}, ${item.defaultLocationId || null}, ${item.notes?.trim() || null}, NOW(), NOW())
+          (${randomUUID()}, ${formulaId}, ${item.sourceKind}, ${item.sourceKind === "BASE_BEVERAGE" ? item.sourceProductionType || null : null}, ${item.sourceKind === "RAW_MATERIAL" ? item.rawMaterialId || null : null}, ${item.quantity}, ${item.defaultLocationId || null}, ${item.notes?.trim() || null}, NOW(), NOW())
         `;
       }
     });

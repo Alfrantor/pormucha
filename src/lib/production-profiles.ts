@@ -19,7 +19,9 @@ export type ProductionProfile = {
 
 export type ProductionFormulaItemView = {
   id: string;
-  rawMaterialId: string;
+  sourceKind: "RAW_MATERIAL" | "BASE_BEVERAGE";
+  sourceProductionType?: ProductionType | null;
+  rawMaterialId?: string | null;
   rawMaterialName: string;
   rawMaterialUnit: string;
   quantity: number;

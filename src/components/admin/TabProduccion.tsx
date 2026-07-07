@@ -38,11 +38,13 @@ function parseNum(value: string) {
 
 function buildIngredientsFromFormula(formula: ProductionFormulaView | null | undefined): IngredientInput[] {
   if (!formula) return [];
-  return formula.items.map((item) => ({
-    rawMaterialId: item.rawMaterialId,
-    quantity: Number(item.quantity),
-    locationId: item.defaultLocationId || "",
-  }));
+  return formula.items
+    .filter((item) => item.sourceKind !== "BASE_BEVERAGE" && item.rawMaterialId)
+    .map((item) => ({
+      rawMaterialId: item.rawMaterialId as string,
+      quantity: Number(item.quantity),
+      locationId: item.defaultLocationId || "",
+    }));
 }
 
 export default function TabProduccion({ tanks, productions, rawMaterials, locations, formulas, baseBeverageInventory, userEmail }: any) {

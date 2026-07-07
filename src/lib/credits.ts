@@ -5,6 +5,13 @@ export function toDecimal(value: number | string | Decimal | null | undefined) {
   return new Decimal(value ?? 0);
 }
 
+async function ensureCreditOrderIdColumn(tx: any) {
+  await tx.$executeRawUnsafe(`
+    ALTER TABLE "Credit"
+    ADD COLUMN IF NOT EXISTS "orderId" TEXT
+  `);
+}
+
 export async function syncClientCreditUsage(tx: any, clientId: string) {
   const agg = await tx.credit.aggregate({
     where: {
@@ -79,6 +86,8 @@ export async function createOrUpdateOrderCredit(tx: any, data: {
   dueDate: Date;
   notes?: string | null;
 }) {
+  await ensureCreditOrderIdColumn(tx);
+
   const existing = await tx.credit.findUnique({
     where: { orderId: data.orderId },
   });
@@ -112,6 +121,8 @@ export async function createOrUpdateOrderCredit(tx: any, data: {
 }
 
 export async function closeOrderCredit(tx: any, orderId: string, status: "PAID" | "CANCELLED" = "PAID") {
+  await ensureCreditOrderIdColumn(tx);
+
   const credit = await tx.credit.findUnique({
     where: { orderId },
     select: { id: true, clientId: true, status: true },

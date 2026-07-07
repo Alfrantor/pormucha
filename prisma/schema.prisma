@@ -16,7 +16,7 @@ model Client {
 
   // Datos personales/básicos
   fullName              String                // Nombre para persona física
-  email                 String                @unique
+  email                 String?               @unique
   phone                 String?
 
   // Datos fiscales (CLAVE para México)
@@ -525,8 +525,10 @@ model ProductionFormulaItem {
   id                String             @id @default(cuid())
   formulaId         String
   formula           ProductionFormula  @relation(fields: [formulaId], references: [id], onDelete: Cascade)
-  rawMaterialId     String
-  rawMaterial       RawMaterial        @relation(fields: [rawMaterialId], references: [id])
+  sourceKind        String             @default("RAW_MATERIAL")
+  sourceProductionType String?
+  rawMaterialId     String?
+  rawMaterial       RawMaterial?       @relation(fields: [rawMaterialId], references: [id])
   quantity          Decimal
   defaultLocationId String?
   defaultLocation   Location?          @relation(fields: [defaultLocationId], references: [id], onDelete: SetNull)

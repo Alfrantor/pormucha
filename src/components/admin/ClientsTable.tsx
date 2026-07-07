@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Search, Plus, Edit, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { ClientModal } from "./ClientModal";
@@ -26,8 +26,16 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return clients.filter(c => {
-      if (q && !c.fullName?.toLowerCase().includes(q) && !c.email?.toLowerCase().includes(q) && !c.rfc?.toLowerCase().includes(q)) return false;
+    return clients.filter((c) => {
+      if (
+        q &&
+        !c.fullName?.toLowerCase().includes(q) &&
+        !c.email?.toLowerCase().includes(q) &&
+        !c.rfc?.toLowerCase().includes(q) &&
+        !c.businessName?.toLowerCase().includes(q)
+      ) {
+        return false;
+      }
       if (classificationFilter && c.classification !== classificationFilter) return false;
       if (typeFilter && c.type !== typeFilter) return false;
       if (giroFilter && c.giroId !== giroFilter) return false;
@@ -53,39 +61,60 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
     DISTRIBUIDOR: "bg-amber-50 text-amber-600",
   };
 
+  const getTypeLabel = (type: string) => {
+    if (type === "FISICA") return "Física";
+    if (type === "JURIDICA") return "Moral";
+    return "Público general";
+  };
+
+  const getTypeClassName = (type: string) => {
+    if (type === "FISICA") return "bg-blue-50 text-blue-700";
+    if (type === "JURIDICA") return "bg-purple-50 text-purple-700";
+    return "bg-slate-100 text-slate-700";
+  };
+
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Clientes</h2>
-          <p className="text-xs text-gray-400 mt-0.5">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""} · página {safePage} de {totalPages}</p>
+          <p className="mt-0.5 text-xs text-gray-400">
+            {filtered.length} resultado{filtered.length !== 1 ? "s" : ""} · página {safePage} de {totalPages}
+          </p>
         </div>
         <button
-          onClick={() => { setEditingClient(null); setShowModal(true); }}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-bold"
+          onClick={() => {
+            setEditingClient(null);
+            setShowModal(true);
+          }}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700"
         >
-          <Plus size={16} /> Nuevo Cliente
+          <Plus size={16} /> Nuevo cliente
         </button>
       </div>
 
-      {/* Filtros */}
       <div className="flex flex-wrap gap-2">
-        <div className="flex-1 min-w-[200px] relative">
+        <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
           <input
             type="text"
-            placeholder="Nombre, email, RFC..."
+            placeholder="Nombre, correo, RFC o razón social..."
             value={search}
-            onChange={e => { setSearch(e.target.value); resetPage(); }}
-            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={(e) => {
+              setSearch(e.target.value);
+              resetPage();
+            }}
+            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
         <select
           value={classificationFilter}
-          onChange={e => { setClassificationFilter(e.target.value); resetPage(); }}
-          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          onChange={(e) => {
+            setClassificationFilter(e.target.value);
+            resetPage();
+          }}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">Clasificación</option>
           <option value="MINORISTA">Minorista</option>
@@ -95,44 +124,58 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
 
         <select
           value={typeFilter}
-          onChange={e => { setTypeFilter(e.target.value); resetPage(); }}
-          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          onChange={(e) => {
+            setTypeFilter(e.target.value);
+            resetPage();
+          }}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">Tipo</option>
-          <option value="FISICA">Persona Física</option>
-          <option value="JURIDICA">Persona Moral</option>
+          <option value="FISICA">Persona física</option>
+          <option value="JURIDICA">Persona moral</option>
+          <option value="PUBLICO_GENERAL">Público en general</option>
         </select>
 
         {giros.length > 0 && (
           <select
             value={giroFilter}
-            onChange={e => { setGiroFilter(e.target.value); resetPage(); }}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            onChange={(e) => {
+              setGiroFilter(e.target.value);
+              resetPage();
+            }}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Giro</option>
             {giros.map((g: any) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
             ))}
           </select>
         )}
 
         {(search || classificationFilter || typeFilter || giroFilter) && (
           <button
-            onClick={() => { setSearch(""); setClassificationFilter(""); setTypeFilter(""); setGiroFilter(""); resetPage(); }}
-            className="px-3 py-2 text-xs font-bold text-gray-500 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+            onClick={() => {
+              setSearch("");
+              setClassificationFilter("");
+              setTypeFilter("");
+              setGiroFilter("");
+              resetPage();
+            }}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-500 transition hover:bg-gray-50 hover:text-gray-800"
           >
             Limpiar
           </button>
         )}
       </div>
 
-      {/* Tabla */}
-      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-        <table className="w-full text-left border-collapse">
+      <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+        <table className="w-full border-collapse text-left">
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200 text-[11px] font-black text-gray-400 uppercase tracking-widest">
+            <tr className="border-b border-gray-200 bg-gray-50 text-[11px] font-black uppercase tracking-widest text-gray-400">
               <th className="px-5 py-3">Cliente</th>
-              <th className="px-5 py-3">RFC / Email</th>
+              <th className="px-5 py-3">RFC / Contacto</th>
               <th className="px-5 py-3">Tipo</th>
               <th className="px-5 py-3">Clasificación</th>
               <th className="px-5 py-3">Giro</th>
@@ -144,7 +187,7 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
           <tbody className="divide-y divide-gray-100">
             {paginated.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-10 text-center text-gray-400 text-sm italic">
+                <td colSpan={8} className="px-6 py-10 text-center text-sm italic text-gray-400">
                   No hay clientes con esos filtros
                 </td>
               </tr>
@@ -154,26 +197,24 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
                   key={client.id}
                   onClick={() => onClientClick?.(client)}
                   className={`transition-colors ${onClientClick ? "cursor-pointer" : ""} ${
-                    selectedClientId === client.id
-                      ? "bg-blue-50 border-l-4 border-l-blue-500"
-                      : "hover:bg-gray-50"
+                    selectedClientId === client.id ? "border-l-4 border-l-blue-500 bg-blue-50" : "hover:bg-gray-50"
                   }`}
                 >
                   <td className="px-5 py-3">
-                    <p className="font-semibold text-gray-900 text-sm leading-tight">{client.fullName}</p>
+                    <p className="text-sm font-semibold leading-tight text-gray-900">{client.fullName}</p>
                     {client.businessName && <p className="text-xs text-gray-400">{client.businessName}</p>}
                   </td>
                   <td className="px-5 py-3">
                     {client.rfc && <p className="font-mono text-xs text-gray-700">{client.rfc}</p>}
-                    <p className="text-xs text-gray-400">{client.email}</p>
+                    <p className="text-xs text-gray-400">{client.email || client.phone || "Sin dato adicional"}</p>
                   </td>
                   <td className="px-5 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${client.type === "FISICA" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}`}>
-                      {client.type === "FISICA" ? "Física" : "Moral"}
+                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${getTypeClassName(client.type)}`}>
+                      {getTypeLabel(client.type)}
                     </span>
                   </td>
                   <td className="px-5 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${classColors[client.classification] || "bg-gray-50 text-gray-600"}`}>
+                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${classColors[client.classification] || "bg-gray-50 text-gray-600"}`}>
                       {client.classification}
                     </span>
                   </td>
@@ -185,11 +226,20 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
                       <div>
                         <p className="text-xs font-bold text-gray-800">
                           ${client.creditUsed.toLocaleString("es-MX", { minimumFractionDigits: 0 })}
-                          <span className="text-gray-400 font-normal"> / ${client.creditLimit.toLocaleString("es-MX", { minimumFractionDigits: 0 })}</span>
+                          <span className="font-normal text-gray-400">
+                            {" "}
+                            / ${client.creditLimit.toLocaleString("es-MX", { minimumFractionDigits: 0 })}
+                          </span>
                         </p>
-                        <div className="w-full bg-gray-100 rounded-full h-1 mt-1">
+                        <div className="mt-1 h-1 w-full rounded-full bg-gray-100">
                           <div
-                            className={`h-1 rounded-full ${client.creditUsed / client.creditLimit > 0.8 ? "bg-red-500" : client.creditUsed / client.creditLimit > 0.5 ? "bg-amber-400" : "bg-green-500"}`}
+                            className={`h-1 rounded-full ${
+                              client.creditUsed / client.creditLimit > 0.8
+                                ? "bg-red-500"
+                                : client.creditUsed / client.creditLimit > 0.5
+                                  ? "bg-amber-400"
+                                  : "bg-green-500"
+                            }`}
                             style={{ width: `${Math.min((client.creditUsed / client.creditLimit) * 100, 100)}%` }}
                           />
                         </div>
@@ -199,18 +249,21 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
                     )}
                   </td>
                   <td className="px-5 py-3">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-black border ${statusColors[client.status] || "bg-gray-50 text-gray-500 border-gray-200"}`}>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${statusColors[client.status] || "border-gray-200 bg-gray-50 text-gray-500"}`}>
                       {client.status}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-center" onClick={e => e.stopPropagation()}>
+                  <td className="px-5 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-center gap-1">
-                      <Link href={`/admin/clients/${client.id}`} className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg transition" title="Ver detalles">
+                      <Link href={`/admin/clients/${client.id}`} className="rounded-lg p-1.5 text-blue-600 transition hover:bg-blue-50" title="Ver detalles">
                         <Eye size={15} />
                       </Link>
                       <button
-                        onClick={() => { setEditingClient(client); setShowModal(true); }}
-                        className="p-1.5 hover:bg-yellow-50 text-yellow-600 rounded-lg transition"
+                        onClick={() => {
+                          setEditingClient(client);
+                          setShowModal(true);
+                        }}
+                        className="rounded-lg p-1.5 text-yellow-600 transition hover:bg-yellow-50"
                         title="Editar"
                       >
                         <Edit size={15} />
@@ -224,7 +277,6 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
         </table>
       </div>
 
-      {/* Paginación */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-1">
           <p className="text-xs text-gray-400">
@@ -232,9 +284,9 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
           </p>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={safePage === 1}
-              className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+              className="rounded-lg border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-30"
             >
               <ChevronLeft size={15} />
             </button>
@@ -254,16 +306,18 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
                 <button
                   key={i}
                   onClick={() => setPage(p)}
-                  className={`w-8 h-8 text-xs rounded-lg font-bold transition ${safePage === p ? "bg-blue-600 text-white shadow-sm" : "border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                  className={`h-8 w-8 rounded-lg text-xs font-bold transition ${
+                    safePage === p ? "bg-blue-600 text-white shadow-sm" : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
                 >
                   {p}
                 </button>
               );
             })}
             <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={safePage === totalPages}
-              className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition"
+              className="rounded-lg border border-gray-200 p-1.5 text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-30"
             >
               <ChevronRight size={15} />
             </button>
@@ -274,7 +328,10 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
       {showModal && (
         <ClientModal
           client={editingClient}
-          onClose={() => { setShowModal(false); setEditingClient(null); }}
+          onClose={() => {
+            setShowModal(false);
+            setEditingClient(null);
+          }}
         />
       )}
     </div>

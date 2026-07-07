@@ -23,6 +23,8 @@ type FormulaFormState = {
   acidityMax: string;
   isActive: boolean;
   items: Array<{
+    sourceKind: "RAW_MATERIAL" | "BASE_BEVERAGE";
+    sourceProductionType: "" | ProductionType;
     rawMaterialId: string;
     quantity: string;
     defaultLocationId: string;
@@ -72,7 +74,9 @@ function mapFormulaToState(formula: ProductionFormulaView | undefined, code: Pro
     acidityMax: String(formula.acidityMax),
     isActive: formula.isActive,
     items: formula.items.map((item) => ({
-      rawMaterialId: item.rawMaterialId,
+      sourceKind: item.sourceKind || "RAW_MATERIAL",
+      sourceProductionType: item.sourceProductionType || "",
+      rawMaterialId: item.rawMaterialId || "",
       quantity: String(item.quantity),
       defaultLocationId: item.defaultLocationId || "",
       notes: item.notes || "",
@@ -127,6 +131,8 @@ export default function ProductionFormulasManager({
       acidityMax: Number(formula.acidityMax),
       isActive: formula.isActive,
       items: formula.items.map((item) => ({
+        sourceKind: item.sourceKind,
+        sourceProductionType: item.sourceProductionType || null,
         rawMaterialId: item.rawMaterialId,
         quantity: Number(item.quantity),
         defaultLocationId: item.defaultLocationId || null,
@@ -230,7 +236,7 @@ export default function ProductionFormulasManager({
                     onClick={() =>
                       updateFormula(code, (current) => ({
                         ...current,
-                        items: [...current.items, { rawMaterialId: "", quantity: "", defaultLocationId: "", notes: "" }],
+                        items: [...current.items, { sourceKind: "RAW_MATERIAL", sourceProductionType: "", rawMaterialId: "", quantity: "", defaultLocationId: "", notes: "" }],
                       }))
                     }
                     className="text-xs font-bold text-blue-700 hover:underline"
@@ -244,22 +250,60 @@ export default function ProductionFormulasManager({
                   {formula.items.map((item, index) => (
                     <div key={`${code}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-3">
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Materia prima">
+                        <Field label="Tipo de insumo">
                           <select
-                            value={item.rawMaterialId}
+                            value={item.sourceKind}
                             onChange={(e) =>
                               updateFormula(code, (current) => ({
                                 ...current,
-                                items: current.items.map((row, rowIndex) => rowIndex === index ? { ...row, rawMaterialId: e.target.value } : row),
+                                items: current.items.map((row, rowIndex) => rowIndex === index ? {
+                                  ...row,
+                                  sourceKind: e.target.value as "RAW_MATERIAL" | "BASE_BEVERAGE",
+                                  sourceProductionType: "",
+                                  rawMaterialId: "",
+                                } : row),
                               }))
                             }
                             className="w-full rounded-xl border border-slate-200 p-3 text-sm"
                           >
-                            <option value="">Selecciona</option>
-                            {rawMaterials.map((rawMaterial: any) => (
-                              <option key={rawMaterial.id} value={rawMaterial.id}>{rawMaterial.name} ({rawMaterial.unit})</option>
-                            ))}
+                            <option value="RAW_MATERIAL">Materia prima</option>
+                            <option value="BASE_BEVERAGE">Bebida base procesada</option>
                           </select>
+                        </Field>
+                        <Field label={item.sourceKind === "BASE_BEVERAGE" ? "Tipo de bebida base" : "Materia prima"}>
+                          {item.sourceKind === "BASE_BEVERAGE" ? (
+                            <select
+                              value={item.sourceProductionType}
+                              onChange={(e) =>
+                                updateFormula(code, (current) => ({
+                                  ...current,
+                                  items: current.items.map((row, rowIndex) => rowIndex === index ? { ...row, sourceProductionType: e.target.value as "" | ProductionType } : row),
+                                }))
+                              }
+                              className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                            >
+                              <option value="">Selecciona</option>
+                              {(["A", "B", "C"] as ProductionType[]).map((sourceType) => (
+                                <option key={sourceType} value={sourceType}>Bebida base tipo {sourceType}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <select
+                              value={item.rawMaterialId}
+                              onChange={(e) =>
+                                updateFormula(code, (current) => ({
+                                  ...current,
+                                  items: current.items.map((row, rowIndex) => rowIndex === index ? { ...row, rawMaterialId: e.target.value } : row),
+                                }))
+                              }
+                              className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                            >
+                              <option value="">Selecciona</option>
+                              {rawMaterials.map((rawMaterial: any) => (
+                                <option key={rawMaterial.id} value={rawMaterial.id}>{rawMaterial.name} ({rawMaterial.unit})</option>
+                              ))}
+                            </select>
+                          )}
                         </Field>
                         <Field label="Cantidad">
                           <input

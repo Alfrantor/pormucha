@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 export async function createClient(data: {
   type: string;
   fullName: string;
-  email: string;
+  email?: string;
   phone?: string;
   rfc?: string;
   businessName?: string;
@@ -21,21 +21,23 @@ export async function createClient(data: {
   giroId?: string;
 }) {
   try {
+    const normalizedEmail = data.email?.trim() || null;
+    const normalizedBusinessName = data.businessName?.trim() || null;
     const client = await db.client.create({
       data: {
         type: data.type,
-        fullName: data.fullName,
-        email: data.email,
-        phone: data.phone,
-        rfc: data.rfc?.toUpperCase(),
-        businessName: data.businessName,
+        fullName: data.fullName.trim(),
+        email: normalizedEmail,
+        phone: data.phone?.trim() || null,
+        rfc: data.rfc?.trim().toUpperCase() || null,
+        businessName: normalizedBusinessName,
         zipCode: data.zipCode || null,
         classification: data.classification || "MINORISTA",
         creditLimit: data.creditLimit ? parseFloat(data.creditLimit.toString()) : 0,
         paymentTerms: data.paymentTerms,
-        contactName: data.contactName,
-        contactPhone: data.contactPhone,
-        contactEmail: data.contactEmail,
+        contactName: data.contactName?.trim() || null,
+        contactPhone: data.contactPhone?.trim() || null,
+        contactEmail: data.contactEmail?.trim() || null,
         giroId: data.giroId || null,
       },
     });
@@ -62,6 +64,7 @@ export async function createClient(data: {
 export async function updateClient(
   id: string,
   data: {
+    type?: string;
     fullName?: string;
     email?: string;
     phone?: string;
@@ -80,11 +83,23 @@ export async function updateClient(
   }
 ) {
   try {
+    const normalizedData = {
+      ...data,
+      fullName: data.fullName?.trim(),
+      email: data.email !== undefined ? data.email.trim() || null : undefined,
+      phone: data.phone !== undefined ? data.phone.trim() || null : undefined,
+      rfc: data.rfc !== undefined ? data.rfc.trim().toUpperCase() || null : undefined,
+      businessName: data.businessName !== undefined ? data.businessName.trim() || null : undefined,
+      zipCode: data.zipCode !== undefined ? data.zipCode.trim() || null : undefined,
+      contactName: data.contactName !== undefined ? data.contactName.trim() || null : undefined,
+      contactPhone: data.contactPhone !== undefined ? data.contactPhone.trim() || null : undefined,
+      contactEmail: data.contactEmail !== undefined ? data.contactEmail.trim() || null : undefined,
+    };
+
     const client = await db.client.update({
       where: { id },
       data: {
-        ...data,
-        rfc: data.rfc?.toUpperCase(),
+        ...normalizedData,
         creditLimit: data.creditLimit ? parseFloat(data.creditLimit.toString()) : undefined,
       },
     });
