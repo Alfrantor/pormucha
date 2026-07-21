@@ -43,7 +43,7 @@ export default async function CatalogFormulasPage() {
         <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Catalogo</p>
         <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Formulas de produccion</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-          Aqui definimos la receta operativa de los procesos A, B y C: tiempos, rangos de control e insumos base.
+          Aqui definimos como se prepara cada formula paso por paso: para cuantos litros aplica, que se hace en cada etapa, que insumos lleva y cuantos litros resultan.
         </p>
       </section>
 

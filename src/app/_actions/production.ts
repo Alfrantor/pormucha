@@ -1,12 +1,14 @@
 "use server";
 
 import { randomUUID } from "crypto";
+import { auth, currentUser } from "@clerk/nextjs/server";
+import { createClerkClient } from "@clerk/backend";
 import { db } from "@/lib/db";
 import { formatProductionName } from "@/lib/production-naming";
 import { revalidatePath } from "next/cache";
 
-const PIN_SETTING_KEY = "produccion_pin";
 const DEFAULT_PIN = "1234";
+const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
 function isDecimalLike(value: unknown): value is { toNumber: () => number } {
   if (!value || typeof value !== "object") return false;
@@ -20,8 +22,10 @@ function isDecimalLike(value: unknown): value is { toNumber: () => number } {
 
 export async function getProduccionPin(): Promise<string> {
   try {
-    const setting = await db.systemSetting.findUnique({ where: { key: PIN_SETTING_KEY } });
-    return setting?.value || DEFAULT_PIN;
+    const { userId } = await auth();
+    if (!userId) return DEFAULT_PIN;
+    const user = await clerk.users.getUser(userId);
+    return ((user.privateMetadata as any)?.productionPin as string | undefined) || DEFAULT_PIN;
   } catch {
     return DEFAULT_PIN;
   }
@@ -29,18 +33,38 @@ export async function getProduccionPin(): Promise<string> {
 
 export async function setProduccionPin(pin: string): Promise<{ success: boolean; error?: string }> {
   if (!pin || pin.length < 4) return { success: false, error: "El PIN debe tener al menos 4 caracteres" };
-  await db.systemSetting.upsert({
-    where: { key: PIN_SETTING_KEY },
-    update: { value: pin },
-    create: { key: PIN_SETTING_KEY, value: pin },
+  const { userId } = await auth();
+  if (!userId) return { success: false, error: "Debes iniciar sesion para configurar tu PIN" };
+  const user = await clerk.users.getUser(userId);
+  await clerk.users.updateUserMetadata(userId, {
+    privateMetadata: {
+      ...(user.privateMetadata || {}),
+      productionPin: pin,
+    },
   });
   revalidatePath("/admin");
   return { success: true };
 }
 
-export async function validatePin(pin: string): Promise<boolean> {
+export async function validatePin(pin: string): Promise<{ ok: boolean; recordedBy?: string; error?: string }> {
+  const { userId } = await auth();
+  const user = await currentUser();
+
+  if (!userId || !user) {
+    return { ok: false, error: "Debes iniciar sesion para registrar mediciones" };
+  }
+
   const correct = await getProduccionPin();
-  return pin === correct;
+  if (pin !== correct) {
+    return { ok: false, error: "PIN incorrecto" };
+  }
+
+  const recordedBy =
+    user.emailAddresses[0]?.emailAddress ||
+    [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+    userId;
+
+  return { ok: true, recordedBy };
 }
 
 export async function getTankWithProduction(tankId: string) {
@@ -169,6 +193,18 @@ export async function createProduction(
 
       if (activeProduction) {
         throw new Error(`La cubeta ya esta ocupada por el proceso ${activeProduction.name}`);
+      }
+
+      const heldInventoryRows = await tx.$queryRaw<{ id: string; productionId: string }[]>`
+        SELECT "id", "productionId"
+        FROM "BaseBeverageInventory"
+        WHERE "tankId" = ${tankId}
+          AND "status" IN ('HELD', 'AVAILABLE', 'MIX_PENDING', 'DISPATCHED')
+        LIMIT 1
+      `.catch(() => []);
+
+      if (heldInventoryRows.length > 0) {
+        throw new Error("La cubeta sigue ocupada con bebida base. Debes vaciarla antes de iniciar otro proceso.");
       }
 
       const productionName = formatProductionName(startedAt, tank.name, productType);
@@ -327,6 +363,13 @@ export async function recordProductionParameter(
   const { productionId, ph, brix, temperature, acidity, notes, recordedBy, measuredAt } = data;
 
   try {
+    const user = await currentUser().catch(() => null);
+    const derivedRecordedBy =
+      user?.emailAddresses?.[0]?.emailAddress ||
+      [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
+      recordedBy ||
+      null;
+
     await db.productionParameter.create({
       data: {
         productionId,
@@ -335,7 +378,7 @@ export async function recordProductionParameter(
         temperature: temperature != null ? temperature : null,
         acidity: acidity != null ? acidity : null,
         notes: notes?.trim() || null,
-        recordedBy: recordedBy || null,
+        recordedBy: derivedRecordedBy,
         measuredAt: measuredAt ? new Date(measuredAt) : new Date(),
       },
     });
@@ -350,7 +393,8 @@ export async function recordProductionParameter(
 export async function completeProduction(
   productionId: string,
   litersProduced: number,
-  notes?: string
+  notes?: string,
+  inventoryAction: "MAINTAIN" | "UNIFY" | "DISPATCH" = "MAINTAIN"
 ): Promise<{ success: boolean; error?: string }> {
   try {
     await db.$transaction(async (tx) => {
@@ -384,6 +428,12 @@ export async function completeProduction(
 
       const remainingLitersValue = phaseThreeRows[0]?.remainingLiters;
       const remainingLiters = remainingLitersValue != null ? Number(remainingLitersValue) : null;
+      const inventoryStatus =
+        inventoryAction === "UNIFY"
+          ? "MIX_PENDING"
+          : inventoryAction === "DISPATCH"
+            ? "DISPATCHED"
+            : "HELD";
 
       await tx.production.update({
         where: { id: productionId },
@@ -421,14 +471,14 @@ export async function completeProduction(
         INSERT INTO "BaseBeverageInventory"
         ("id","productionId","productType","tankId","litersEntered","litersProduced","litersRemaining","status","notes","createdAt","updatedAt")
         VALUES
-        (${randomUUID()}, ${productionId}, ${production.productType}, ${production.tankId}, ${production.inputLiters != null ? Number(production.inputLiters) : null}, ${litersProduced}, ${remainingLiters}, 'AVAILABLE', ${notes?.trim() || production.notes || null}, NOW(), NOW())
+        (${randomUUID()}, ${productionId}, ${production.productType}, ${production.tankId}, ${production.inputLiters != null ? Number(production.inputLiters) : null}, ${litersProduced}, ${remainingLiters}, ${inventoryStatus}, ${notes?.trim() || production.notes || null}, NOW(), NOW())
         ON CONFLICT ("productionId")
         DO UPDATE SET
           "tankId" = EXCLUDED."tankId",
           "litersEntered" = EXCLUDED."litersEntered",
           "litersProduced" = EXCLUDED."litersProduced",
           "litersRemaining" = EXCLUDED."litersRemaining",
-          "status" = 'AVAILABLE',
+          "status" = EXCLUDED."status",
           "notes" = EXCLUDED."notes",
           "updatedAt" = NOW()
       `;
@@ -441,6 +491,57 @@ export async function completeProduction(
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message || "Error al completar la producción" };
+  }
+}
+
+export async function emptyBaseBeverageContainer(inventoryId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "BaseBeverageInventory"
+      ADD COLUMN IF NOT EXISTS "emptiedAt" TIMESTAMP(3)
+    `).catch(() => null);
+
+    await db.$executeRaw`
+      UPDATE "BaseBeverageInventory"
+      SET "status" = 'EMPTIED',
+          "emptiedAt" = NOW(),
+          "updatedAt" = NOW()
+      WHERE "id" = ${inventoryId}
+    `;
+
+    revalidatePath("/admin/production");
+    revalidatePath("/admin/inventory/base-beverage");
+    revalidatePath("/admin/inventory");
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message || "Error al vaciar la cubeta" };
+  }
+}
+
+export async function updateBaseBeverageInventoryDisposition(
+  inventoryId: string,
+  disposition: "HELD" | "MIX_PENDING" | "DISPATCHED" | "AVAILABLE"
+): Promise<{ success: boolean; error?: string }> {
+  const allowedStatuses = new Set(["HELD", "MIX_PENDING", "DISPATCHED", "AVAILABLE"]);
+
+  if (!allowedStatuses.has(disposition)) {
+    return { success: false, error: "Estado de inventario no valido" };
+  }
+
+  try {
+    await db.$executeRaw`
+      UPDATE "BaseBeverageInventory"
+      SET "status" = ${disposition},
+          "updatedAt" = NOW()
+      WHERE "id" = ${inventoryId}
+    `;
+
+    revalidatePath("/admin/production");
+    revalidatePath("/admin/inventory/base-beverage");
+    revalidatePath("/admin/inventory");
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message || "Error al actualizar el destino del lote" };
   }
 }
 

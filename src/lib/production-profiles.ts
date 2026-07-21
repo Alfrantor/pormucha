@@ -30,12 +30,22 @@ export type ProductionFormulaItemView = {
   notes?: string | null;
 };
 
+export type ProductionFormulaStepView = {
+  id: string;
+  stepNumber: number;
+  title: string;
+  instructions?: string | null;
+  resultLiters?: number | null;
+  items: ProductionFormulaItemView[];
+};
+
 export type ProductionFormulaView = {
   id: string;
   code: ProductionType;
   name: string;
   description?: string | null;
   formulaSummary?: string | null;
+  targetLiters?: number | null;
   durationDays: number;
   durationHours: number;
   phMin: number;
@@ -47,6 +57,7 @@ export type ProductionFormulaView = {
   acidityMin: number;
   acidityMax: number;
   isActive: boolean;
+  steps: ProductionFormulaStepView[];
   items: ProductionFormulaItemView[];
 };
 

@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 export async function createProductionSecondPhase(data: {
   productionId: string;
   receivedCondition?: string;
+  receivedLiters?: number;
   receivedBy?: string;
   measuredBy?: string;
   startedBy?: string;
@@ -41,12 +42,30 @@ export async function createProductionSecondPhase(data: {
         throw new Error("La fase dos ya fue iniciada para esta produccion");
       }
 
+      await tx.$executeRawUnsafe(`
+        ALTER TABLE "ProductionPhaseRecord"
+        ADD COLUMN IF NOT EXISTS "receivedLiters" DECIMAL(65,30)
+      `).catch(() => null);
+
       await tx.$executeRaw`
         INSERT INTO "ProductionPhaseRecord"
-        ("id","productionId","phase","receivedCondition","receivedBy","measuredBy","startedBy","measuredAt","ph","brix","temperature","acidity","notes","createdAt")
+        ("id","productionId","phase","receivedCondition","receivedBy","measuredBy","startedBy","measuredAt","ph","brix","temperature","acidity","notes","createdAt","receivedLiters")
         VALUES
-        (${randomUUID()}, ${data.productionId}, 2, ${data.receivedCondition || null}, ${data.receivedBy || null}, ${data.measuredBy || null}, ${data.startedBy || null}, ${data.measuredAt ? new Date(data.measuredAt) : new Date()}, ${data.ph ?? null}, ${data.brix ?? null}, ${data.temperature ?? null}, ${data.acidity ?? null}, ${data.notes || null}, NOW())
+        (${randomUUID()}, ${data.productionId}, 2, ${data.receivedCondition || null}, ${data.receivedBy || null}, ${data.measuredBy || null}, ${data.startedBy || null}, ${data.measuredAt ? new Date(data.measuredAt) : new Date()}, ${data.ph ?? null}, ${data.brix ?? null}, ${data.temperature ?? null}, ${data.acidity ?? null}, ${data.notes || null}, NOW(), ${data.receivedLiters ?? null})
       `;
+
+      if (data.receivedLiters != null && !Number.isNaN(data.receivedLiters) && data.receivedLiters >= 0) {
+        await tx.$executeRawUnsafe(`
+          ALTER TABLE "Production"
+          ADD COLUMN IF NOT EXISTS "inputLiters" DECIMAL(65,30)
+        `).catch(() => null);
+
+        await tx.$executeRaw`
+          UPDATE "Production"
+          SET "inputLiters" = ${data.receivedLiters}
+          WHERE "id" = ${data.productionId}
+        `;
+      }
 
       for (const addition of validAdditions) {
         if (!addition.locationId) {

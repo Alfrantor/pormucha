@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { FlaskConical, Beaker } from "lucide-react";
+import { emptyBaseBeverageContainer, updateBaseBeverageInventoryDisposition } from "@/app/_actions/production";
 
 export default async function BaseBeverageInventoryPage() {
   const rows = await db.$queryRawUnsafe<any[]>(`
@@ -56,11 +57,75 @@ export default async function BaseBeverageInventoryPage() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-lg font-black text-slate-950">{row.production_name || "Lote sin referencia"}</p>
-                    <p className="mt-1 text-xs text-slate-400">Tipo {row.productType} | Tanque: {row.tank_name || "-"}</p>
+                    <p className="mt-1 text-xs text-slate-400">Tipo {row.productType} | Cubeta: {row.tank_name || "-"}</p>
                   </div>
-                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-emerald-700">
-                    {row.status === "AVAILABLE" ? "Disponible" : row.status}
-                  </span>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] ${
+                      row.status === "HELD"
+                        ? "bg-amber-100 text-amber-700"
+                        : row.status === "MIX_PENDING"
+                          ? "bg-violet-100 text-violet-700"
+                          : row.status === "DISPATCHED"
+                            ? "bg-sky-100 text-sky-700"
+                        : row.status === "AVAILABLE"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : row.status === "EMPTIED"
+                            ? "bg-slate-200 text-slate-600"
+                            : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {row.status === "HELD"
+                        ? "En cubeta"
+                        : row.status === "MIX_PENDING"
+                          ? "Listo para unificar"
+                          : row.status === "DISPATCHED"
+                            ? "Con salida"
+                            : row.status === "AVAILABLE"
+                              ? "Disponible"
+                              : row.status === "EMPTIED"
+                                ? "Cubeta vaciada"
+                                : row.status}
+                    </span>
+                    {remaining != null && remaining > 0 && row.status !== "MIX_PENDING" && row.status !== "EMPTIED" && (
+                      <form action={async () => {
+                        "use server";
+                        await updateBaseBeverageInventoryDisposition(row.id, "MIX_PENDING");
+                      }}>
+                        <button className="rounded-full bg-violet-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-violet-500">
+                          Marcar para unificar
+                        </button>
+                      </form>
+                    )}
+                    {remaining != null && remaining > 0 && row.status !== "AVAILABLE" && row.status !== "EMPTIED" && (
+                      <form action={async () => {
+                        "use server";
+                        await updateBaseBeverageInventoryDisposition(row.id, "AVAILABLE");
+                      }}>
+                        <button className="rounded-full bg-emerald-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-emerald-500">
+                          Mantener disponible
+                        </button>
+                      </form>
+                    )}
+                    {remaining != null && remaining > 0 && row.status !== "DISPATCHED" && row.status !== "EMPTIED" && (
+                      <form action={async () => {
+                        "use server";
+                        await updateBaseBeverageInventoryDisposition(row.id, "DISPATCHED");
+                      }}>
+                        <button className="rounded-full bg-sky-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-sky-500">
+                          Marcar con salida
+                        </button>
+                      </form>
+                    )}
+                    {["HELD", "MIX_PENDING", "DISPATCHED", "AVAILABLE"].includes(String(row.status)) && (
+                      <form action={async () => {
+                        "use server";
+                        await emptyBaseBeverageContainer(row.id);
+                      }}>
+                        <button className="rounded-full bg-slate-950 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-slate-800">
+                          Vaciar cubeta
+                        </button>
+                      </form>
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-4 grid gap-3 md:grid-cols-4">
@@ -69,6 +134,12 @@ export default async function BaseBeverageInventoryPage() {
                   <CardStat label="Litros remanentes" value={remaining} />
                   <CardStat label="Diferencia" value={loss} />
                 </div>
+
+                {remaining != null && remaining > 0 && row.status !== "EMPTIED" && (
+                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    Quedan <span className="font-black">{remaining.toLocaleString("es-MX")} Lt</span> utilizables para un nuevo proceso, unificacion o embotellado.
+                  </div>
+                )}
 
                 {row.notes && <p className="mt-4 text-sm text-slate-500">{row.notes}</p>}
               </div>
@@ -81,7 +152,7 @@ export default async function BaseBeverageInventoryPage() {
         <div className="flex items-center gap-2">
           <Beaker size={16} className="text-slate-500" />
           <p>
-            Este inventario representa bebida base terminada. El siguiente paso natural es conectar su consumo automatico cuando arranque el proceso que la use.
+            Este inventario representa bebida base terminada. Desde aqui puedes decidir despues si un lote se mantiene, se unifica o se prepara para salida sin perder el control del remanente.
           </p>
         </div>
       </section>

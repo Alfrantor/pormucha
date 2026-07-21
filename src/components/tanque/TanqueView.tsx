@@ -38,18 +38,20 @@ export default function TanqueView({ tank }: { tank: any }) {
   const [pinError, setPinError] = React.useState("");
   const [pinChecking, setPinChecking] = React.useState(false);
   const [unlocked, setUnlocked] = React.useState(false);
+  const [validatedBy, setValidatedBy] = React.useState("");
 
   const handlePinSubmit = async () => {
     if (!pin) return;
     setPinChecking(true);
     setPinError("");
-    const ok = await validatePin(pin);
+    const result = await validatePin(pin);
     setPinChecking(false);
-    if (!ok) {
-      setPinError("PIN incorrecto");
+    if (!result.ok) {
+      setPinError(result.error || "PIN incorrecto");
       setPin("");
       return;
     }
+    setValidatedBy(result.recordedBy || "");
     setUnlocked(true);
     setPinOpen(false);
     setPin("");
@@ -81,6 +83,7 @@ export default function TanqueView({ tank }: { tank: any }) {
       acidity: acid ? Number(acid) : undefined,
       notes,
       measuredAt,
+      recordedBy: validatedBy || undefined,
     });
     setSaving(false);
     if (res.error) {
@@ -229,6 +232,7 @@ export default function TanqueView({ tank }: { tank: any }) {
       {prod && unlocked && !saved && (
         <div className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm">
           <p className="font-black text-gray-800">Nueva medición</p>
+          {validatedBy && <p className="text-xs text-gray-400">Registrará: {validatedBy}</p>}
           <div>
             <label className="mb-1 block text-xs font-bold text-gray-500">Fecha y hora</label>
             <input

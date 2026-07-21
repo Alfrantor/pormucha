@@ -503,6 +503,7 @@ model ProductionFormula {
   name           String
   description    String?
   formulaSummary String?
+  targetLiters   Decimal?
   durationDays   Int                     @default(0)
   durationHours  Int
   phMin          Decimal
@@ -517,14 +518,34 @@ model ProductionFormula {
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt
 
+  steps          ProductionFormulaStep[]
   items          ProductionFormulaItem[]
   productions    Production[]
+}
+
+model ProductionFormulaStep {
+  id           String                 @id @default(cuid())
+  formulaId    String
+  formula      ProductionFormula      @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+  stepNumber   Int
+  title        String
+  instructions String?
+  resultLiters Decimal?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  items        ProductionFormulaItem[]
+
+  @@index([formulaId])
+  @@index([formulaId, stepNumber])
 }
 
 model ProductionFormulaItem {
   id                String             @id @default(cuid())
   formulaId         String
   formula           ProductionFormula  @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+  stepId            String?
+  step              ProductionFormulaStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
   sourceKind        String             @default("RAW_MATERIAL")
   sourceProductionType String?
   rawMaterialId     String?
@@ -537,6 +558,7 @@ model ProductionFormulaItem {
   updatedAt         DateTime           @updatedAt
 
   @@index([formulaId])
+  @@index([stepId])
   @@index([rawMaterialId])
 }
 

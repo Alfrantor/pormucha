@@ -14,17 +14,79 @@ import {
   Users,
 } from "lucide-react";
 
-const MODULES = [
-  { href: "/admin/orders", title: "Pedidos", desc: "Ventas web, POS, pagos y cancelaciones", icon: <ShoppingCart size={18} /> },
-  { href: "/admin/inventory", title: "Inventarios", desc: "Productos, materia prima, en proceso y traspasos", icon: <Boxes size={18} /> },
-  { href: "/admin/catalog", title: "Catalogo", desc: "Productos, suscripciones y catalogo comercial", icon: <Tags size={18} /> },
-  { href: "/admin/clients", title: "Clientes", desc: "CRM, credito, direcciones e historial", icon: <BriefcaseBusiness size={18} /> },
-  { href: "/admin/production", title: "Produccion", desc: "Tanques, lotes y parametros", icon: <FlaskConical size={18} /> },
-  { href: "/admin/users", title: "Usuarios", desc: "Equipo interno y roles", icon: <ShieldCheck size={18} /> },
-];
+type Locale = "es" | "en";
+
+const COPY = {
+  es: {
+    modules: [
+      { href: "/admin/orders", title: "Pedidos", desc: "Ventas web, POS, pagos y cancelaciones", icon: <ShoppingCart size={18} /> },
+      { href: "/admin/inventory", title: "Inventarios", desc: "Productos, materia prima, en proceso y traspasos", icon: <Boxes size={18} /> },
+      { href: "/admin/catalog", title: "Catálogo", desc: "Productos, suscripciones y catálogo comercial", icon: <Tags size={18} /> },
+      { href: "/admin/clients", title: "Clientes", desc: "CRM, crédito, direcciones e historial", icon: <BriefcaseBusiness size={18} /> },
+      { href: "/admin/production", title: "Producción", desc: "Cubetas, lotes y parámetros", icon: <FlaskConical size={18} /> },
+      { href: "/admin/users", title: "Usuarios", desc: "Equipo interno y roles", icon: <ShieldCheck size={18} /> },
+    ],
+    kpis: {
+      revenue: "Ingresos",
+      orders: "Pedidos",
+      clients: "Clientes",
+      locations: "Ubicaciones",
+    },
+    operations: {
+      eyebrow: "Operación del día",
+      title: "Operación del día",
+      recentOrders: "Pedidos recientes",
+      latestActivity: "Actividad más reciente",
+      viewAll: "Ver todo",
+      summary: "Resumen operativo",
+      flavors: "Sabores",
+      products: "Productos",
+      rawMaterials: "Materia prima",
+      openTransfers: "Traspasos abiertos",
+      activeProductions: "Producciones activas",
+      currentUser: "Usuario actual",
+      noClient: "Sin cliente",
+      noEmail: "Sin correo",
+    },
+  },
+  en: {
+    modules: [
+      { href: "/admin/orders", title: "Orders", desc: "Web sales, POS, payments, and cancellations", icon: <ShoppingCart size={18} /> },
+      { href: "/admin/inventory", title: "Inventory", desc: "Products, raw materials, in-process stock, and transfers", icon: <Boxes size={18} /> },
+      { href: "/admin/catalog", title: "Catalog", desc: "Products, subscriptions, and commercial catalog", icon: <Tags size={18} /> },
+      { href: "/admin/clients", title: "Clients", desc: "CRM, credit, addresses, and history", icon: <BriefcaseBusiness size={18} /> },
+      { href: "/admin/production", title: "Production", desc: "Buckets, lots, and parameters", icon: <FlaskConical size={18} /> },
+      { href: "/admin/users", title: "Users", desc: "Internal team and roles", icon: <ShieldCheck size={18} /> },
+    ],
+    kpis: {
+      revenue: "Revenue",
+      orders: "Orders",
+      clients: "Clients",
+      locations: "Locations",
+    },
+    operations: {
+      eyebrow: "Daily operations",
+      title: "Daily operations",
+      recentOrders: "Recent orders",
+      latestActivity: "Latest activity",
+      viewAll: "View all",
+      summary: "Operational summary",
+      flavors: "Flavors",
+      products: "Products",
+      rawMaterials: "Raw materials",
+      openTransfers: "Open transfers",
+      activeProductions: "Active productions",
+      currentUser: "Current user",
+      noClient: "No client",
+      noEmail: "No email",
+    },
+  },
+} satisfies Record<Locale, any>;
 
 export default async function AdminHomePage() {
   const user = await currentUser();
+  const locale: Locale = "es";
+  const copy = COPY[locale];
 
   const [
     ordersCount,
@@ -66,10 +128,18 @@ export default async function AdminHomePage() {
   const revenue = Number(revenueAgg._sum.total || 0);
 
   const kpis = [
-    { label: "Ingresos", value: revenue.toLocaleString("es-MX", { style: "currency", currency: "MXN" }), icon: <CreditCard size={16} />, tone: "from-slate-950 to-slate-700" },
-    { label: "Pedidos", value: ordersCount.toLocaleString("es-MX"), icon: <ShoppingCart size={16} />, tone: "from-blue-700 to-cyan-500" },
-    { label: "Clientes", value: clientsCount.toLocaleString("es-MX"), icon: <Users size={16} />, tone: "from-violet-700 to-fuchsia-500" },
-    { label: "Ubicaciones", value: locationsCount.toLocaleString("es-MX"), icon: <Truck size={16} />, tone: "from-emerald-700 to-teal-500" },
+    { label: copy.kpis.revenue, value: revenue.toLocaleString("es-MX", { style: "currency", currency: "MXN" }), icon: <CreditCard size={16} />, tone: "from-slate-950 to-slate-700" },
+    { label: copy.kpis.orders, value: ordersCount.toLocaleString("es-MX"), icon: <ShoppingCart size={16} />, tone: "from-blue-700 to-cyan-500" },
+    { label: copy.kpis.clients, value: clientsCount.toLocaleString("es-MX"), icon: <Users size={16} />, tone: "from-violet-700 to-fuchsia-500" },
+    { label: copy.kpis.locations, value: locationsCount.toLocaleString("es-MX"), icon: <Truck size={16} />, tone: "from-emerald-700 to-teal-500" },
+  ];
+
+  const operationItems = [
+    { label: copy.operations.flavors, value: flavorsCount },
+    { label: copy.operations.products, value: productsCount },
+    { label: copy.operations.rawMaterials, value: rawMaterialsCount },
+    { label: copy.operations.openTransfers, value: openTransfersCount },
+    { label: copy.operations.activeProductions, value: activeProductionsCount },
   ];
 
   return (
@@ -89,7 +159,7 @@ export default async function AdminHomePage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {MODULES.map((mod) => (
+        {copy.modules.map((mod) => (
           <Link
             key={mod.href}
             href={mod.href}
@@ -107,26 +177,29 @@ export default async function AdminHomePage() {
         ))}
       </section>
 
+      <section className="space-y-2">
+        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">{copy.operations.eyebrow}</p>
+        <h2 className="text-2xl font-black tracking-tight text-slate-950">{copy.operations.title}</h2>
+      </section>
+
       <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-[1.6rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Pedidos recientes</p>
-              <h3 className="mt-1 text-xl font-black text-slate-950">Actividad mas reciente</h3>
+              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">{copy.operations.recentOrders}</p>
+              <h3 className="mt-1 text-xl font-black text-slate-950">{copy.operations.latestActivity}</h3>
             </div>
             <Link href="/admin/orders" className="text-sm font-bold text-blue-700 hover:text-blue-900">
-              Ver todo
+              {copy.operations.viewAll}
             </Link>
           </div>
           <div className="mt-4 space-y-3">
             {recentOrders.map((order) => (
               <div key={order.id} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
                 <div>
-                  <p className="font-bold text-slate-950">
-                    {order.folio || `#${order.id.slice(-6).toUpperCase()}`}
-                  </p>
+                  <p className="font-bold text-slate-950">{order.folio || `#${order.id.slice(-6).toUpperCase()}`}</p>
                   <p className="text-xs text-slate-500">
-                    {order.channel} · {order.fullName || "Sin cliente"} · {new Date(order.createdAt).toLocaleDateString("es-MX")}
+                    {order.channel} · {order.fullName || copy.operations.noClient} · {new Date(order.createdAt).toLocaleDateString("es-MX")}
                   </p>
                 </div>
                 <div className="text-right">
@@ -142,29 +215,25 @@ export default async function AdminHomePage() {
           </div>
         </div>
 
-        <div className="rounded-[1.6rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Resumen operativo</p>
-          <div className="mt-4 space-y-3">
-            {[
-              { label: "Sabores", value: flavorsCount },
-              { label: "Productos", value: productsCount },
-              { label: "Materia prima", value: rawMaterialsCount },
-              { label: "Traspasos abiertos", value: openTransfersCount },
-              { label: "Producciones activas", value: activeProductionsCount },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-                <span className="text-sm font-semibold text-slate-600">{item.label}</span>
-                <span className="text-lg font-black text-slate-950">{item.value}</span>
-              </div>
-            ))}
+        <div className="space-y-6">
+          <div className="rounded-[1.6rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">{copy.operations.summary}</p>
+            <div className="mt-4 space-y-3">
+              {operationItems.map((item) => (
+                <div key={item.label} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                  <span className="text-sm font-semibold text-slate-600">{item.label}</span>
+                  <span className="text-lg font-black text-slate-950">{item.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="mt-5 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm font-semibold text-slate-700">Usuario actual</p>
+          <div className="rounded-[1.6rem] border border-dashed border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <p className="text-sm font-semibold text-slate-700">{copy.operations.currentUser}</p>
             <p className="mt-1 text-lg font-black text-slate-950">
               {user?.firstName || "Admin"} {user?.lastName || ""}
             </p>
-            <p className="text-xs text-slate-500">{user?.emailAddresses[0]?.emailAddress || "Sin correo"}</p>
+            <p className="text-xs text-slate-500">{user?.emailAddresses[0]?.emailAddress || copy.operations.noEmail}</p>
           </div>
         </div>
       </section>

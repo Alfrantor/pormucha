@@ -24,6 +24,12 @@ import {
 } from "@/lib/production-profiles";
 import { getContainerStatus, getContainerStatusClasses, getContainerStatusLabel } from "@/lib/container-status";
 import { resolvePublicAppUrl } from "@/lib/public-app-url";
+import {
+  formatDayCounter,
+  getFermentationMetrics,
+  getFermentationVisualClasses,
+  getFermentationVisualStatus,
+} from "@/lib/production-fermentation";
 
 type ProdView = "params" | "additions" | "complete";
 
@@ -49,7 +55,19 @@ function buildIngredientsFromFormula(formula: ProductionFormulaView | null | und
     }));
 }
 
+function formatStepIngredient(item: any) {
+  const sourceLabel =
+    item.sourceKind === "BASE_BEVERAGE"
+      ? `Bebida base tipo ${item.sourceProductionType || "-"}`
+      : item.rawMaterialName || "Insumo";
+  const quantity = item.quantity != null ? Number(item.quantity).toLocaleString("es-MX") : "-";
+  const unit = item.rawMaterialUnit || "";
+  const location = item.defaultLocationName ? ` | ${item.defaultLocationName}` : "";
+  return `${sourceLabel}: ${quantity} ${unit}${location}`.trim();
+}
+
 export default function TabProduccion({ tanks, productions, rawMaterials, locations, formulas, baseBeverageInventory, userEmail }: any) {
+  const TANKS_PAGE_SIZE = 20;
   const safeTanks = Array.isArray(tanks) ? tanks : [];
   const safeProductions = Array.isArray(productions) ? productions : [];
   const safeRM = Array.isArray(rawMaterials) ? rawMaterials : [];
@@ -68,7 +86,8 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [pinMsg, setPinMsg] = useState("");
 
   const [view, setView] = useState<"producciones" | "tanques">("producciones");
-  const [statusFilter, setStatusFilter] = useState("IN_PROGRESS");
+  const [statusFilter, setStatusFilter] = useState<"IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "UPCOMING" | "ALL">("IN_PROGRESS");
+  const [tankPage, setTankPage] = useState(1);
 
   const [showCreateTank, setShowCreateTank] = useState(false);
   const [showCreateProd, setShowCreateProd] = useState(false);
@@ -110,9 +129,11 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
   const [completeLt, setCompleteLt] = useState("");
   const [completeNotes, setCompleteNotes] = useState("");
+  const [completeAction, setCompleteAction] = useState<"MAINTAIN" | "UNIFY" | "DISPATCH">("MAINTAIN");
   const [completeSaving, setCompleteSaving] = useState(false);
 
   const [phase2Condition, setPhase2Condition] = useState("Aceptado");
+  const [phase2ReceivedLiters, setPhase2ReceivedLiters] = useState("");
   const [phase2ReceivedBy, setPhase2ReceivedBy] = useState("");
   const [phase2MeasuredBy, setPhase2MeasuredBy] = useState("");
   const [phase2StartedBy, setPhase2StartedBy] = useState(userEmail || "");
@@ -131,17 +152,65 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [phase3Saving, setPhase3Saving] = useState(false);
   const [phase3Error, setPhase3Error] = useState("");
 
+  const formulasByCode = useMemo(() => {
+    const map = new Map<string, any>();
+    safeFormulas.forEach((formula: any) => {
+      if (formula?.isActive) {
+        map.set(formula.code, formula);
+      }
+    });
+    return map;
+  }, [safeFormulas]);
+
   const filteredProds = useMemo(() => {
-    if (statusFilter === "ALL") return safeProductions;
-    return safeProductions.filter((p: any) => p.status === statusFilter);
-  }, [safeProductions, statusFilter]);
+    const baseList =
+      statusFilter === "ALL"
+        ? safeProductions
+        : statusFilter === "UPCOMING"
+          ? safeProductions.filter((production: any) => production.status === "IN_PROGRESS")
+          : safeProductions.filter((production: any) => production.status === statusFilter);
+
+    const decorated = baseList.map((production: any) => {
+      const formula = production.formula || formulasByCode.get(production.productType) || null;
+      const metrics = getFermentationMetrics(production, formula);
+      return { production, formula, metrics };
+    });
+
+    if (statusFilter === "UPCOMING") {
+      return decorated
+        .filter(({ metrics }) => metrics.phase2Date)
+        .sort((a, b) => {
+          const aValue = a.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
+          const bValue = b.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
+          return aValue - bValue;
+        })
+        .map(({ production }) => production);
+    }
+
+    return decorated
+      .sort((a, b) => {
+        const aValue = a.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
+        const bValue = b.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
+        if (aValue !== bValue) return aValue - bValue;
+        return new Date(b.production.startedAt).getTime() - new Date(a.production.startedAt).getTime();
+      })
+      .map(({ production }) => production);
+  }, [safeProductions, statusFilter, formulasByCode]);
 
   const availableTanks = useMemo(() => {
     return safeTanks.filter((tank: any) => {
       const activeProd = safeProductions.find((p: any) => p.tankId === tank.id && p.status === "IN_PROGRESS");
-      return tank.isActive && !activeProd;
-    });
-  }, [safeTanks, safeProductions]);
+      const heldInventory = safeBaseBeverageInventory.find((row: any) => row.tank?.id === tank.id && ["HELD", "AVAILABLE", "MIX_PENDING", "DISPATCHED"].includes(String(row.status)));
+      return tank.isActive && !activeProd && !heldInventory;
+    }).sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "es-MX", { numeric: true, sensitivity: "base" }));
+  }, [safeTanks, safeProductions, safeBaseBeverageInventory]);
+
+  const tankTotalPages = Math.max(1, Math.ceil(safeTanks.length / TANKS_PAGE_SIZE));
+  const safeTankPage = Math.min(tankPage, tankTotalPages);
+  const paginatedTanks = useMemo(() => {
+    const start = (safeTankPage - 1) * TANKS_PAGE_SIZE;
+    return safeTanks.slice(start, start + TANKS_PAGE_SIZE);
+  }, [safeTanks, safeTankPage]);
 
   const baseInventoryTotals = useMemo(() => {
     return safeBaseBeverageInventory.reduce(
@@ -153,16 +222,6 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       { produced: 0, remaining: 0 }
     );
   }, [safeBaseBeverageInventory]);
-
-  const formulasByCode = useMemo(() => {
-    const map = new Map<string, any>();
-    safeFormulas.forEach((formula: any) => {
-      if (formula?.isActive) {
-        map.set(formula.code, formula);
-      }
-    });
-    return map;
-  }, [safeFormulas]);
 
   const selectedFormula = formulasByCode.get(newProdType) || null;
   const profile = profileFromFormula(selectedFormula, newProdType);
@@ -356,20 +415,22 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const handleComplete = async () => {
     if (!selectedProd || !completeLt) return;
     setCompleteSaving(true);
-    await completeProduction(selectedProd.id, Number(completeLt), completeNotes);
+    await completeProduction(selectedProd.id, Number(completeLt), completeNotes, completeAction);
     setCompleteSaving(false);
     window.location.reload();
   };
 
   const handleCancel = async (id: string) => {
     if (!confirm("Cancelar esta produccion?")) return;
-    await cancelProduction(id);
+    const reason = prompt("Motivo de cancelación. Ejemplo: merma, contaminación o causa externa.", "");
+    await cancelProduction(id, reason || undefined);
     window.location.reload();
   };
 
   const openSecondPhase = (prod: any) => {
     setSecondPhaseTarget(prod);
     setPhase2Condition("Aceptado");
+    setPhase2ReceivedLiters(prod?.inputLiters != null ? String(Number(prod.inputLiters)) : "");
     setPhase2ReceivedBy("");
     setPhase2MeasuredBy("");
     setPhase2StartedBy(userEmail || "");
@@ -396,6 +457,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     const res = await createProductionSecondPhase({
       productionId: secondPhaseTarget.id,
       receivedCondition: phase2Condition,
+      receivedLiters: parseNum(phase2ReceivedLiters),
       receivedBy: phase2ReceivedBy,
       measuredBy: phase2MeasuredBy,
       startedBy: phase2StartedBy,
@@ -492,9 +554,9 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       {view === "producciones" && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            {(["IN_PROGRESS", "COMPLETED", "CANCELLED", "ALL"] as const).map((status) => (
+            {(["IN_PROGRESS", "UPCOMING", "COMPLETED", "CANCELLED", "ALL"] as const).map((status) => (
               <button key={status} onClick={() => setStatusFilter(status)} className={filterClass(statusFilter === status)}>
-                {status === "ALL" ? "Todos" : status === "IN_PROGRESS" ? "En proceso" : status === "COMPLETED" ? "Completados" : "Cancelados"}
+                {status === "ALL" ? "Todos" : status === "IN_PROGRESS" ? "En proceso" : status === "UPCOMING" ? "Próximos a salir" : status === "COMPLETED" ? "Completados" : "Cancelados"}
               </button>
             ))}
             <button onClick={() => setShowCreateProd(true)} className="ml-auto rounded-lg bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800">
@@ -545,9 +607,14 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
               const producedLiters = prod.litersProduced != null ? Number(prod.litersProduced) : null;
               const remainingLiters = phase3?.remainingLiters != null ? Number(phase3.remainingLiters) : null;
               const processLoss = enteredLiters != null && producedLiters != null ? Math.max(enteredLiters - producedLiters, 0) : null;
+              const phase2ReceivedLiters = phase2?.receivedLiters != null ? Number(phase2.receivedLiters) : enteredLiters;
+              const outputLoss = phase2ReceivedLiters != null && producedLiters != null ? Math.max(phase2ReceivedLiters - producedLiters, 0) : null;
+              const fermentationMetrics = getFermentationMetrics(prod, formulaForProd);
+              const fermentationStatus = getFermentationVisualStatus(prod, formulaForProd);
+              const fermentationBorder = getFermentationVisualClasses(fermentationStatus);
 
               return (
-                <div key={prod.id} className="rounded-xl border bg-white p-5 shadow-sm">
+                <div key={prod.id} className={`rounded-xl border bg-white p-5 shadow-sm ${fermentationBorder}`}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
@@ -563,7 +630,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         )}
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                        <span>Tanque: {prod.tank?.name || "-"}</span>
+                        <span>Cubeta: {prod.tank?.name || "-"}</span>
                         <span>Inicio: {fmtDate(prod.startedAt)}</span>
                         <span>Duracion objetivo: {formatFormulaDuration(profileForProdResolved)}</span>
                         {enteredLiters != null && <span>Entrada: {enteredLiters} Lt</span>}
@@ -601,6 +668,58 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         ))}
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className={`rounded-lg border px-3 py-2 text-xs ${
+                          fermentationStatus === "READY"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : fermentationStatus === "IN_PROGRESS"
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : fermentationStatus === "AWAITING_COMPLETION"
+                                ? "border-rose-200 bg-rose-50 text-rose-700"
+                                : "border-slate-200 bg-slate-50 text-slate-600"
+                        }`}>
+                          <p className="font-black uppercase tracking-[0.2em] text-current/70">Fermentación</p>
+                          <p>
+                            {fermentationStatus === "PENDING_PHASE2"
+                              ? "Esperando fase 2"
+                              : fermentationStatus === "IN_PROGRESS"
+                                ? "En proceso"
+                                : fermentationStatus === "READY"
+                                  ? "Lista"
+                                  : fermentationStatus === "AWAITING_COMPLETION"
+                                    ? "Pendiente de completar"
+                                    : fermentationStatus === "COMPLETED"
+                                      ? "Finalizada"
+                                      : "Cancelada"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                          <p className="font-black uppercase tracking-[0.2em] text-slate-400">Días transcurridos</p>
+                          <p>{fermentationMetrics.phase2Date ? formatDayCounter(fermentationMetrics.elapsedDays, "elapsed") : "-"}</p>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-2 text-xs ${
+                          fermentationStatus === "READY"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : fermentationStatus === "AWAITING_COMPLETION"
+                              ? "border-rose-200 bg-rose-50 text-rose-700"
+                              : "border-slate-200 bg-slate-50 text-slate-600"
+                        }`}>
+                          <p className="font-black uppercase tracking-[0.2em] text-current/70">Días restantes</p>
+                          <p>
+                            {fermentationStatus === "AWAITING_COMPLETION"
+                              ? "Proceso listo, falta completar"
+                              : fermentationMetrics.phase2Date
+                                ? fermentationMetrics.isReady
+                                  ? "0 día(s)"
+                                  : formatDayCounter(fermentationMetrics.remainingDays, "remaining")
+                                : "-"}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                          <p className="font-black uppercase tracking-[0.2em] text-slate-400">Salida estimada</p>
+                          <p>{fermentationMetrics.readyAt ? fmtDate(fermentationMetrics.readyAt) : "-"}</p>
+                        </div>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
                           <p className="font-black uppercase tracking-[0.2em] text-slate-400">Fase 1</p>
                           <p>Entrada: {enteredLiters != null ? `${enteredLiters} Lt` : "-"}</p>
@@ -608,6 +727,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
                           <p className="font-black uppercase tracking-[0.2em] text-violet-400">Fase 2</p>
                           <p>{phase2 ? fmtDate(phase2.measuredAt) : "Pendiente"}</p>
+                          {phase2ReceivedLiters != null && <p>Recibidos: {phase2ReceivedLiters} Lt</p>}
                         </div>
                         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
                           <p className="font-black uppercase tracking-[0.2em] text-emerald-400">Fase 3</p>
@@ -616,7 +736,8 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                           <p className="font-black uppercase tracking-[0.2em] text-slate-400">Resultado</p>
                           <p>{producedLiters != null ? `${producedLiters} Lt` : "-"}</p>
-                          {processLoss != null && <p>Diferencia: {processLoss} Lt</p>}
+                          {outputLoss != null && <p>Merma: {outputLoss} Lt</p>}
+                          {processLoss != null && <p>Diferencia total: {processLoss} Lt</p>}
                         </div>
                       </div>
                       {lastParam && (
@@ -627,7 +748,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                       )}
                       {phase2 && (
                         <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
-                          Fase dos iniciada por {phase2.startedBy || "-"} | Recibio: {phase2.receivedBy || "-"} | Midio: {phase2.measuredBy || "-"} | Estado recibido: {phase2.receivedCondition || "-"}
+                          Fase dos iniciada por {phase2.startedBy || "-"} | Recibio: {phase2.receivedBy || "-"} | Midio: {phase2.measuredBy || "-"} | Estado recibido: {phase2.receivedCondition || "-"} | Litros recibidos: {phase2ReceivedLiters != null ? `${phase2ReceivedLiters} Lt` : "-"}
                         </div>
                       )}
                       {phase3 && (
@@ -654,6 +775,8 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                                 setSelectedProd(prod);
                                 setProdView("complete");
                                 setCompleteLt(phase3?.remainingLiters != null ? String(Number(phase3.remainingLiters)) : "");
+                                setCompleteAction("MAINTAIN");
+                                setCompleteNotes("");
                               }}
                               className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
                             >
@@ -677,13 +800,17 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
       {view === "tanques" && (
         <div className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold text-slate-500">
+              Mostrando {(safeTankPage - 1) * TANKS_PAGE_SIZE + 1}-{Math.min(safeTankPage * TANKS_PAGE_SIZE, safeTanks.length)} de {safeTanks.length} cubetas
+            </p>
             <button onClick={() => setShowCreateTank(true)} className="rounded-lg bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800">Nueva cubeta</button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {safeTanks.map((tank: any) => {
+            {paginatedTanks.map((tank: any) => {
               const activeProd = safeProductions.find((p: any) => p.tankId === tank.id && p.status === "IN_PROGRESS");
-              const status = getContainerStatus(tank, activeProd);
+              const heldInventory = safeBaseBeverageInventory.find((row: any) => row.tank?.id === tank.id && ["HELD", "AVAILABLE", "MIX_PENDING", "DISPATCHED"].includes(String(row.status)));
+              const status = getContainerStatus(tank, activeProd || heldInventory);
               return (
                 <div key={tank.id} className={`rounded-xl border bg-white p-4 ${!tank.isActive ? "opacity-60" : ""}`}>
                   <div className="flex items-center justify-between">
@@ -725,6 +852,27 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
               );
             })}
           </div>
+          {tankTotalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setTankPage((prev) => Math.max(1, prev - 1))}
+                disabled={safeTankPage === 1}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Anterior
+              </button>
+              <p className="text-xs font-semibold text-slate-500">
+                Página {safeTankPage} de {tankTotalPages}
+              </p>
+              <button
+                onClick={() => setTankPage((prev) => Math.min(tankTotalPages, prev + 1))}
+                disabled={safeTankPage === tankTotalPages}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Siguiente
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -787,6 +935,50 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         ? `Se aplicara ${selectedFormula.name} como base del lote y puedes ajustar insumos antes de guardar.`
                         : "No hay una formula activa para este tipo. Puedes capturar los insumos manualmente."}
                     </p>
+                    {selectedFormula?.steps?.length ? (
+                      <div className="mt-4 rounded-xl border border-violet-200 bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-black text-violet-950">Checklist de preparacion</p>
+                            <p className="mt-1 text-xs text-violet-700">
+                              Formula para {selectedFormula.targetLiters != null ? Number(selectedFormula.targetLiters).toLocaleString("es-MX") : "-"} Lt
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {selectedFormula.steps.map((step: any, index: number) => (
+                            <div key={step.id || `${selectedFormula.id}-step-${index}`} className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4">
+                              <div className="flex items-start gap-3">
+                                <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-violet-400 text-[11px] font-black text-violet-700">
+                                  {index + 1}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-black text-violet-950">{step.title || `Paso ${index + 1}`}</p>
+                                  {step.instructions && (
+                                    <p className="mt-1 text-sm text-violet-900">{step.instructions}</p>
+                                  )}
+                                  <div className="mt-3 space-y-1">
+                                    {step.items?.length ? step.items.map((item: any, itemIndex: number) => (
+                                      <div key={`${step.id || index}-item-${itemIndex}`} className="flex items-start gap-2 text-xs text-violet-800">
+                                        <span className="mt-1 inline-block h-3 w-3 rounded-sm border border-violet-400 bg-white" />
+                                        <span>{formatStepIngredient(item)}</span>
+                                      </div>
+                                    )) : (
+                                      <p className="text-xs italic text-violet-700">Sin insumos definidos para este paso.</p>
+                                    )}
+                                  </div>
+                                  {step.resultLiters != null && (
+                                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-violet-700">
+                                      Resultado esperado: {Number(step.resultLiters).toLocaleString("es-MX")} Lt
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="mt-4 space-y-2">
                       {ingredients.map((ing, index) => (
                         <div key={index} className="flex gap-2">
@@ -918,11 +1110,19 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 </div>
               </div>
 
+              {selectedProd.formula?.steps?.length ? (
+                <FormulaStepsChecklist
+                  formula={selectedProd.formula}
+                  title="Checklist de fórmula"
+                  description="Aquí ves qué hacer en cada paso, con qué insumos y el resultado esperado."
+                />
+              ) : null}
+
               {selectedProd.status === "IN_PROGRESS" && (
                 <div className="flex gap-2 border-b pb-3">
                   <button onClick={() => setProdView("params")} className={subTabClass(prodView === "params")}>Parametros</button>
                   <button onClick={() => setProdView("additions")} className={subTabClass(prodView === "additions")}>Insumos</button>
-                  {selectedProdPhase3 && <button onClick={() => setProdView("complete")} className={subTabClass(prodView === "complete")}>Completar</button>}
+                  {selectedProdPhase3 && <button onClick={() => { setProdView("complete"); setCompleteAction("MAINTAIN"); }} className={subTabClass(prodView === "complete")}>Completar</button>}
                 </div>
               )}
 
@@ -1066,6 +1266,9 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
               {prodView === "complete" && selectedProd.status === "IN_PROGRESS" && selectedProdPhase3 && (
                 <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
                   <p className="text-sm font-black text-emerald-800">Finalizar produccion</p>
+                  <p className="mt-2 text-xs text-emerald-700">
+                    Al finalizar puedes mantener el lote, marcarlo para unificación o darlo de salida. La cubeta seguirá ocupada hasta vaciarla.
+                  </p>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <Field label="Litros producidos">
                       <input type="number" min="0" step="0.1" value={completeLt} onChange={(e) => setCompleteLt(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
@@ -1074,8 +1277,30 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                       <textarea value={completeNotes} onChange={(e) => setCompleteNotes(e.target.value)} rows={2} className="w-full rounded-lg border p-2 text-sm" />
                     </Field>
                   </div>
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Destino del lote</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      {[
+                        { value: "MAINTAIN", label: "Mantener", desc: "Queda en inventario dentro de la cubeta." },
+                        { value: "UNIFY", label: "Unificar", desc: "Queda listo para unificarse con otros del mismo tipo." },
+                        { value: "DISPATCH", label: "Dar salida", desc: "Se registra como lote con salida asignada." },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setCompleteAction(option.value as "MAINTAIN" | "UNIFY" | "DISPATCH")}
+                          className={`rounded-xl border px-3 py-3 text-left transition ${
+                            completeAction === option.value ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-600"
+                          }`}
+                        >
+                          <p className="text-sm font-black">{option.label}</p>
+                          <p className="mt-1 text-[11px]">{option.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <button onClick={handleComplete} disabled={completeSaving || !completeLt} className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:bg-slate-300">
-                    {completeSaving ? "Guardando..." : "Marcar como completado"}
+                    {completeSaving ? "Guardando..." : completeAction === "UNIFY" ? "Finalizar y marcar para unificación" : completeAction === "DISPATCH" ? "Finalizar y dar salida" : "Finalizar y mantener"}
                   </button>
                 </div>
               )}
@@ -1103,6 +1328,9 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                     <option value="Observado">Observado</option>
                     <option value="Requiere ajuste">Requiere ajuste</option>
                   </select>
+                </Field>
+                <Field label="Litros recibidos en fase 2">
+                  <input type="number" min="0" step="0.1" value={phase2ReceivedLiters} onChange={(e) => setPhase2ReceivedLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
                 </Field>
                 <Field label="Fecha y hora de lectura">
                   <input type="datetime-local" value={phase2Date} onChange={(e) => setPhase2Date(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
@@ -1264,6 +1492,60 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
 function isPhase2Addition(addition: any) {
   return typeof addition?.notes === "string" && addition.notes.toLowerCase().startsWith("fase 2");
+}
+
+function FormulaStepsChecklist({
+  formula,
+  title,
+  description,
+}: {
+  formula: any;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-black text-violet-950">{title}</p>
+          <p className="mt-1 text-xs text-violet-700">{description}</p>
+        </div>
+        <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-violet-700">
+          {formula?.targetLiters != null ? `${Number(formula.targetLiters).toLocaleString("es-MX")} Lt` : "Sin litros objetivo"}
+        </span>
+      </div>
+      <div className="mt-4 space-y-3">
+        {formula.steps.map((step: any, index: number) => (
+          <div key={step.id || `${formula.id}-step-${index}`} className="rounded-2xl border border-violet-100 bg-white p-4">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-violet-400 text-[11px] font-black text-violet-700">
+                {index + 1}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black text-violet-950">{step.title || `Paso ${index + 1}`}</p>
+                {step.instructions && <p className="mt-1 text-sm text-violet-900">{step.instructions}</p>}
+                <div className="mt-3 space-y-1">
+                  {step.items?.length ? step.items.map((item: any, itemIndex: number) => (
+                    <div key={`${step.id || index}-item-${itemIndex}`} className="flex items-start gap-2 text-xs text-violet-800">
+                      <span className="mt-1 inline-block h-3 w-3 rounded-sm border border-violet-400 bg-white" />
+                      <span>{formatStepIngredient(item)}</span>
+                    </div>
+                  )) : (
+                    <p className="text-xs italic text-violet-700">Sin insumos definidos para este paso.</p>
+                  )}
+                </div>
+                {step.resultLiters != null && (
+                  <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-violet-700">
+                    Resultado esperado: {Number(step.resultLiters).toLocaleString("es-MX")} Lt
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
