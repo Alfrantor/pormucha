@@ -9,10 +9,10 @@ export default function StoreGrid({ packs, flavors }: { packs: any[], flavors: a
 
     // Tu lógica de imágenes
     const getImage = (qty: number) => {
-        if (qty === 6) return "/pack-6.png";
+        if (qty === 6) return "/pack-6.PNG";
         if (qty === 8) return "/pack-8.JPG";
-        if (qty === 12) return "/pack-12.png";
-        if (qty === 24) return "/pack-24.png";
+        if (qty === 12) return "/pack-12.PNG";
+        if (qty === 24) return "/pack-24.PNG";
         return "/hero-tienda.jpg";
     };
 

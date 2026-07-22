@@ -1,36 +1,34 @@
 "use client";
+
 import { useState } from "react";
-import { useCart } from "@/context/CartContext";
 import Navbar from "@/components/Navbar";
+import { useCart } from "@/context/CartContext";
 
 export default function CheckoutPage() {
   const { cart, total } = useCart();
 
-  // Estados para el formulario y logística
   const [shippingCost, setShippingCost] = useState(0);
   const [loadingShipping, setLoadingShipping] = useState(false);
   const [loadingPayment, setLoadingPayment] = useState(false);
-
   const [shippingOptions, setShippingOptions] = useState<any[]>([]);
   const [selectedShipping, setSelectedShipping] = useState<any>(null);
 
-  // Estado de dirección con todos los campos obligatorios solicitados
   const [address, setAddress] = useState({
     name: "",
     email: "",
-    phone: "",      // Teléfono Celular
-    zip: "",        // Código Postal
-    state: "",      // Estado
-    city: "",       // Ciudad
-    neighborhood: "", // Colonia
-    street: "",     // Calle y Número
-    reference: ""   // Referencia
+    phone: "",
+    zip: "",
+    state: "",
+    city: "",
+    neighborhood: "",
+    street: "",
+    number: "",
+    reference: "",
   });
 
-  // Función para cotizar con la API de Shipping
   const handleCalculateShipping = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!address.zip) return alert("Por favor, ingresa un Código Postal.");
+    if (!address.zip) return alert("Por favor, ingresa un código postal.");
 
     setLoadingShipping(true);
     try {
@@ -39,7 +37,7 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           zip: address.zip,
-          productIds: cart.map(item => item.id),
+          productIds: cart.map((item) => item.id),
         }),
       });
       const data = await res.json();
@@ -54,23 +52,21 @@ export default function CheckoutPage() {
       }
     } catch (error) {
       console.error("Error cotizando envío:", error);
-      alert("Error al contactar con aduanas de paquetería.");
+      alert("Error al contactar con paquetería.");
       setShippingCost(0);
     } finally {
       setLoadingShipping(false);
     }
   };
 
-  // --- NUEVA FUNCIÓN DE PAGO CON STRIPE ---
   const handlePayment = async () => {
     if (cart.length === 0) return alert("Tu carrito está vacío.");
-    if (shippingCost === 0) return alert("Primero cotiza tu envío para continuar.");
+    if (shippingCost === 0 || !selectedShipping) return alert("Primero cotiza tu envío para continuar.");
 
-    // Validación manual de que todos los campos obligatorios estén llenos
-    const camposVacios = Object.values(address).some(val => val.trim() === "");
-    if (camposVacios) return alert("Por favor, completa todos los datos de envío.");
+    const emptyFields = Object.values(address).some((value) => value.trim() === "");
+    if (emptyFields) return alert("Por favor, completa todos los datos de envío.");
 
-    setLoadingPayment(true); // Bloqueamos el botón
+    setLoadingPayment(true);
 
     try {
       const res = await fetch("/api/checkout", {
@@ -78,27 +74,26 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: cart,
-          shippingCost: shippingCost,
+          shippingCost,
           customerAddress: address,
-          shippingProvider: selectedShipping.provider, // Ej: "fedex"
-          shippingRateId: selectedShipping.id          // ¡ESTE ES EL CLAVE!
+          shippingProvider: selectedShipping.provider,
+          shippingRateId: selectedShipping.id,
         }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.url) {
-        // Magia de Stripe: Redirección automática a la página de cobro segura
         window.location.href = data.url;
       } else {
         console.error("Error detallado del servidor:", data);
         alert(`Error de Stripe: ${data.details || data.error || "No se pudo iniciar el pago"}`);
-        setLoadingPayment(false); // Desbloqueamos si hay error
+        setLoadingPayment(false);
       }
     } catch (error) {
       console.error("Error al procesar pago:", error);
       alert("Hubo un error al conectar con el servidor de pagos.");
-      setLoadingPayment(false); // Desbloqueamos si hay error
+      setLoadingPayment(false);
     }
   };
 
@@ -107,74 +102,115 @@ export default function CheckoutPage() {
       <Navbar />
 
       <main className="max-w-6xl mx-auto p-6 md:p-12 grid grid-cols-1 lg:grid-cols-2 gap-12">
-
-        {/* LADO IZQUIERDO: FORMULARIO DE ENVÍO */}
         <section className="space-y-8">
           <div>
-            <h2 className="text-4xl font-black uppercase tracking-tighter text-gray-900 leading-none">Finalizar Compra</h2>
+            <h2 className="text-4xl font-black uppercase tracking-tighter text-gray-900 leading-none">Finalizar compra</h2>
             <p className="text-gray-500 mt-3 font-medium text-lg">Todos los campos son obligatorios para garantizar tu entrega.</p>
           </div>
 
           <form onSubmit={handleCalculateShipping} className="grid grid-cols-1 gap-5">
-            {/* Nombre y Teléfono */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Nombre Completo</label>
-                <input required placeholder="Juan Pérez" className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
-                  onChange={(e) => setAddress({ ...address, name: e.target.value })} />
+                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Nombre completo</label>
+                <input
+                  required
+                  placeholder="Juan Pérez"
+                  className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
+                  onChange={(e) => setAddress({ ...address, name: e.target.value })}
+                />
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Teléfono Celular (10 dígitos)</label>
-                <input required type="tel" placeholder="5512345678" className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
-                  onChange={(e) => setAddress({ ...address, phone: e.target.value })} />
+                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Teléfono celular</label>
+                <input
+                  required
+                  type="tel"
+                  placeholder="5512345678"
+                  className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
+                  onChange={(e) => setAddress({ ...address, phone: e.target.value })}
+                />
               </div>
             </div>
 
-            {/* Email */}
             <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Correo Electrónico</label>
-              <input required type="email" placeholder="tu@email.com" className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
-                onChange={(e) => setAddress({ ...address, email: e.target.value })} />
+              <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Correo electrónico</label>
+              <input
+                required
+                type="email"
+                placeholder="tu@email.com"
+                className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
+                onChange={(e) => setAddress({ ...address, email: e.target.value })}
+              />
             </div>
 
-            {/* CP, Estado y Ciudad */}
             <div className="grid grid-cols-3 gap-5">
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black uppercase text-gray-400 ml-2">C.P.</label>
-                <input required placeholder="00000" className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
-                  onChange={(e) => setAddress({ ...address, zip: e.target.value })} />
+                <input
+                  required
+                  placeholder="00000"
+                  className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
+                  onChange={(e) => setAddress({ ...address, zip: e.target.value })}
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Estado</label>
-                <input required placeholder="Ej: CDMX" className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
-                  onChange={(e) => setAddress({ ...address, state: e.target.value })} />
+                <input
+                  required
+                  placeholder="Ej: CDMX"
+                  className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
+                  onChange={(e) => setAddress({ ...address, state: e.target.value })}
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Ciudad</label>
-                <input required placeholder="Ciudad" className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
-                  onChange={(e) => setAddress({ ...address, city: e.target.value })} />
+                <input
+                  required
+                  placeholder="Ciudad"
+                  className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
+                  onChange={(e) => setAddress({ ...address, city: e.target.value })}
+                />
               </div>
             </div>
 
-            {/* Colonia y Calle */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Colonia</label>
-                <input required placeholder="Ej: Roma Norte" className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
-                  onChange={(e) => setAddress({ ...address, neighborhood: e.target.value })} />
+                <input
+                  required
+                  placeholder="Ej: Roma Norte"
+                  className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
+                  onChange={(e) => setAddress({ ...address, neighborhood: e.target.value })}
+                />
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Calle y Número</label>
-                <input required placeholder="Av. Juárez 456" className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
-                  onChange={(e) => setAddress({ ...address, street: e.target.value })} />
+                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Calle</label>
+                <input
+                  required
+                  placeholder="Av. Juárez"
+                  className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
+                  onChange={(e) => setAddress({ ...address, street: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Número</label>
+                <input
+                  required
+                  placeholder="456"
+                  className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all"
+                  onChange={(e) => setAddress({ ...address, number: e.target.value })}
+                />
               </div>
             </div>
 
-            {/* Referencia */}
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black uppercase text-gray-400 ml-2">Referencia de entrega</label>
-              <textarea required placeholder="Ej: Casa blanca con portón negro..." rows={2} className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all resize-none"
-                onChange={(e) => setAddress({ ...address, reference: e.target.value })} />
+              <textarea
+                required
+                placeholder="Ej: Casa blanca con portón negro..."
+                rows={2}
+                className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all resize-none"
+                onChange={(e) => setAddress({ ...address, reference: e.target.value })}
+              />
             </div>
 
             <button
@@ -185,8 +221,7 @@ export default function CheckoutPage() {
               {loadingShipping ? "OBTENIENDO TARIFAS..." : "COTIZAR ENVÍO"}
             </button>
 
-            {/* SELECCIÓN DE PAQUETERÍA (SKYDROPX RADIOS) */}
-            {shippingOptions.length > 0 && (
+            {shippingOptions.length > 0 ? (
               <div className="flex flex-col gap-3 mt-4 border-t pt-6 border-gray-100">
                 <label className="text-[10px] items-center flex justify-between font-black uppercase text-gray-400">
                   <span>Selecciona tu envío</span>
@@ -200,14 +235,16 @@ export default function CheckoutPage() {
                       setSelectedShipping(opt);
                       setShippingCost(opt.rate);
                     }}
-                    className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${selectedShipping?.id === opt.id ? 'border-blue-600 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-blue-300'}`}
+                    className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      selectedShipping?.id === opt.id ? "border-blue-600 bg-blue-50 shadow-md" : "border-gray-200 hover:border-blue-300"
+                    }`}
                   >
                     <div className="flex items-center gap-4">
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedShipping?.id === opt.id ? 'border-blue-600' : 'border-gray-300'}`}>
-                        {selectedShipping?.id === opt.id && <div className="w-2.5 h-2.5 bg-blue-600 rounded-full" />}
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedShipping?.id === opt.id ? "border-blue-600" : "border-gray-300"}`}>
+                        {selectedShipping?.id === opt.id ? <div className="w-2.5 h-2.5 bg-blue-600 rounded-full" /> : null}
                       </div>
                       <div className="flex flex-col">
-                        <span className={`font-bold ${selectedShipping?.id === opt.id ? 'text-blue-900' : 'text-gray-900'}`}>{opt.provider}</span>
+                        <span className={`font-bold ${selectedShipping?.id === opt.id ? "text-blue-900" : "text-gray-900"}`}>{opt.provider}</span>
                         <span className="text-xs text-gray-500 font-medium">Entrega estimada: {opt.days} días</span>
                       </div>
                     </div>
@@ -215,13 +252,12 @@ export default function CheckoutPage() {
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
           </form>
         </section>
 
-        {/* LADO DERECHO: RESUMEN DE COMPRA */}
         <section className="bg-white p-8 md:p-10 rounded-[3rem] shadow-2xl h-fit border border-gray-100 flex flex-col gap-6">
-          <h2 className="text-2xl font-black mb-2 text-gray-900 tracking-tight">Tu Selección</h2>
+          <h2 className="text-2xl font-black mb-2 text-gray-900 tracking-tight">Tu selección</h2>
 
           <div className="space-y-6 max-h-[400px] overflow-y-auto pr-4 scrollbar-hide">
             {cart.map((item, idx) => (
@@ -229,27 +265,25 @@ export default function CheckoutPage() {
                 <div className="flex flex-col gap-2">
                   <div>
                     <p className="font-black text-lg text-gray-900 leading-tight">{item.name}</p>
-                    <p className="text-[10px] text-blue-500 font-bold uppercase tracking-widest mt-1">Pack Personalizado</p>
+                    <p className="text-[10px] text-blue-500 font-bold uppercase tracking-widest mt-1">Pack personalizado</p>
                   </div>
 
-                  {/* Desglose de Sabores dinámico */}
                   <div className="flex flex-wrap gap-1.5 mt-1">
                     {item.composition && item.composition.length > 0
-                      ? item.composition.map((comp) => (
-                          comp.quantity > 0 && (
+                      ? item.composition.map((comp) =>
+                          comp.quantity > 0 ? (
                             <span key={comp.flavorId} className="text-[9px] bg-gray-100 px-2 py-1 rounded-full text-gray-600 font-bold">
                               {comp.quantity} {comp.name}
                             </span>
-                          )
-                        ))
-                      : Object.entries(item.flavors).map(([sabor, cant]) => (
-                          cant > 0 && (
+                          ) : null,
+                        )
+                      : Object.entries(item.flavors).map(([sabor, cant]) =>
+                          cant > 0 ? (
                             <span key={sabor} className="text-[9px] bg-gray-100 px-2 py-1 rounded-full text-gray-600 font-bold">
                               {cant} {sabor}
                             </span>
-                          )
-                        ))
-                    }
+                          ) : null,
+                        )}
                   </div>
                 </div>
                 <span className="font-black text-xl text-gray-900">${item.price}</span>
@@ -257,7 +291,6 @@ export default function CheckoutPage() {
             ))}
           </div>
 
-          {/* Cálculos Finales */}
           <div className="bg-gray-50 p-6 rounded-[2rem] space-y-3">
             <div className="flex justify-between text-gray-500 font-bold text-sm uppercase tracking-widest">
               <span>Subtotal</span>
@@ -273,17 +306,17 @@ export default function CheckoutPage() {
               <span className="text-2xl font-black text-gray-900">TOTAL</span>
               <div className="text-right">
                 <p className="text-4xl font-black text-gray-900">${total + shippingCost}</p>
-                <p className="text-[9px] text-gray-400 font-bold uppercase">Pesos Mexicanos</p>
+                <p className="text-[9px] text-gray-400 font-bold uppercase">Pesos mexicanos</p>
               </div>
             </div>
           </div>
 
-          {/* Botón de Pago Final Actualizado */}
           <button
             onClick={handlePayment}
             disabled={cart.length === 0 || shippingCost === 0 || loadingPayment}
-            className={`w-full py-6 rounded-3xl font-black text-lg tracking-[0.2em] transition-all active:scale-[0.98] shadow-2xl ${(shippingCost > 0 && !loadingPayment) ? 'bg-black text-white hover:bg-zinc-800' : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              }`}
+            className={`w-full py-6 rounded-3xl font-black text-lg tracking-[0.2em] transition-all active:scale-[0.98] shadow-2xl ${
+              shippingCost > 0 && !loadingPayment ? "bg-black text-white hover:bg-zinc-800" : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            }`}
           >
             {loadingPayment ? "CONECTANDO A STRIPE..." : "PAGAR AHORA"}
           </button>

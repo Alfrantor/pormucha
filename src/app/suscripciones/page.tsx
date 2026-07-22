@@ -204,8 +204,8 @@ export default async function SuscripcionesPage() {
 
                             // Imagen de fondo (puedes parametrizarlo en la DB en un futuro)
                             const bgImageURL = plan.name.includes("24") || plan.name.toLowerCase().includes("quincenal")
-                                ? "/pack-24.JPG"
-                                : "/pack-12.JPG";
+                                ? "/pack-24.PNG"
+                                : "/pack-12.PNG";
 
                             return (
                                 <div key={plan.id} className={`${isFeatured ? "bg-[#1A1A1A] shadow-2xl border border-[#8B3A18]/30" : "bg-white shadow-xl"} rounded-2xl overflow-hidden group hover:-translate-y-2 transition-transform duration-500 flex flex-col ${plans.length >= 5 ? "w-full sm:w-[320px]" : ""}`}>
@@ -291,11 +291,11 @@ export default async function SuscripcionesPage() {
                     <div className="space-y-6">
                         <FAQItem
                             question="¿Puedo cancelar mi suscripción cuando quiera?"
-                            answer="Sí, totalmente. Nuestras suscripciones no tienen plazos forzosos. Puedes cancelar, pausar o saltar un mes en cualquier momento accediendo a tu cuenta, hasta 48 horas antes de tu siguiente fecha de envío programada."
+                            answer="Sí, totalmente. Nuestras suscripciones no tienen plazos forzosos. Puedes gestionarlas desde tu panel y cancelarlas desde el portal de facturación de Stripe."
                         />
                         <FAQItem
                             question="¿Cómo elijo qué sabores quiero cada mes?"
-                            answer="Al momento de suscribirte seleccionarás tu mezcla inicial. Unos días antes del siguiente envío, te mandaremos un recordatorio; si no haces cambios, te enviaremos la misma selección. ¡Puedes cambiar tus sabores cuantas veces quieras desde tu perfil!"
+                            answer="Desde tu panel puedes guardar la mezcla de sabores de tu próximo envío. Si no haces cambios, el sistema surtirá la última selección confirmada. Los cambios quedan abiertos hasta 5 días antes de la fecha programada de envío."
                         />
                         <FAQItem
                             question="¿Cuándo se realiza el cobro de mi tarjeta?"

@@ -17,7 +17,6 @@ export async function POST(request: Request) {
       customerAddress,
       shippingRateId,
       shippingProvider,
-      shippingId // El ID del shipment de Skydropx (opcional pero recomendado)
     } = body;
 
     if (!shippingRateId) {
@@ -36,9 +35,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Faltan datos de envío" }, { status: 400 });
     }
 
-    // Obtenemos todos los sabores para mapear los nombres del frontend con sus IDs
-    const allFlavors = await db.flavor.findMany();
-
     // Calcular total
     const subtotal = items.reduce((sum: number, item: any) => sum + (Number(item.price) * (item.quantity || 1)), 0);
     const total = subtotal + Number(shippingCost || 0);
@@ -56,10 +52,12 @@ export async function POST(request: Request) {
         email: customerAddress.email || "sin@correo.com",
         phone: String(customerAddress.phone || ""),
         street: customerAddress.street || "",
+        number: String(customerAddress.number || ""),
         zipCode: String(customerAddress.zip || ""),
         city: customerAddress.city || "Ciudad",
         state: customerAddress.state || "Estado",
         neighborhood: customerAddress.neighborhood || "",
+        reference: customerAddress.reference || "",
         shippingCost: Number(shippingCost || 0),
         shippingRateId: shippingRateId,    // Guardamos el ID para la guía futura
         shippingProvider: shippingProvider, // Para saber qué logo poner en el admin
