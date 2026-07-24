@@ -2,7 +2,7 @@
 import Navbar from "@/components/Navbar";
 import { Leaf, Waves, Sun, Zap, ShieldCheck, Sparkles, Truck } from "lucide-react";
 // import PackSelector from "@/components/PackSelector";
-// import Image from "next/image";
+import Image from "next/image";
 import SubscriptionLanding from "@/components/SubscriptionLanding";
 import Footer from "@/components/Footer";
 import { motion } from "framer-motion";
@@ -20,12 +20,22 @@ export default function LandingPage() {
             {/* ========================================= */}
             <section className="relative min-h-screen w-full overflow-hidden text-[#F5F2EB] flex flex-col justify-between pt-32 pb-12 md:pb-16 px-6 md:px-16 lg:px-24">
                 <div className="absolute inset-0 z-0 bg-black">
+                    <Image
+                        src="/hero-bg.JPG"
+                        alt="Pormucha Kombucha"
+                        fill
+                        priority
+                        sizes="100vw"
+                        className="object-cover brightness-[0.6] grayscale-[0.2]"
+                    />
                     <video
                         src="/video-hero.mp4"
                         autoPlay
                         loop
                         muted
                         playsInline
+                        preload="metadata"
+                        poster="/hero-bg.JPG"
                         className="w-full h-full object-cover brightness-[0.60] grayscale-[0.2]"
                     />
                 </div>
@@ -122,7 +132,13 @@ export default function LandingPage() {
             <section className="bg-white py-24 border-t border-[#8B3A18]/10">
                 <div className="max-w-6xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
                     <div className="hidden lg:block relative h-[650px] bg-gray-100 rounded-2xl overflow-hidden shadow-2xl">
-                        <div className="absolute inset-0 bg-[url('/flavors-side.JPG')] bg-cover bg-center hover:scale-105 transition-transform duration-1000" />
+                        <Image
+                            src="/flavor-side.JPG"
+                            alt="Botellas de sabores regulares"
+                            fill
+                            sizes="(max-width: 1024px) 0px, 50vw"
+                            className="object-cover object-center hover:scale-105 transition-transform duration-1000"
+                        />
                     </div>
                     <div>
                         <h2 className="text-5xl md:text-6xl font-serif mb-12 underline decoration-[#8B3A18] decoration-2 underline-offset-8">
@@ -177,7 +193,7 @@ export default function LandingPage() {
                 <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12">
                     <a href="https://www.instagram.com/pormuchakombucha/" target="_blank" className="group flex flex-col text-center">
                         <div className="aspect-[4/5] bg-gray-300 overflow-hidden mb-8 relative rounded-2xl shadow-xl">
-                            <video src="/reel-1.mp4" autoPlay loop muted playsInline className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-110" />
+                            <video src="/reel-1.mp4" autoPlay loop muted playsInline preload="none" className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-110" />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
                         </div>
                         <h3 className="font-sans text-xl tracking-[0.2em] uppercase mb-4 font-bold">HECHA CON TIEMPO</h3>
@@ -185,7 +201,7 @@ export default function LandingPage() {
                     </a>
                     <a href="https://www.instagram.com/pormuchakombucha/" target="_blank" className="group flex flex-col text-center">
                         <div className="aspect-[4/5] bg-gray-300 overflow-hidden mb-8 relative rounded-2xl shadow-xl">
-                            <video src="/reel-2.mp4" autoPlay loop muted playsInline className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-110" />
+                            <video src="/reel-2.mp4" autoPlay loop muted playsInline preload="none" className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-110" />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
                         </div>
                         <h3 className="font-sans text-xl tracking-[0.2em] uppercase mb-4 font-bold">VIVA POR DENTRO</h3>
@@ -193,7 +209,7 @@ export default function LandingPage() {
                     </a>
                     <a href="https://www.instagram.com/pormuchakombucha/" target="_blank" className="group flex flex-col text-center">
                         <div className="aspect-[4/5] bg-gray-300 overflow-hidden mb-8 relative rounded-2xl shadow-xl">
-                            <video src="/reel-3.mp4" autoPlay loop muted playsInline className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-110" />
+                            <video src="/reel-3.mp4" autoPlay loop muted playsInline preload="none" className="object-cover w-full h-full transform transition-transform duration-700 group-hover:scale-110" />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500" />
                         </div>
                         <h3 className="font-sans text-xl tracking-[0.2em] uppercase mb-4 font-bold">LIGERA Y REFRESCANTE</h3>

@@ -2,6 +2,7 @@
 import { motion, useScroll, useTransform } from "framer-motion";
 import { ArrowDown } from "lucide-react";
 import { useRef } from "react";
+import Image from "next/image";
 
 export default function TiendaHero() {
     const ref = useRef(null);
@@ -21,7 +22,14 @@ export default function TiendaHero() {
                 style={{ y: yBackground }}
                 className="absolute inset-0 z-0 bg-black"
             >
-                <div className="w-full h-full bg-[url('/hero-tienda.jpg')] bg-cover bg-center brightness-[0.55]" />
+                <Image
+                    src="/hero-tienda.jpg"
+                    alt="Packs de kombucha Pormucha"
+                    fill
+                    priority
+                    sizes="100vw"
+                    className="object-cover object-center brightness-[0.55]"
+                />
                 
                 {/* Degradado para transición suave hacia el contenido inferior */}
                 <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#F5F2EB] to-transparent z-10" />

@@ -1,9 +1,9 @@
 "use server";
 
-import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { db } from "@/lib/db";
+import { ensureSubscriptionScheduleSchema } from "@/lib/subscriptions";
 
-// Crear cliente
 export async function createClient(data: {
   type: string;
   fullName: string;
@@ -23,6 +23,7 @@ export async function createClient(data: {
   try {
     const normalizedEmail = data.email?.trim() || null;
     const normalizedBusinessName = data.businessName?.trim() || null;
+
     const client = await db.client.create({
       data: {
         type: data.type,
@@ -31,7 +32,7 @@ export async function createClient(data: {
         phone: data.phone?.trim() || null,
         rfc: data.rfc?.trim().toUpperCase() || null,
         businessName: normalizedBusinessName,
-        zipCode: data.zipCode || null,
+        zipCode: data.zipCode?.trim() || null,
         classification: data.classification || "MINORISTA",
         creditLimit: data.creditLimit ? parseFloat(data.creditLimit.toString()) : 0,
         paymentTerms: data.paymentTerms,
@@ -42,7 +43,7 @@ export async function createClient(data: {
       },
     });
 
-    revalidatePath("/admin/clientes");
+    revalidatePath("/admin/clients");
     return {
       success: true,
       client: {
@@ -60,7 +61,6 @@ export async function createClient(data: {
   }
 }
 
-// Actualizar cliente
 export async function updateClient(
   id: string,
   data: {
@@ -80,7 +80,7 @@ export async function updateClient(
     contactEmail?: string;
     status?: string;
     giroId?: string | null;
-  }
+  },
 ) {
   try {
     const normalizedData = {
@@ -104,7 +104,8 @@ export async function updateClient(
       },
     });
 
-    revalidatePath("/admin/clientes");
+    revalidatePath("/admin/clients");
+    revalidatePath(`/admin/clients/${id}`);
     return {
       success: true,
       client: {
@@ -122,10 +123,11 @@ export async function updateClient(
   }
 }
 
-// Obtener cliente con todas sus relaciones
 export async function getClient(id: string) {
   try {
-    const client = await db.client.findUnique({
+    await ensureSubscriptionScheduleSchema();
+
+    return await db.client.findUnique({
       where: { id },
       include: {
         addresses: true,
@@ -134,14 +136,12 @@ export async function getClient(id: string) {
         interactions: { take: 20, orderBy: { createdAt: "desc" } },
       },
     });
-    return client;
   } catch (error) {
     console.error("Error fetching client:", error);
     return null;
   }
 }
 
-// Listar clientes con filtros
 export async function listClients(params: {
   search?: string;
   classification?: string;
@@ -150,6 +150,8 @@ export async function listClients(params: {
   offset?: number;
 }) {
   try {
+    await ensureSubscriptionScheduleSchema();
+
     const where: any = {};
 
     if (params.search) {
@@ -191,12 +193,12 @@ export async function listClients(params: {
   }
 }
 
-// Crear dirección
 export async function createAddress(data: {
   clientId: string;
   type: string;
   street: string;
   number: string;
+  neighborhood?: string;
   city: string;
   state: string;
   zipCode: string;
@@ -204,12 +206,15 @@ export async function createAddress(data: {
   isDefault?: boolean;
 }) {
   try {
+    await ensureSubscriptionScheduleSchema();
+
     const address = await db.address.create({
       data: {
         clientId: data.clientId,
         type: data.type,
         street: data.street,
         number: data.number,
+        neighborhood: data.neighborhood || null,
         city: data.city,
         state: data.state,
         zipCode: data.zipCode,
@@ -218,52 +223,52 @@ export async function createAddress(data: {
       },
     });
 
-    revalidatePath(`/admin/clientes/${data.clientId}`);
+    revalidatePath(`/admin/clients/${data.clientId}`);
     return { success: true, address };
   } catch (error: any) {
     return { error: error.message };
   }
 }
 
-// Actualizar dirección
 export async function updateAddress(
   id: string,
   data: {
     type?: string;
     street?: string;
     number?: string;
+    neighborhood?: string;
     city?: string;
     state?: string;
     zipCode?: string;
     reference?: string;
     isDefault?: boolean;
-  }
+  },
 ) {
   try {
+    await ensureSubscriptionScheduleSchema();
+
     const address = await db.address.update({
       where: { id },
       data,
     });
 
-    revalidatePath(`/admin/clientes/${address.clientId}`);
+    revalidatePath(`/admin/clients/${address.clientId}`);
     return { success: true, address };
   } catch (error: any) {
     return { error: error.message };
   }
 }
 
-// Eliminar dirección
 export async function deleteAddress(id: string) {
   try {
     const address = await db.address.delete({ where: { id } });
-    revalidatePath(`/admin/clientes/${address.clientId}`);
+    revalidatePath(`/admin/clients/${address.clientId}`);
     return { success: true };
   } catch (error: any) {
     return { error: error.message };
   }
 }
 
-// Crear nota/interacción
 export async function createInteraction(data: {
   clientId: string;
   type: string;
@@ -275,7 +280,7 @@ export async function createInteraction(data: {
       data,
     });
 
-    revalidatePath(`/admin/clientes/${data.clientId}`);
+    revalidatePath(`/admin/clients/${data.clientId}`);
     return { success: true, interaction };
   } catch (error: any) {
     return { error: error.message };
