@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 export async function updateOrderItems(
   orderId: string,
   items: { id: string; quantity: number; unitPrice: number }[]
-): Promise<{ success: boolean; newTotal?: number; error?: string }> {
+): Promise<{ success: boolean; newTotal?: number; newSubtotal?: number; error?: string }> {
   try {
     const result = await db.$transaction(async (tx) => {
       for (const item of items) {
@@ -24,11 +24,17 @@ export async function updateOrderItems(
       });
       const itemsTotal = order.orderItems.reduce((s: number, i: any) => s + Number(i.subtotal), 0);
       const newTotal = itemsTotal + Number(order.shippingCost || 0);
-      await (tx as any).order.update({ where: { id: orderId }, data: { total: newTotal } });
-      return newTotal;
+      await (tx as any).order.update({
+        where: { id: orderId },
+        data: {
+          subtotal: itemsTotal,
+          total: newTotal,
+        },
+      });
+      return { newSubtotal: itemsTotal, newTotal };
     });
     revalidatePath("/admin");
-    return { success: true, newTotal: result };
+    return { success: true, newTotal: result.newTotal, newSubtotal: result.newSubtotal };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

@@ -492,6 +492,7 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
       setLocalOrders(prev => prev.map((o: any) =>
         o.id !== editModal.id ? o : {
           ...o,
+          subtotal: res.newSubtotal ?? o.subtotal,
           total: res.newTotal,
           orderItems: o.orderItems.map((oi: any) => {
             const updated = editItems.find(i => i.id === oi.id);
@@ -499,6 +500,11 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
           }),
         }
       ));
+      setEditModal((prev: any) => prev ? {
+        ...prev,
+        subtotal: res.newSubtotal ?? prev.subtotal,
+        total: res.newTotal ?? prev.total,
+      } : prev);
     } else {
       toast.error(res.error || "Error al actualizar productos");
     }
