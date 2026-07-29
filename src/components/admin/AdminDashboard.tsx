@@ -483,9 +483,9 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
     if (res.success) setEditEdits(res.edits || []);
   };
 
-  const handleSaveItems = async () => {
-    if (!editModal) return;
-    setItemsSaving(true);
+  const persistEditedItems = async () => {
+    if (!editModal) return { success: false, error: "Orden no seleccionada" } as const;
+
     const res = await updateOrderItems(editModal.id, editItems.map(i => ({
       id: typeof i.id === "string" && !i.id.startsWith("new-") ? i.id : undefined,
       productId: i.productId ?? null,
@@ -494,9 +494,8 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
       quantity: i.quantity,
       unitPrice: i.unitPrice,
     })));
-    setItemsSaving(false);
+
     if (res.success) {
-      toast.success("Productos actualizados.");
       const normalizedItems = (res.updatedItems || []).map((item: any) => ({
         ...item,
         name: item.productName,
@@ -516,6 +515,18 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
         total: res.newTotal ?? prev.total,
         orderItems: normalizedItems,
       } : prev);
+    }
+
+    return res;
+  };
+
+  const handleSaveItems = async () => {
+    if (!editModal) return;
+    setItemsSaving(true);
+    const res = await persistEditedItems();
+    setItemsSaving(false);
+    if (res.success) {
+      toast.success("Productos actualizados.");
     } else {
       toast.error(res.error || "Error al actualizar productos");
     }
@@ -524,6 +535,14 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
   const handleSaveEdit = async () => {
     if (!editModal) return;
     setEditSaving(true);
+
+    const itemsRes = await persistEditedItems();
+    if (!itemsRes.success) {
+      setEditSaving(false);
+      toast.error(itemsRes.error || "Error al actualizar productos");
+      return;
+    }
+
     const res = await editOrder(editModal.id, {
       fullName:        editForm.fullName        || null,
       email:           editForm.email           || null,
@@ -544,16 +563,16 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
           ...o,
           ...editForm,
           shippingCost: res.newShippingCost ?? Number(editForm.shippingCost || 0),
-          subtotal: res.newSubtotal ?? o.subtotal,
-          total: res.newTotal ?? o.total,
+          subtotal: res.newSubtotal ?? itemsRes.newSubtotal ?? o.subtotal,
+          total: res.newTotal ?? itemsRes.newTotal ?? o.total,
         }
       ));
       setEditModal((prev: any) => prev ? {
         ...prev,
         ...editForm,
         shippingCost: res.newShippingCost ?? Number(editForm.shippingCost || 0),
-        subtotal: res.newSubtotal ?? prev.subtotal,
-        total: res.newTotal ?? prev.total,
+        subtotal: res.newSubtotal ?? itemsRes.newSubtotal ?? prev.subtotal,
+        total: res.newTotal ?? itemsRes.newTotal ?? prev.total,
       } : prev);
       // Recargar historial
       const fresh = await getOrderEdits(editModal.id);
