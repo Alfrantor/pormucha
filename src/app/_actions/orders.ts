@@ -58,8 +58,8 @@ export async function cancelOrder(
         await closeOrderCredit(tx, orderId, "CANCELLED");
       }
 
-      // 2. Regresar stock si se solicitó
-      if (returnStock && order.locationId) {
+      // 2. Regresar stock automáticamente al cancelar
+      if (order.locationId) {
         for (const item of order.orderItems) {
           for (const comp of item.composition) {
             await tx.stock.upsert({

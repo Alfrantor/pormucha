@@ -460,6 +460,7 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
       email:           order.email           ?? "",
       phone:           order.phone           ?? "",
       notes:           order.notes           ?? "",
+      shippingCost:    Number(order.shippingCost ?? 0),
       requiresInvoice: !!(order as any).requiresInvoice,
       paymentMethod:   order.paymentMethod   ?? "CASH",
       invoiceNumber:   order.invoiceNumber   ?? "",
@@ -468,6 +469,8 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
     });
     setEditItems((order.orderItems || []).map((item: any) => ({
       id:        item.id,
+      productId: item.productId ?? null,
+      flavorId:  item.flavorId ?? null,
       name:      item.productName,
       quantity:  item.quantity,
       unitPrice: Number(item.unitPrice),
@@ -484,26 +487,34 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
     if (!editModal) return;
     setItemsSaving(true);
     const res = await updateOrderItems(editModal.id, editItems.map(i => ({
-      id: i.id, quantity: i.quantity, unitPrice: i.unitPrice,
+      id: typeof i.id === "string" && !i.id.startsWith("new-") ? i.id : undefined,
+      productId: i.productId ?? null,
+      flavorId: i.flavorId ?? null,
+      productName: i.name,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
     })));
     setItemsSaving(false);
     if (res.success) {
       toast.success("Productos actualizados.");
+      const normalizedItems = (res.updatedItems || []).map((item: any) => ({
+        ...item,
+        name: item.productName,
+      }));
       setLocalOrders(prev => prev.map((o: any) =>
         o.id !== editModal.id ? o : {
           ...o,
           subtotal: res.newSubtotal ?? o.subtotal,
           total: res.newTotal,
-          orderItems: o.orderItems.map((oi: any) => {
-            const updated = editItems.find(i => i.id === oi.id);
-            return updated ? { ...oi, quantity: updated.quantity, unitPrice: updated.unitPrice, subtotal: updated.quantity * updated.unitPrice } : oi;
-          }),
+          orderItems: normalizedItems,
         }
       ));
+      setEditItems(normalizedItems);
       setEditModal((prev: any) => prev ? {
         ...prev,
         subtotal: res.newSubtotal ?? prev.subtotal,
         total: res.newTotal ?? prev.total,
+        orderItems: normalizedItems,
       } : prev);
     } else {
       toast.error(res.error || "Error al actualizar productos");
@@ -518,6 +529,7 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
       email:           editForm.email           || null,
       phone:           editForm.phone           || null,
       notes:           editForm.notes           || null,
+      shippingCost:    Number(editForm.shippingCost || 0),
       requiresInvoice: editForm.requiresInvoice,
       paymentMethod:   editForm.paymentMethod   || null,
       invoiceNumber:   editForm.invoiceNumber   || null,
@@ -528,8 +540,21 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
     if (res.success) {
       toast.success("Orden actualizada correctamente.");
       setLocalOrders(prev => prev.map((o: any) =>
-        o.id !== editModal.id ? o : { ...o, ...editForm }
+        o.id !== editModal.id ? o : {
+          ...o,
+          ...editForm,
+          shippingCost: res.newShippingCost ?? Number(editForm.shippingCost || 0),
+          subtotal: res.newSubtotal ?? o.subtotal,
+          total: res.newTotal ?? o.total,
+        }
       ));
+      setEditModal((prev: any) => prev ? {
+        ...prev,
+        ...editForm,
+        shippingCost: res.newShippingCost ?? Number(editForm.shippingCost || 0),
+        subtotal: res.newSubtotal ?? prev.subtotal,
+        total: res.newTotal ?? prev.total,
+      } : prev);
       // Recargar historial
       const fresh = await getOrderEdits(editModal.id);
       if (fresh.success) setEditEdits(fresh.edits || []);
@@ -561,7 +586,7 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
   const openCancel = (order: any) => {
     setCancelTarget(order);
     setCancelStep("confirm");
-    setReturnStock(null);
+    setReturnStock(true);
     setDoReplacement(null);
     setCancelNote("");
   };
@@ -572,7 +597,7 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
     setCancelLoading(true);
     const res = await cancelOrder(
       cancelTarget.id,
-      returnStock ?? false,
+      true,
       doReplacement ?? false,
       cancelNote || undefined
     );
@@ -886,6 +911,8 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
                               subtotal: Number(item.subtotal),
                             })),
                             total: Number(order.total),
+                            subtotal: Number(order.subtotal || 0),
+                            serviceFee: Number(order.shippingCost || 0),
                             paymentMethod: order.paymentMethod || "CASH",
                             userId: null,
                             createdAt: order.createdAt,
@@ -1310,6 +1337,19 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
                 />
               </div>
 
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">Servicio</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editForm.shippingCost ?? 0}
+                  onChange={e => setEditForm(f => ({ ...f, shippingCost: parseFloat(e.target.value) || 0 }))}
+                  placeholder="0.00"
+                  className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
+                />
+              </div>
+
               {/* Método de pago */}
               <div>
                 <label className="text-xs font-bold text-gray-500 mb-1 block">Método de pago</label>
@@ -1426,16 +1466,26 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
                 <div className="space-y-2">
                   {editItems.map((item, idx) => (
                     <div key={item.id} className="bg-gray-50 rounded-2xl p-3 space-y-2">
-                      <p className="text-xs font-black text-gray-700 truncate">{item.name}</p>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 mb-1 block">Producto</label>
+                        <input
+                          type="text"
+                          value={item.name}
+                          onChange={e => setEditItems(prev => prev.map((it, i) =>
+                            i !== idx ? it : { ...it, name: e.target.value }
+                          ))}
+                          className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:border-gray-400"
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
                         <div>
                           <label className="text-[10px] font-bold text-gray-400 mb-1 block">Cantidad</label>
                           <input
                             type="number"
-                            min="1"
+                            min="0"
                             value={item.quantity}
                             onChange={e => setEditItems(prev => prev.map((it, i) =>
-                              i !== idx ? it : { ...it, quantity: parseInt(e.target.value) || 1, subtotal: (parseInt(e.target.value) || 1) * it.unitPrice }
+                              i !== idx ? it : { ...it, quantity: Math.max(0, parseInt(e.target.value) || 0), subtotal: Math.max(0, parseInt(e.target.value) || 0) * it.unitPrice }
                             ))}
                             className="w-full border-2 border-gray-200 rounded-xl px-2 py-1.5 text-sm font-black text-center focus:outline-none focus:border-gray-400"
                           />
@@ -1459,14 +1509,52 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
                             ${(item.quantity * item.unitPrice).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
                           </div>
                         </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-400 mb-1 block">Quitar</label>
+                          <button
+                            onClick={() => setEditItems(prev => prev.map((it, i) =>
+                              i !== idx ? it : { ...it, quantity: 0, subtotal: 0 }
+                            ))}
+                            className="w-full border-2 border-red-200 text-red-500 rounded-xl px-2 py-1.5 text-xs font-black hover:bg-red-50 transition"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setEditItems(prev => [
+                      ...prev,
+                      {
+                        id: `new-${Date.now()}`,
+                        productId: null,
+                        flavorId: null,
+                        name: "",
+                        quantity: 1,
+                        unitPrice: 0,
+                        subtotal: 0,
+                      },
+                    ])}
+                    className="text-xs px-4 py-2 rounded-xl border border-blue-200 text-blue-600 font-black hover:bg-blue-50 transition"
+                  >
+                    + Agregar producto
+                  </button>
+                </div>
                 <div className="flex items-center justify-between px-1">
                   <span className="text-xs text-gray-400 font-bold">
+                    Subtotal: <span className="text-gray-900 font-black">
+                      ${editItems.reduce((s, i) => s + Math.max(0, i.quantity) * i.unitPrice, 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                    </span>
+                    {" · "}
+                    Servicio: <span className="text-gray-900 font-black">
+                      ${Number(editForm.shippingCost || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                    </span>
+                    {" · "}
                     Nuevo total: <span className="text-gray-900 font-black">
-                      ${editItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                      ${(editItems.reduce((s, i) => s + Math.max(0, i.quantity) * i.unitPrice, 0) + Number(editForm.shippingCost || 0)).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
                     </span>
                   </span>
                   <button
@@ -1521,6 +1609,7 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
                   email: "Email",
                   phone: "Teléfono",
                   notes: "Notas",
+                  shippingCost: "Servicio",
                   requiresInvoice: "Requiere factura",
                   paymentMethod: "Método de pago",
                   invoiceNumber: "# Factura",
@@ -1585,35 +1674,11 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
                   <p className="font-black text-gray-900">${Number(cancelTarget.total).toLocaleString("es-MX")}</p>
                 </div>
                 <div className="space-y-2">
-                  <button onClick={() => setCancelStep("stock")} className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-2xl font-black uppercase transition-all active:scale-95">
+                  <button onClick={() => setCancelStep("replacement")} className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-2xl font-black uppercase transition-all active:scale-95">
                     Sí, cancelar orden
                   </button>
                   <button onClick={closeCancel} className="w-full py-3 text-sm text-gray-400 font-bold hover:text-gray-700">
                     Volver
-                  </button>
-                </div>
-              </>
-            )}
-
-            {cancelStep === "stock" && (
-              <>
-                <div className="text-center space-y-2">
-                  <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 flex items-center justify-center text-2xl">📦</div>
-                  <h3 className="text-xl font-black text-gray-800">¿Regresar inventario?</h3>
-                  <p className="text-sm text-gray-500">¿Deseas devolver los productos de esta orden al inventario de la sucursal?</p>
-                </div>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => { setReturnStock(true); setCancelStep("replacement"); }}
-                    className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-2xl font-black transition-all active:scale-95"
-                  >
-                    ✅ Sí, regresar al inventario
-                  </button>
-                  <button
-                    onClick={() => { setReturnStock(false); setCancelStep("replacement"); }}
-                    className="w-full border-2 border-gray-200 py-3 rounded-2xl font-black text-gray-600 hover:bg-gray-50 transition-all"
-                  >
-                    ❌ No, mantener inventario
                   </button>
                 </div>
               </>
