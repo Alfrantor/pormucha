@@ -655,8 +655,8 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
     try {
       const res = await generateShippingLabel(order.id);
       if (res.success && res.labelUrl) window.open(res.labelUrl, "_blank");
-      else alert("Error: " + res.error);
-    } catch { alert("Error crítico al conectar con Skydropx"); }
+      else alert("Error: " + ("error" in res ? res.error : "No se pudo generar la guía"));
+    } catch { alert("Error crítico al conectar con la paquetería"); }
     finally { setIsGenerating(null); }
   };
 

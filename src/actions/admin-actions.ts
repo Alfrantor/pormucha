@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { createShippingLabel } from "@/lib/shipping-service";
 import { revalidatePath } from "next/cache";
 
 // ==========================================
@@ -284,177 +285,13 @@ export async function deleteLead(formData: FormData) {
 // ==========================================
 // LOGÍSTICA (SKYDROPX)
 // ==========================================
-export async function generateShippingLabel(orderId: string) {
+export async function generateShippingLabel(orderId: string): Promise<{ success: true; labelUrl: string } | { success: false; error: string }> {
   try {
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      include: { orderItems: { include: { product: true } } }
-    });
-
-    if (!order) throw new Error("Orden no encontrada");
-
-    // 1. OBTENER TOKEN (con fallback a form-urlencoded)
-    let bearerToken: string | null = null;
-
-    const tokenAttempts = [
-      { url: "https://pro.skydropx.com/api/v1/oauth/token",    contentType: "application/json" },
-      { url: "https://sb-pro.skydropx.com/api/v1/oauth/token", contentType: "application/json" },
-    ];
-
-    for (const attempt of tokenAttempts) {
-      try {
-        const res = await fetch(attempt.url, {
-          method: "POST",
-          headers: { "Content-Type": attempt.contentType, "Accept": "application/json" },
-          body: JSON.stringify({
-            grant_type: "client_credentials",
-            client_id: process.env.SKYDROPX_CLIENT_ID,
-            client_secret: process.env.SKYDROPX_CLIENT_SECRET,
-          }),
-        });
-        if (res.ok) {
-          const d = await res.json();
-          if (d.access_token) { bearerToken = d.access_token; break; }
-        }
-      } catch {}
-    }
-
-    if (!bearerToken) throw new Error("No se pudo obtener token de Skydropx. Verifica tus credenciales.");
-
-    // 2. COTIZAR (Para obtener el rate_id fresco)
-    const totalWeight = order.orderItems.reduce((sum, i) => sum + Number(i.product?.weight || 1), 0);
-    const maxHeight = Math.max(...order.orderItems.map(i => Number(i.product?.height || 10)));
-    const maxWidth = Math.max(...order.orderItems.map(i => Number(i.product?.width || 10)));
-    const maxLength = Math.max(...order.orderItems.map(i => Number(i.product?.length || 10)));
-
-    const quoteRes = await fetch("https://pro.skydropx.com/api/v1/quotations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${bearerToken}` },
-      body: JSON.stringify({
-        quotation: {
-          address_from: { country_code: "MX", postal_code: "24000", area_level1: "Campeche", area_level2: "Campeche", area_level3: "Centro" },
-          address_to: { country_code: "MX", postal_code: order.zipCode, area_level1: order.state, area_level2: order.city, area_level3: order.neighborhood || "Centro" },
-          parcels: [{ weight: totalWeight, height: maxHeight, width: maxWidth, length: maxLength }]
-        }
-      })
-    });
-
-    let quoteData = await quoteRes.json();
-    let freshRateId = null;
-
-    // Polling rápido para encontrar la tarifa
-    for (let i = 0; i < 5; i++) {
-      const match = (quoteData.rates || []).find((r: any) =>
-        `${r.provider_service_name} (${r.provider_display_name})` === order.shippingProvider
-      );
-      if (match) { freshRateId = match.id; break; }
-      await new Promise(r => setTimeout(r, 1500));
-      const poll = await fetch(`https://pro.skydropx.com/api/v1/quotations/${quoteData.id}`, {
-        headers: { "Authorization": `Bearer ${bearerToken}` }
-      });
-      quoteData = await poll.json();
-    }
-
-    if (!freshRateId) throw new Error("No se encontró tarifa vigente.");
-
-    // Sanitizar teléfono destino: solo dígitos, mínimo 10 caracteres
-    const rawPhone = String(order.phone || "").replace(/\D/g, "");
-    const sanitizedPhone = rawPhone.length >= 10 ? rawPhone : rawPhone.padEnd(10, "0");
-
-    // Convertir Decimal de Prisma a número plano de forma segura
-    const orderTotal = parseFloat(order.total?.toString() || "0");
-
-    // 3. CREAR ENVÍO
-    const shipmentBody: any = {
-      shipment: {
-        rate_id: freshRateId,
-        printing_format: "standard",
-        address_from: {
-          country_code: "MX",
-          postal_code: "24090",
-          area_level1: "Campeche",
-          area_level2: "Campeche",
-          area_level3: "Samulá",
-          street1: "Siete",
-          apartment_number: "25",
-          name: "Alfredo Andrés Pérez Toralla",
-          company: "Pormucha",
-          phone: "9811234567",
-          email: "admin@pormucha.com",
-          reference: "casa de dos pisos"
-        },
-        address_to: {
-          country_code: "MX",
-          postal_code: order.zipCode,
-          area_level1: order.state,
-          area_level2: order.city,
-          area_level3: order.neighborhood || "Centro",
-          street1: order.street,
-          name: order.fullName,
-          company: order.fullName,
-          phone: sanitizedPhone,
-          email: order.email,
-          reference: "Entrega a domicilio"
-        },
-        packages: [
-          {
-            package_number: 1,
-            package_protected: false,
-            declared_value: orderTotal,
-            total: orderTotal,
-            package_type: "4G",
-            consignment_note: "50202300"
-          }
-        ]
-      }
-    };
-
-    // Si el headquarter está configurado en .env, incluirlo
-    if (process.env.SKYDROPX_HEADQUARTER_ID) {
-      shipmentBody.shipment.headquarter_id = process.env.SKYDROPX_HEADQUARTER_ID;
-    }
-
-    const response = await fetch("https://pro.skydropx.com/api/v1/shipments/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "Authorization": `Bearer ${bearerToken}`,
-      },
-      body: JSON.stringify(shipmentBody)
-    });
-
-    const rawText = await response.text();
-
-    let data: any;
-    try { data = JSON.parse(rawText); } catch { throw new Error(`Respuesta inválida de Skydropx: ${rawText.slice(0, 200)}`); }
-
-    if (!response.ok) {
-      const detail = JSON.stringify(data);
-      console.error("❌ Error de Skydropx PRO:", detail);
-      throw new Error(`Skydropx error ${response.status}: ${detail}`);
-    }
-
-    // 4. EXTRAER DATOS (Según el esquema de respuesta del manual)
-    const tracking = data.master_tracking_number || data.data?.attributes?.master_tracking_number;
-    const labelUrl = data.label_url || data.data?.attributes?.label_url;
-
-    if (!labelUrl) throw new Error("Envío creado pero no se recibió URL de guía.");
-
-    await db.order.update({
-      where: { id: orderId },
-      data: {
-        trackingNumber: String(tracking),
-        trackingUrl: labelUrl,
-        status: "SHIPPED"
-      }
-    });
-
+    const result = await createShippingLabel(orderId);
     revalidatePath("/admin");
-    return { success: true, labelUrl };
-
+    return result;
   } catch (error: any) {
-    console.error("❌ Error en guía:", error.message);
+    console.error("Error en guía:", error.message);
     return { success: false, error: error.message };
   }
 }

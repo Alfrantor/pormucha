@@ -88,6 +88,12 @@ function ThanksContent() {
                             : "Hemos recibido tus datos con éxito. Tu pedido se procesará en breve."}
                 </p>
 
+                {status === "verified" && !isSubscription ? (
+                    <p className="text-sm text-[#8B3A18] font-semibold mb-10 max-w-md leading-6">
+                        Pronto enviaremos un correo con los datos de tu envío.
+                    </p>
+                ) : null}
+
                 <div className="flex flex-col gap-4 w-full items-center">
                     {status === "verified" && isSubscription && (
                         <motion.div

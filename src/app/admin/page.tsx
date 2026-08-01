@@ -6,6 +6,7 @@ import {
   Boxes,
   BriefcaseBusiness,
   CreditCard,
+  Repeat,
   FlaskConical,
   ShieldCheck,
   ShoppingCart,
@@ -20,6 +21,7 @@ const COPY = {
   es: {
     modules: [
       { href: "/admin/orders", title: "Pedidos", desc: "Ventas web, POS, pagos y cancelaciones", icon: <ShoppingCart size={18} /> },
+      { href: "/admin/subscriptions", title: "Suscriptores", desc: "Club, ciclos de envio y mezcla de sabores", icon: <Repeat size={18} /> },
       { href: "/admin/inventory", title: "Inventarios", desc: "Productos, materia prima, en proceso y traspasos", icon: <Boxes size={18} /> },
       { href: "/admin/catalog", title: "Catálogo", desc: "Productos, suscripciones y catálogo comercial", icon: <Tags size={18} /> },
       { href: "/admin/clients", title: "Clientes", desc: "CRM, crédito, direcciones e historial", icon: <BriefcaseBusiness size={18} /> },
@@ -52,6 +54,7 @@ const COPY = {
   en: {
     modules: [
       { href: "/admin/orders", title: "Orders", desc: "Web sales, POS, payments, and cancellations", icon: <ShoppingCart size={18} /> },
+      { href: "/admin/subscriptions", title: "Subscribers", desc: "Club cycles, shipments, and flavor mix", icon: <Repeat size={18} /> },
       { href: "/admin/inventory", title: "Inventory", desc: "Products, raw materials, in-process stock, and transfers", icon: <Boxes size={18} /> },
       { href: "/admin/catalog", title: "Catalog", desc: "Products, subscriptions, and commercial catalog", icon: <Tags size={18} /> },
       { href: "/admin/clients", title: "Clients", desc: "CRM, credit, addresses, and history", icon: <BriefcaseBusiness size={18} /> },

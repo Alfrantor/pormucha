@@ -8,6 +8,7 @@ import {
   Users,
   ShieldCheck,
   ShoppingCart,
+  Repeat,
   Boxes,
   Truck,
   FlaskConical,
@@ -28,6 +29,7 @@ type NavLink = {
 const PRIMARY_LINKS: NavLink[] = [
   { href: "/admin", label: "Inicio", description: "Resumen operativo", icon: <LayoutDashboard size={16} /> },
   { href: "/admin/orders", label: "Pedidos", description: "Ventas y pagos", icon: <ShoppingCart size={16} /> },
+  { href: "/admin/subscriptions", label: "Suscriptores", description: "Club, ciclos y envios", icon: <Repeat size={16} /> },
   { href: "/admin/inventory", label: "Inventarios", description: "Stock, materia prima y traspasos", icon: <Boxes size={16} /> },
   { href: "/admin/catalog", label: "Catálogo", description: "Productos y suscripciones", icon: <Tags size={16} /> },
   { href: "/admin/clients", label: "Clientes", description: "CRM y crédito", icon: <Users size={16} /> },

@@ -12,6 +12,7 @@ export default function CheckoutPage() {
   const [loadingPayment, setLoadingPayment] = useState(false);
   const [shippingOptions, setShippingOptions] = useState<any[]>([]);
   const [selectedShipping, setSelectedShipping] = useState<any>(null);
+  const [shippingSourceLabel, setShippingSourceLabel] = useState("Paquetería");
 
   const [address, setAddress] = useState({
     name: "",
@@ -38,6 +39,9 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           zip: address.zip,
           productIds: cart.map((item) => item.id),
+          state: address.state,
+          city: address.city,
+          neighborhood: address.neighborhood,
         }),
       });
       const data = await res.json();
@@ -46,8 +50,9 @@ export default function CheckoutPage() {
         setShippingOptions(data.rates);
         setSelectedShipping(data.rates[0]);
         setShippingCost(data.rates[0].rate);
+        setShippingSourceLabel(data.provider || data.rates[0].source || "Paquetería");
       } else {
-        alert("No se encontraron tarifas de paquetería para este código postal.");
+        alert(data.error || "No se encontraron tarifas de paquetería para este código postal.");
         setShippingCost(0);
       }
     } catch (error) {
@@ -208,9 +213,13 @@ export default function CheckoutPage() {
                 required
                 placeholder="Ej: Casa blanca con portón negro..."
                 rows={2}
+                maxLength={25}
                 className="p-5 rounded-2xl border-2 border-transparent shadow-sm bg-white focus:border-blue-500 outline-none transition-all resize-none"
                 onChange={(e) => setAddress({ ...address, reference: e.target.value })}
               />
+              <p className="ml-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400">
+                Máximo 25 caracteres
+              </p>
             </div>
 
             <button
@@ -225,7 +234,7 @@ export default function CheckoutPage() {
               <div className="flex flex-col gap-3 mt-4 border-t pt-6 border-gray-100">
                 <label className="text-[10px] items-center flex justify-between font-black uppercase text-gray-400">
                   <span>Selecciona tu envío</span>
-                  <span className="text-blue-500 bg-blue-50 px-2 py-1 rounded">Skydropx</span>
+                  <span className="text-blue-500 bg-blue-50 px-2 py-1 rounded">{shippingSourceLabel}</span>
                 </label>
 
                 {shippingOptions.map((opt) => (
@@ -275,14 +284,14 @@ export default function CheckoutPage() {
                             <span key={comp.flavorId} className="text-[9px] bg-gray-100 px-2 py-1 rounded-full text-gray-600 font-bold">
                               {comp.quantity} {comp.name}
                             </span>
-                          ) : null,
+                          ) : null
                         )
                       : Object.entries(item.flavors).map(([sabor, cant]) =>
                           cant > 0 ? (
                             <span key={sabor} className="text-[9px] bg-gray-100 px-2 py-1 rounded-full text-gray-600 font-bold">
                               {cant} {sabor}
                             </span>
-                          ) : null,
+                          ) : null
                         )}
                   </div>
                 </div>
@@ -323,7 +332,7 @@ export default function CheckoutPage() {
 
           <div className="flex justify-center gap-4 opacity-30 grayscale mt-2">
             <p className="text-[10px] font-bold">STRIPE SECURE CHECKOUT</p>
-            <p className="text-[10px] font-bold">SKYDROPX LOGISTICS</p>
+            <p className="text-[10px] font-bold">{shippingSourceLabel.toUpperCase()}</p>
           </div>
         </section>
       </main>
