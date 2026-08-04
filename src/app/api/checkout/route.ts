@@ -28,14 +28,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "El carrito está vacío" }, { status: 400 });
     }
 
-    if (!customerAddress) {
-      return NextResponse.json({ error: "Faltan datos de envío" }, { status: 400 });
-    }
-
     const subtotal = items.reduce(
       (sum: number, item: any) => sum + Number(item.price) * (item.quantity || 1),
       0
     );
+
+    if (subtotal <= 0) {
+      return NextResponse.json({ error: "No se puede generar un pago sin productos en el carrito." }, { status: 400 });
+    }
+
+    if (!customerAddress) {
+      return NextResponse.json({ error: "Faltan datos de envío" }, { status: 400 });
+    }
     const total = subtotal + Number(shippingCost || 0);
 
     const order = await db.order.create({

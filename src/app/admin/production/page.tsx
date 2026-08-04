@@ -3,6 +3,7 @@ import { loadProductionFormulas } from "@/lib/production-formulas";
 import ProductionWorkspace from "@/components/admin/ProductionWorkspace";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 
 function isDecimalLike(value: unknown): value is { toNumber: () => number } {
   if (!value || typeof value !== "object") return false;
@@ -172,11 +173,24 @@ export default async function ProductionPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Operacion</p>
-        <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Produccion</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-          Aqui administramos la bebida base, el gasificado y el etiquetado como flujos separados dentro de la misma operacion.
-        </p>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Operacion</p>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Produccion</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              Aqui administramos la bebida base, el gasificado y el etiquetado como flujos separados dentro de la misma operacion.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/admin/catalog/formulas"
+              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-950"
+            >
+              Ver recetas
+            </Link>
+          </div>
+        </div>
       </section>
 
       <ProductionWorkspace

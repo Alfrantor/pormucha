@@ -6,6 +6,7 @@ interface CartItem {
   id: string;
   name: string;
   price: number;
+  packQuantity?: number;
   flavors: Record<string, number>;
   quantity: number;
   // AGREGAMOS ESTO:
@@ -19,6 +20,9 @@ interface CartItem {
 interface CartContextType {
   cart: CartItem[];
   addToCart: (item: CartItem) => void;
+  updateCartItem: (id: string, item: CartItem) => void;
+  removeFromCart: (id: string) => void;
+  updateCartItemQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
   total: number;
 }
@@ -26,20 +30,20 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  // Inicializamos el carrito intentando leer de localStorage para no perder la compra al recargar
-  const [cart, setCart] = useState<CartItem[]>([]);
+  // Inicializamos el carrito desde localStorage para conservarlo entre recargas.
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    if (typeof window === "undefined") return [];
 
-  // Efecto opcional: Cargar carrito de localStorage al iniciar (si lo usas)
-  useEffect(() => {
     const savedCart = localStorage.getItem("pormucha_cart");
-    if (savedCart) {
-      try {
-        setCart(JSON.parse(savedCart));
-      } catch (e) {
-        console.error("Error cargando carrito:", e);
-      }
+    if (!savedCart) return [];
+
+    try {
+      return JSON.parse(savedCart);
+    } catch (e) {
+      console.error("Error cargando carrito:", e);
+      return [];
     }
-  }, []);
+  });
 
   // Efecto opcional: Guardar carrito en localStorage cuando cambie
   useEffect(() => {
@@ -48,6 +52,26 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addToCart = (item: CartItem) => {
     setCart((prev) => [...prev, item]);
+  };
+
+  const updateCartItem = (id: string, item: CartItem) => {
+    setCart((prev) => prev.map((current) => (current.id === id ? item : current)));
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const updateCartItemQuantity = (id: string, quantity: number) => {
+    setCart((prev) =>
+      prev
+        .map((item) => {
+          if (item.id !== id) return item;
+          if (quantity <= 0) return null;
+          return { ...item, quantity };
+        })
+        .filter((item): item is CartItem => item !== null)
+    );
   };
 
   const clearCart = () => {
@@ -59,7 +83,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
   return (
-    <CartContext.Provider value={{ cart, addToCart, clearCart, total }}>
+    <CartContext.Provider value={{ cart, addToCart, updateCartItem, removeFromCart, updateCartItemQuantity, clearCart, total }}>
       {children}
     </CartContext.Provider>
   );

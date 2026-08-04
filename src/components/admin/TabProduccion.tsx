@@ -637,6 +637,11 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         {producedLiters != null && <span>Salida: {producedLiters} Lt</span>}
                       </div>
                       <p className="max-w-3xl text-sm text-slate-600">{profileForProdResolved.formulaSummary}</p>
+                      <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <summary className="cursor-pointer list-none text-xs font-black uppercase tracking-[0.25em] text-slate-500">
+                          Ver detalle tecnico
+                        </summary>
+                        <div className="mt-4 space-y-3">
                       <div className="flex flex-wrap gap-2">
                         {prod.ingredients?.map((ing: any) => (
                           <span key={ing.id} className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
@@ -756,6 +761,8 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                           Fase tres registrada el {fmtDate(phase3.measuredAt)} | Litros restantes en contenedor: {phase3.remainingLiters != null ? Number(phase3.remainingLiters) : "-"} Lt
                         </div>
                       )}
+                        </div>
+                      </details>
                     </div>
 
                     <div className="flex min-w-[170px] flex-col gap-2">
@@ -935,50 +942,57 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         ? `Se aplicara ${selectedFormula.name} como base del lote y puedes ajustar insumos antes de guardar.`
                         : "No hay una formula activa para este tipo. Puedes capturar los insumos manualmente."}
                     </p>
-                    {selectedFormula?.steps?.length ? (
-                      <div className="mt-4 rounded-xl border border-violet-200 bg-white p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-black text-violet-950">Checklist de preparacion</p>
-                            <p className="mt-1 text-xs text-violet-700">
-                              Formula para {selectedFormula.targetLiters != null ? Number(selectedFormula.targetLiters).toLocaleString("es-MX") : "-"} Lt
-                            </p>
-                          </div>
-                        </div>
-                        <div className="mt-4 space-y-3">
-                          {selectedFormula.steps.map((step: any, index: number) => (
-                            <div key={step.id || `${selectedFormula.id}-step-${index}`} className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4">
-                              <div className="flex items-start gap-3">
-                                <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-violet-400 text-[11px] font-black text-violet-700">
-                                  {index + 1}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-black text-violet-950">{step.title || `Paso ${index + 1}`}</p>
-                                  {step.instructions && (
-                                    <p className="mt-1 text-sm text-violet-900">{step.instructions}</p>
-                                  )}
-                                  <div className="mt-3 space-y-1">
-                                    {step.items?.length ? step.items.map((item: any, itemIndex: number) => (
-                                      <div key={`${step.id || index}-item-${itemIndex}`} className="flex items-start gap-2 text-xs text-violet-800">
-                                        <span className="mt-1 inline-block h-3 w-3 rounded-sm border border-violet-400 bg-white" />
-                                        <span>{formatStepIngredient(item)}</span>
-                                      </div>
-                                    )) : (
-                                      <p className="text-xs italic text-violet-700">Sin insumos definidos para este paso.</p>
-                                    )}
-                                  </div>
-                                  {step.resultLiters != null && (
-                                    <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-violet-700">
-                                      Resultado esperado: {Number(step.resultLiters).toLocaleString("es-MX")} Lt
-                                    </p>
-                                  )}
-                                </div>
+                    <details className="mt-4 rounded-xl border border-violet-200 bg-white p-4">
+                      <summary className="cursor-pointer list-none text-sm font-black text-violet-950">
+                        Ver pasos y formula
+                      </summary>
+                      <div className="mt-4">
+                        {selectedFormula?.steps?.length ? (
+                          <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-black text-violet-950">Checklist de preparacion</p>
+                                <p className="mt-1 text-xs text-violet-700">
+                                  Formula para {selectedFormula.targetLiters != null ? Number(selectedFormula.targetLiters).toLocaleString("es-MX") : "-"} Lt
+                                </p>
                               </div>
                             </div>
-                          ))}
-                        </div>
+                            <div className="mt-4 space-y-3">
+                              {selectedFormula.steps.map((step: any, index: number) => (
+                                <div key={step.id || `${selectedFormula.id}-step-${index}`} className="rounded-2xl border border-violet-100 bg-white p-4">
+                                  <div className="flex items-start gap-3">
+                                    <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-violet-400 text-[11px] font-black text-violet-700">
+                                      {index + 1}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-black text-violet-950">{step.title || `Paso ${index + 1}`}</p>
+                                      {step.instructions && (
+                                        <p className="mt-1 text-sm text-violet-900">{step.instructions}</p>
+                                      )}
+                                      <div className="mt-3 space-y-1">
+                                        {step.items?.length ? step.items.map((item: any, itemIndex: number) => (
+                                          <div key={`${step.id || index}-item-${itemIndex}`} className="flex items-start gap-2 text-xs text-violet-800">
+                                            <span className="mt-1 inline-block h-3 w-3 rounded-sm border border-violet-400 bg-white" />
+                                            <span>{formatStepIngredient(item)}</span>
+                                          </div>
+                                        )) : (
+                                          <p className="text-xs italic text-violet-700">Sin insumos definidos para este paso.</p>
+                                        )}
+                                      </div>
+                                      {step.resultLiters != null && (
+                                        <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-violet-700">
+                                          Resultado esperado: {Number(step.resultLiters).toLocaleString("es-MX")} Lt
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
+                    </details>
                     <div className="mt-4 space-y-2">
                       {ingredients.map((ing, index) => (
                         <div key={index} className="flex gap-2">

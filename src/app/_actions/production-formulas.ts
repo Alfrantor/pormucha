@@ -97,7 +97,7 @@ export async function saveProductionFormula(data: {
         instructions: step.instructions?.trim() || "",
         items: step.items.filter((item) => {
           if (!(Number(item.quantity) > 0)) return false;
-          if (item.sourceKind === "BASE_BEVERAGE") return !!item.sourceProductionType;
+          if (item.sourceKind === "BASE_BEVERAGE") return !!item.sourceProductionType || !!data.code;
           return !!item.rawMaterialId;
         }),
       }))
@@ -166,7 +166,7 @@ export async function saveProductionFormula(data: {
             INSERT INTO "ProductionFormulaItem"
             ("id","formulaId","stepId","sourceKind","sourceProductionType","rawMaterialId","quantity","defaultLocationId","notes","createdAt","updatedAt")
             VALUES
-            (${randomUUID()}, ${formulaId}, ${stepId}, ${item.sourceKind}, ${item.sourceKind === "BASE_BEVERAGE" ? item.sourceProductionType || null : null}, ${item.sourceKind === "RAW_MATERIAL" ? item.rawMaterialId || null : null}, ${item.quantity}, ${item.defaultLocationId || null}, ${item.notes?.trim() || null}, NOW(), NOW())
+            (${randomUUID()}, ${formulaId}, ${stepId}, ${item.sourceKind}, ${item.sourceKind === "BASE_BEVERAGE" ? item.sourceProductionType || data.code : null}, ${item.sourceKind === "RAW_MATERIAL" ? item.rawMaterialId || null : null}, ${item.quantity}, ${item.defaultLocationId || null}, ${item.notes?.trim() || null}, NOW(), NOW())
           `;
         }
       }

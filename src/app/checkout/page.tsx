@@ -1,18 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import { useCart } from "@/context/CartContext";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
+import Link from "next/link";
+
+type ShippingOption = {
+  id: string;
+  provider: string;
+  rate: number;
+  days?: number;
+  source?: string;
+};
+
+type FlavorOption = {
+  id: string;
+  name: string;
+  image?: string | null;
+};
+
+const FALLBACK_FLAVOR_IMAGE = "/botella-pormucha.png";
+const CLUB_DISCOUNT_PERCENT = 10;
 
 export default function CheckoutPage() {
-  const { cart, total } = useCart();
+  const { cart, total, removeFromCart, updateCartItemQuantity, updateCartItem, clearCart } = useCart();
+  const router = useRouter();
 
   const [shippingCost, setShippingCost] = useState(0);
   const [loadingShipping, setLoadingShipping] = useState(false);
   const [loadingPayment, setLoadingPayment] = useState(false);
-  const [shippingOptions, setShippingOptions] = useState<any[]>([]);
-  const [selectedShipping, setSelectedShipping] = useState<any>(null);
+  const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
+  const [selectedShipping, setSelectedShipping] = useState<ShippingOption | null>(null);
   const [shippingSourceLabel, setShippingSourceLabel] = useState("Paquetería");
+  const [availableFlavors, setAvailableFlavors] = useState<FlavorOption[]>([]);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingSelections, setEditingSelections] = useState<Record<string, number>>({});
+  const [editingError, setEditingError] = useState("");
 
   const [address, setAddress] = useState({
     name: "",
@@ -27,8 +52,130 @@ export default function CheckoutPage() {
     reference: "",
   });
 
+  const hasItems = cart.length > 0;
+  const editingItem = cart.find((item) => item.id === editingItemId) || null;
+  const editingTargetQty = editingItem?.packQuantity ?? editingItem?.quantity ?? 0;
+  const editingSelectedTotal = Object.values(editingSelections).reduce((sum, value) => sum + value, 0);
+  const clubDiscount = total * (CLUB_DISCOUNT_PERCENT / 100);
+  const clubPrice = Math.max(total - clubDiscount, 0);
+
+  useEffect(() => {
+    if (hasItems) return;
+    setShippingCost(0);
+    setSelectedShipping(null);
+    setShippingOptions([]);
+    setShippingSourceLabel("Paquetería");
+    router.replace("/tienda");
+  }, [hasItems, router]);
+
+  useEffect(() => {
+    const loadFlavors = async () => {
+      try {
+        const res = await fetch("/api/catalog/flavors");
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.flavors)) {
+          setAvailableFlavors(data.flavors);
+        }
+      } catch (error) {
+        console.error("Error cargando sabores para edición:", error);
+      }
+    };
+
+    loadFlavors();
+  }, []);
+
+  useEffect(() => {
+    if (!editingItem) {
+      setEditingSelections({});
+      setEditingError("");
+      return;
+    }
+
+    const initial: Record<string, number> = {};
+    availableFlavors.forEach((flavor) => {
+      initial[flavor.id] = 0;
+    });
+
+    if (Array.isArray(editingItem.composition) && editingItem.composition.length > 0) {
+      editingItem.composition.forEach((comp) => {
+        initial[comp.flavorId] = Number(comp.quantity) || 0;
+      });
+    } else {
+      Object.entries(editingItem.flavors || {}).forEach(([flavorId, quantity]) => {
+        initial[flavorId] = Number(quantity) || 0;
+      });
+    }
+
+    setEditingSelections(initial);
+    setEditingError("");
+  }, [editingItem, availableFlavors]);
+
+  const handleRemoveItem = (id: string) => {
+    if (!window.confirm("¿Seguro que deseas quitar este producto del carrito?")) return;
+    removeFromCart(id);
+  };
+
+  const handleClearCart = () => {
+    if (!window.confirm("¿Seguro que deseas vaciar todo el carrito?")) return;
+    clearCart();
+    router.replace("/tienda");
+  };
+
+  const openEditor = (itemId: string) => {
+    setEditingItemId(itemId);
+  };
+
+  const closeEditor = () => {
+    setEditingItemId(null);
+    setEditingSelections({});
+    setEditingError("");
+  };
+
+  const updateEditingQuantity = (flavorId: string, delta: number) => {
+    if (!editingItem) return;
+    setEditingSelections((prev) => {
+      const current = prev[flavorId] || 0;
+      const next = current + delta;
+      if (next < 0) return prev;
+      const currentTotal = Object.values(prev).reduce((sum, value) => sum + value, 0);
+      if (currentTotal + delta > editingTargetQty) return prev;
+      return { ...prev, [flavorId]: next };
+    });
+  };
+
+  const saveEditingItem = () => {
+    if (!editingItem) return;
+
+    if (editingSelectedTotal !== editingTargetQty) {
+      setEditingError(`Debes seleccionar exactamente ${editingTargetQty} botellas.`);
+      return;
+    }
+
+    const composition = availableFlavors
+      .map((flavor) => ({
+        flavorId: flavor.id,
+        name: flavor.name,
+        quantity: editingSelections[flavor.id] || 0,
+      }))
+      .filter((item) => item.quantity > 0);
+
+    const nextFlavors = availableFlavors.reduce<Record<string, number>>((acc, flavor) => {
+      acc[flavor.id] = editingSelections[flavor.id] || 0;
+      return acc;
+    }, {});
+
+    updateCartItem(editingItem.id, {
+      ...editingItem,
+      composition,
+      flavors: nextFlavors,
+    });
+
+    closeEditor();
+  };
+
   const handleCalculateShipping = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!hasItems) return alert("Agrega al menos un producto al carrito antes de cotizar el envío.");
     if (!address.zip) return alert("Por favor, ingresa un código postal.");
 
     setLoadingShipping(true);
@@ -65,7 +212,7 @@ export default function CheckoutPage() {
   };
 
   const handlePayment = async () => {
-    if (cart.length === 0) return alert("Tu carrito está vacío.");
+    if (!hasItems) return alert("Tu carrito está vacío.");
     if (shippingCost === 0 || !selectedShipping) return alert("Primero cotiza tu envío para continuar.");
 
     const emptyFields = Object.values(address).some((value) => value.trim() === "");
@@ -224,10 +371,10 @@ export default function CheckoutPage() {
 
             <button
               type="submit"
-              disabled={loadingShipping}
-              className="bg-blue-600 text-white font-black p-5 rounded-2xl hover:bg-blue-700 transition-all active:scale-95 disabled:bg-gray-300 shadow-xl shadow-blue-100 mt-2"
-            >
-              {loadingShipping ? "OBTENIENDO TARIFAS..." : "COTIZAR ENVÍO"}
+            disabled={loadingShipping || !hasItems}
+            className="bg-blue-600 text-white font-black p-5 rounded-2xl hover:bg-blue-700 transition-all active:scale-95 disabled:bg-gray-300 shadow-xl shadow-blue-100 mt-2"
+          >
+              {loadingShipping ? "OBTENIENDO TARIFAS..." : !hasItems ? "AGREGA PRODUCTOS PRIMERO" : "COTIZAR ENVÍO"}
             </button>
 
             {shippingOptions.length > 0 ? (
@@ -270,7 +417,7 @@ export default function CheckoutPage() {
 
           <div className="space-y-6 max-h-[400px] overflow-y-auto pr-4 scrollbar-hide">
             {cart.map((item, idx) => (
-              <div key={idx} className="flex justify-between items-start border-b border-gray-50 pb-6">
+              <div key={idx} className="flex justify-between items-start gap-4 border-b border-gray-50 pb-6">
                 <div className="flex flex-col gap-2">
                   <div>
                     <p className="font-black text-lg text-gray-900 leading-tight">{item.name}</p>
@@ -293,6 +440,46 @@ export default function CheckoutPage() {
                             </span>
                           ) : null
                         )}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (item.quantity <= 1) {
+                          if (!window.confirm("¿Seguro que deseas quitar este producto del carrito?")) return;
+                          removeFromCart(item.id);
+                          return;
+                        }
+                        updateCartItemQuantity(item.id, item.quantity - 1);
+                      }}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100"
+                      aria-label="Disminuir cantidad"
+                    >
+                      -
+                    </button>
+                    <span className="min-w-8 text-center text-sm font-black text-gray-700">{item.quantity}</span>
+                    <button
+                      type="button"
+                      onClick={() => updateCartItemQuantity(item.id, item.quantity + 1)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100"
+                      aria-label="Aumentar cantidad"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveItem(item.id)}
+                      className="ml-2 rounded-full border border-rose-200 px-3 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-50"
+                    >
+                      Quitar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditor(item.id)}
+                      className="rounded-full border border-blue-200 px-3 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-50"
+                    >
+                      Editar sabores
+                    </button>
                   </div>
                 </div>
                 <span className="font-black text-xl text-gray-900">${item.price}</span>
@@ -318,11 +505,20 @@ export default function CheckoutPage() {
                 <p className="text-[9px] text-gray-400 font-bold uppercase">Pesos mexicanos</p>
               </div>
             </div>
+            {cart.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearCart}
+                className="w-full rounded-2xl border border-gray-200 bg-white py-3 text-xs font-black uppercase tracking-[0.2em] text-gray-500 hover:bg-gray-50"
+              >
+                Vaciar carrito
+              </button>
+            )}
           </div>
 
           <button
             onClick={handlePayment}
-            disabled={cart.length === 0 || shippingCost === 0 || loadingPayment}
+            disabled={!hasItems || shippingCost === 0 || loadingPayment}
             className={`w-full py-6 rounded-3xl font-black text-lg tracking-[0.2em] transition-all active:scale-[0.98] shadow-2xl ${
               shippingCost > 0 && !loadingPayment ? "bg-black text-white hover:bg-zinc-800" : "bg-gray-100 text-gray-400 cursor-not-allowed"
             }`}
@@ -330,12 +526,113 @@ export default function CheckoutPage() {
             {loadingPayment ? "CONECTANDO A STRIPE..." : "PAGAR AHORA"}
           </button>
 
+          {hasItems && (
+            <div className="rounded-[2rem] border border-[#8B3A18]/15 bg-[#F5F2EB] p-5 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#8B3A18]">
+                Suscríbete a Club Pormucha y obtén {CLUB_DISCOUNT_PERCENT}% de descuento
+              </p>
+              <div className="mt-3 flex flex-col gap-2">
+                <p className="text-sm text-gray-700">
+                  Si fueras suscriptor, tu compra de productos bajaría a{" "}
+                  <span className="font-black text-[#1A1A1A]">${clubPrice.toFixed(2)}</span>, ahorrando{" "}
+                  <span className="font-black text-[#8B3A18]">${clubDiscount.toFixed(2)}</span>.
+                </p>
+                <p className="text-xs text-gray-500">
+                  La suscripción es un flujo aparte y no una compra única. Puedes elegir tu plan oficial de Club Pormucha antes de confirmar.
+                </p>
+              </div>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                <Link
+                  href="/suscripciones"
+                  className="inline-flex items-center justify-center rounded-2xl bg-[#8B3A18] px-5 py-3 text-sm font-black uppercase tracking-[0.2em] text-white hover:bg-[#6f2f14]"
+                >
+                  Suscribirme al Club
+                </Link>
+                <div className="rounded-2xl border border-dashed border-[#8B3A18]/20 bg-white px-4 py-3 text-xs text-gray-600">
+                  Al suscribirte, el surtido recurrente se maneja en tu panel y no como una orden única.
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-center gap-4 opacity-30 grayscale mt-2">
             <p className="text-[10px] font-bold">STRIPE SECURE CHECKOUT</p>
             <p className="text-[10px] font-bold">{shippingSourceLabel.toUpperCase()}</p>
           </div>
         </section>
       </main>
+
+      {editingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-500">Editar sabores</p>
+                <h3 className="mt-2 text-2xl font-black text-gray-900">{editingItem.name}</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Selecciona de nuevo tus sabores. Deben sumar exactamente {editingTargetQty} botellas.
+                </p>
+              </div>
+              <button type="button" onClick={closeEditor} className="rounded-full border border-gray-200 px-3 py-1 text-sm font-bold text-gray-500 hover:bg-gray-50">
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {availableFlavors.map((flavor) => (
+                <div key={flavor.id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                  <div className="relative mb-4 h-40 overflow-hidden rounded-2xl bg-white">
+                      <Image
+                      src={flavor.image || FALLBACK_FLAVOR_IMAGE}
+                      alt={flavor.name}
+                      fill
+                      sizes="(max-width: 768px) 50vw, 33vw"
+                      className="object-contain p-3"
+                    />
+                  </div>
+                  <p className="text-sm font-black text-gray-900">{flavor.name}</p>
+                  <div className="mt-4 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => updateEditingQuantity(flavor.id, -1)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-100"
+                    >
+                      -
+                    </button>
+                    <span className="min-w-8 text-center text-lg font-black text-gray-800">{editingSelections[flavor.id] || 0}</span>
+                    <button
+                      type="button"
+                      onClick={() => updateEditingQuantity(flavor.id, 1)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-100"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Seleccionadas</p>
+                <p className="mt-1 text-2xl font-black text-gray-900">
+                  {editingSelectedTotal} / {editingTargetQty}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button type="button" onClick={closeEditor} className="rounded-2xl border border-gray-200 px-5 py-3 text-sm font-bold text-gray-600 hover:bg-white">
+                  Cancelar
+                </button>
+                <button type="button" onClick={saveEditingItem} className="rounded-2xl bg-black px-5 py-3 text-sm font-black text-white hover:bg-zinc-800">
+                  Guardar cambios
+                </button>
+              </div>
+            </div>
+
+            {editingError && <p className="mt-3 text-sm font-semibold text-rose-600">{editingError}</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

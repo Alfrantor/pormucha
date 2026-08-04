@@ -12,6 +12,7 @@ const EURO_PACK_IDS = new Set([
 ]);
 
 const MIXED_PACK_ID = "cmndgzu57000bra6oegxoojkw";
+const FALLBACK_FLAVOR_IMAGE = "/botella-pormucha.png";
 
 const EURO_IMAGE_BY_FLAVOR: Record<string, string> = {
     "kombucha té verde": "/euro-verde.jpeg",
@@ -32,7 +33,7 @@ function normalizeFlavorKey(name: string) {
 }
 
 function getEuroImage(flavor: any) {
-    return EURO_IMAGE_BY_FLAVOR[normalizeFlavorKey(flavor.name)] || flavor.image || "/placeholder-bottle.png";
+    return EURO_IMAGE_BY_FLAVOR[normalizeFlavorKey(flavor.name)] || flavor.image || FALLBACK_FLAVOR_IMAGE;
 }
 
 export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: any) {
@@ -54,7 +55,7 @@ export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: a
     const getFlavorImage = (flavor: any) => {
         if (usesEuroOnly) return getEuroImage(flavor);
         if (canToggleStyle && packStyle === "euro") return getEuroImage(flavor);
-        return flavor.image || "/placeholder-bottle.png";
+        return flavor.image || FALLBACK_FLAVOR_IMAGE;
     };
 
     const handleAddToCart = async () => {
@@ -102,12 +103,15 @@ export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: a
             id: pack.id,
             name: pack.name,
             price: pack.price,
+            packQuantity: pack.quantity,
             quantity: 1,
             flavors: selections,
             composition,
         });
 
-        router.push("/checkout");
+        // Ya no mandamos de inmediato al checkout; el usuario puede seguir armando su carrito
+        // y entrar al checkout cuando lo decida desde el carrito o la barra de navegación.
+        alert("Producto agregado al carrito");
     };
 
     const updateQuantity = (id: string, delta: number) => {
