@@ -78,7 +78,7 @@ function formatQuantity(value: number) {
 function buildScaledRequirements(
   formula: FormulaFormState,
   desiredLiters: string,
-  rawMaterialMap: Map<string, { name?: string; unit?: string }>
+  rawMaterialMap: Map<string, { name?: string; unit?: string | null }>
 ) {
   const target = Number(formula.targetLiters);
   const desired = Number(desiredLiters);

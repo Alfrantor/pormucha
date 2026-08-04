@@ -1,11 +1,35 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PackCard from "@/components/PackCard"; // Renombramos para claridad
 import FlavorMixer from "@/components/FlavorMixer"; // Nuevo componente
 
 export default function StoreGrid({ packs, flavors }: { packs: any[], flavors: any[] }) {
     const [isSubscription, setIsSubscription] = useState(false);
     const [activePack, setActivePack] = useState<any>(null);
+    const [plans, setPlans] = useState<any[]>([]);
+
+    useEffect(() => {
+        const loadPlans = async () => {
+            try {
+                const res = await fetch("/api/catalog/plans");
+                const data = await res.json();
+                if (res.ok && Array.isArray(data.plans)) {
+                    setPlans(data.plans);
+                }
+            } catch (error) {
+                console.error("Error cargando planes:", error);
+            }
+        };
+
+        loadPlans();
+    }, []);
+
+    const packsWithPlan = useMemo(() => {
+        return packs.map((pack) => ({
+            ...pack,
+            subscriptionPlanId: pack.subscriptionPlanId || plans.find((plan) => plan.productId === pack.id || Number(plan.unitCount) === Number(pack.quantity))?.id || null,
+        }));
+    }, [packs, plans]);
 
     // Tu lógica de imágenes
     const getImage = (qty: number) => {
@@ -25,7 +49,7 @@ export default function StoreGrid({ packs, flavors }: { packs: any[], flavors: a
                     {/* ... Toggle de suscripción ... */}
 
                     <div className="flex flex-wrap justify-center gap-6">
-                        {packs.map((pack) => (
+                        {packsWithPlan.map((pack) => (
                             <div key={pack.id} className="w-full md:w-[calc(50%-12px)] lg:w-[calc(25%-18px)]">
                                 <PackCard
                                     id={pack.id}

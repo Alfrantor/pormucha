@@ -12,6 +12,15 @@ export default async function TiendaPage() {
     orderBy: { price: 'asc' }
   });
 
+  const plans = await db.plan.findMany({
+    where: { isActive: true },
+    select: {
+      id: true,
+      productId: true,
+      unitCount: true,
+    },
+  });
+
   const rawFlavors = await db.flavor.findMany({
     where: { isArchived: false },
     include: { locationStocks: true }
