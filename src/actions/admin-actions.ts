@@ -166,6 +166,8 @@ export async function updatePackPrice(formData: FormData) {
   }
 
   revalidatePath("/admin");
+  revalidatePath("/tienda");
+  revalidatePath("/suscripciones");
 }
 
 export async function updateFlavorPrice(formData: FormData) {
@@ -188,6 +190,10 @@ export async function updateFlavorPrice(formData: FormData) {
   });
   await db.flavor.update({ where: { id: flavorId }, data: { price: newPrice, basePrice: newPrice } });
   revalidatePath("/admin");
+  revalidatePath("/admin/catalog/products");
+  revalidatePath("/admin/pricing");
+  revalidatePath("/tienda");
+  revalidatePath("/pos");
 }
 
 // ==========================================
@@ -293,6 +299,8 @@ export async function updateClubDiscountPercent(formData: FormData) {
   }
 
   revalidatePath("/admin");
+  revalidatePath("/tienda");
+  revalidatePath("/suscripciones");
 }
 
 // ==========================================

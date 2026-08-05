@@ -6,6 +6,17 @@ import Footer from "@/components/Footer";
 import { db } from "@/lib/db";
 import SubscribeButton from "@/components/SubscribeButton"; // Ajusta la ruta si lo guardaste en otro lado
 
+function getPlanDisplayPrice(plan: { price?: unknown; product?: { price?: unknown; clubDiscountPercent?: unknown } | null }) {
+    const productPrice = Number(plan.product?.price ?? 0);
+    const discountPercent = Number(plan.product?.clubDiscountPercent ?? 0);
+    if (Number.isFinite(productPrice) && productPrice > 0) {
+        return Math.max(0, productPrice * (1 - discountPercent / 100));
+    }
+
+    const planPrice = Number(plan.price ?? 0);
+    return Number.isFinite(planPrice) ? planPrice : 0;
+}
+
 export default async function SuscripcionesPage() {
     const plans = await db.plan.findMany({
         where: { isActive: true },
@@ -229,7 +240,7 @@ export default async function SuscripcionesPage() {
                                     <div className="p-8 flex-grow flex flex-col">
                                         <div className={`flex items-end gap-2 mb-6 ${isFeatured ? "text-white" : ""}`}>
                                             <span className={`text-4xl font-bold font-sans ${isFeatured ? "" : "text-[#1A1A1A]"}`}>
-                                                ${Number(plan.price).toLocaleString('es-MX')}
+                                                ${getPlanDisplayPrice(plan).toLocaleString('es-MX')}
                                             </span>
                                             <span className={`${isFeatured ? "text-white/50" : "text-gray-500"} font-light mb-1 uppercase tracking-widest text-sm`}>
                                                 MXN / {plan.intervalCount > 1 ? `${plan.intervalCount} ` : ""}{plan.interval === 'week' ? 'Semana(s)' : 'Mes(es)'}

@@ -9,10 +9,28 @@ import {
   isSubscriptionShipmentDue,
   normalizeStoredFlavorSelection,
 } from "@/lib/subscriptions";
+import { sendPurchaseConfirmationEmail, sendSubscriptionConfirmationEmail } from "@/lib/order-emails";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-  apiVersion: "2023-10-16" as any,
+  apiVersion: "2023-10-16",
 });
+
+function getStripeCurrentPeriodEnd(
+  subscription: Stripe.Subscription,
+) {
+  const typedSubscription = subscription as Stripe.Subscription & {
+    current_period_end?: number;
+    items: {
+      data: Array<{ current_period_end?: number }>;
+    };
+  };
+
+  return (
+    typedSubscription.current_period_end ||
+    typedSubscription.items.data[0]?.current_period_end ||
+    null
+  );
+}
 
 async function getDefaultFulfillmentLocation() {
   const defaultLocation = await db.location.findFirst({
@@ -281,6 +299,28 @@ export async function processPaidWebOrder(orderId: string, paymentId?: string | 
     },
   });
 
+  const orderEmail = updatedOrder.email || order.email;
+  if (orderEmail && orderEmail !== "sin@correo.com") {
+    try {
+      await sendPurchaseConfirmationEmail({
+        to: orderEmail,
+        name: updatedOrder.fullName || order.fullName || null,
+        orderNumber: updatedOrder.id.slice(-6).toUpperCase(),
+        total: Number(updatedOrder.total || 0),
+        shippingCost: Number(updatedOrder.shippingCost || 0),
+        shippingProvider: updatedOrder.shippingProvider || null,
+        items: order.orderItems.map((item) => ({
+          name: item.productName || "Producto Pormucha",
+          quantity: Number(item.quantity || 1),
+          unitPrice: Number(item.unitPrice || 0),
+          subtotal: Number(item.subtotal || 0),
+        })),
+      });
+    } catch (error) {
+      console.error("No se pudo enviar el correo de compra:", error);
+    }
+  }
+
   return {
     order: updatedOrder,
     inventoryProcessed,
@@ -326,10 +366,7 @@ export async function processPaidSubscriptionSession(session: Stripe.Checkout.Se
   }
 
   const stripeSubscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
-  const periodEndSeconds =
-    (stripeSubscription as any)?.current_period_end ||
-    (stripeSubscription.items.data[0] as any)?.current_period_end ||
-    null;
+  const periodEndSeconds = getStripeCurrentPeriodEnd(stripeSubscription);
   const currentPeriodEnd = periodEndSeconds
     ? new Date(Number(periodEndSeconds) * 1000)
     : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -378,6 +415,23 @@ export async function processPaidSubscriptionSession(session: Stripe.Checkout.Se
     forceDue: true,
   });
 
+  if (initialFulfillment.success && !initialFulfillment.duplicated) {
+    const subscriptionDetails = await getSubscriptionContext(subscription.id);
+    if (subscriptionDetails?.client?.email) {
+      try {
+        await sendSubscriptionConfirmationEmail({
+          to: subscriptionDetails.client.email,
+          name: subscriptionDetails.client.fullName || customerName || null,
+          planName: subscriptionDetails.plan.product?.name || subscriptionDetails.plan.name,
+          unitCount: subscriptionDetails.plan.unitCount,
+          nextShipmentDate: subscriptionDetails.nextShipmentDate,
+        });
+      } catch (error) {
+        console.error("No se pudo enviar el correo de suscripción:", error);
+      }
+    }
+  }
+
   return { success: true, subscription, initialFulfillment };
 }
 
@@ -385,10 +439,7 @@ export async function syncStripeSubscriptionState(subscription: Stripe.Subscript
   await ensureSubscriptionScheduleSchema();
 
   const stripeSubscriptionId = subscription.id;
-  const periodEndSeconds =
-    (subscription as any)?.current_period_end ||
-    (subscription.items.data[0] as any)?.current_period_end ||
-    null;
+  const periodEndSeconds = getStripeCurrentPeriodEnd(subscription);
   const currentPeriodEnd = periodEndSeconds
     ? new Date(Number(periodEndSeconds) * 1000)
     : undefined;

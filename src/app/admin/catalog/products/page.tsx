@@ -2,7 +2,16 @@ import { currentUser } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { Eye, EyeOff, Package2, Percent, ShoppingCart } from "lucide-react";
 import { toggleStatus } from "@/actions/toggle-status";
-import { updateClubDiscountPercent, updatePackPrice } from "@/actions/admin-actions";
+import { updateClubDiscountPercent, updatePackPrice, updateFlavorPrice } from "@/actions/admin-actions";
+import { NoScrollNumberInput } from "@/components/NoScrollNumberInput";
+
+function getResolvedPrice(priceLike: unknown, fallbackLike: unknown = 0) {
+  const price = Number(priceLike ?? 0);
+  if (Number.isFinite(price) && price > 0) return price;
+
+  const fallback = Number(fallbackLike ?? 0);
+  return Number.isFinite(fallback) ? fallback : 0;
+}
 
 export default async function CatalogProductsPage({
   searchParams,
@@ -110,9 +119,8 @@ export default async function CatalogProductsPage({
                       </div>
                       <div className="mt-3 flex items-center gap-2">
                         <span className="text-sm font-bold text-slate-500">$</span>
-                        <input
+                        <NoScrollNumberInput
                           name="newPrice"
-                          type="number"
                           step="0.01"
                           defaultValue={basePrice}
                           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-950 outline-none"
@@ -135,9 +143,8 @@ export default async function CatalogProductsPage({
                         Descuento suscripcion
                       </div>
                       <div className="mt-3 flex items-center gap-2">
-                        <input
+                        <NoScrollNumberInput
                           name="clubDiscountPercent"
-                          type="number"
                           min="0"
                           max="100"
                           defaultValue={discountPercent}
@@ -193,7 +200,33 @@ export default async function CatalogProductsPage({
                     </div>
                     <p className="mt-1 text-xs text-slate-400">{flavor.slug}</p>
                   </div>
-                  <p className="font-black text-slate-950">{Number(flavor.basePrice || flavor.price || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" })}</p>
+                  <p className="font-black text-slate-950">{getResolvedPrice(flavor.price, flavor.basePrice).toLocaleString("es-MX", { style: "currency", currency: "MXN" })}</p>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
+                  <form action={updateFlavorPrice} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <input type="hidden" name="flavorId" value={flavor.id} />
+                    <input type="hidden" name="adminEmail" value={adminEmail} />
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
+                      <ShoppingCart size={12} />
+                      Precio POS / Sabores
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-500">$</span>
+                      <NoScrollNumberInput
+                        name="newPrice"
+                        step="0.01"
+                        defaultValue={getResolvedPrice(flavor.price, flavor.basePrice)}
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-950 outline-none"
+                        disabled={flavor.isArchived}
+                      />
+                    </div>
+                    <button
+                      className="mt-3 w-full rounded-xl bg-slate-950 px-4 py-2 text-[11px] font-black uppercase tracking-[0.25em] text-white transition hover:bg-slate-800 disabled:opacity-50"
+                      disabled={flavor.isArchived}
+                    >
+                      Guardar precio
+                    </button>
+                  </form>
                 </div>
                 <div className="mt-4 flex justify-end">
                   <form action={toggleStatus}>

@@ -4,16 +4,55 @@ import { useState } from "react";
 import {
   updateFlavorPrices,
   createPriceScale,
-  updatePriceScale,
   deletePriceScale,
   createDiscount,
   deleteDiscount,
 } from "@/app/_actions/flavor-pricing";
-import { Plus, Trash2, Edit2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { NoScrollNumberInput } from "@/components/NoScrollNumberInput";
+
+type FlavorPriceScale = {
+  id: string;
+  minQuantity: number;
+  maxQuantity: number | null;
+  price: {
+    toFixed: (fractionDigits?: number) => string;
+  } | number;
+};
+
+type FlavorDiscount = {
+  id: string;
+  applicableTo: string;
+  discountPercent: number | null;
+  fixedPrice: {
+    toFixed: (fractionDigits?: number) => string;
+  } | null;
+  validUntil: string | Date | null;
+};
+
+type PricingFlavor = {
+  id: string;
+  basePrice?: number | string | null;
+  price?: number | string | null;
+  wholesalePrice?: number | string | null;
+  minimumWholesale?: number | null;
+  priceScales?: FlavorPriceScale[];
+  discounts?: FlavorDiscount[];
+};
 
 interface PricingManagerProps {
-  flavor: any;
+  flavor: PricingFlavor;
+}
+
+function resolveFlavorPrice(flavor: { basePrice?: unknown; price?: unknown }) {
+  const basePrice = Number(flavor.basePrice ?? 0);
+  if (Number.isFinite(basePrice) && basePrice > 0) return basePrice;
+
+  const price = Number(flavor.price ?? 0);
+  if (Number.isFinite(price) && price > 0) return price;
+
+  return 0;
 }
 
 export function PricingManager({ flavor }: PricingManagerProps) {
@@ -24,7 +63,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
 
   // Formulario de precios base
   const [priceForm, setPriceForm] = useState({
-    basePrice: flavor.basePrice?.toString() || "0",
+    basePrice: resolveFlavorPrice(flavor).toString() || "0",
     wholesalePrice: flavor.wholesalePrice?.toString() || "",
     minimumWholesale: flavor.minimumWholesale?.toString() || "50",
     changeReason: "",
@@ -62,8 +101,8 @@ export function PricingManager({ flavor }: PricingManagerProps) {
         setPriceForm({ ...priceForm, changeReason: "" });
         router.refresh();
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error al guardar precios");
     } finally {
       setLoading(false);
     }
@@ -91,8 +130,8 @@ export function PricingManager({ flavor }: PricingManagerProps) {
         setScaleForm({ minQuantity: "", maxQuantity: "", price: "" });
         router.refresh();
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error al guardar escala");
     } finally {
       setLoading(false);
     }
@@ -109,8 +148,8 @@ export function PricingManager({ flavor }: PricingManagerProps) {
       } else {
         router.refresh();
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error al eliminar escala");
     } finally {
       setLoading(false);
     }
@@ -139,8 +178,8 @@ export function PricingManager({ flavor }: PricingManagerProps) {
         setDiscountForm({ applicableTo: "TODAS", discountPercent: "", fixedPrice: "", validUntil: "" });
         router.refresh();
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error al guardar descuento");
     } finally {
       setLoading(false);
     }
@@ -157,8 +196,8 @@ export function PricingManager({ flavor }: PricingManagerProps) {
       } else {
         router.refresh();
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Error al eliminar descuento");
     } finally {
       setLoading(false);
     }
@@ -214,7 +253,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Precio Minorista ($)
               </label>
-              <input
+              <NoScrollNumberInput
                 type="number"
                 step="0.01"
                 min="0"
@@ -228,7 +267,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Precio Mayorista ($)
               </label>
-              <input
+              <NoScrollNumberInput
                 type="number"
                 step="0.01"
                 min="0"
@@ -242,7 +281,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Mínimo Mayoreo (unidades)
               </label>
-              <input
+              <NoScrollNumberInput
                 type="number"
                 min="1"
                 value={priceForm.minimumWholesale}
@@ -283,7 +322,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Cantidad Mínima *
               </label>
-              <input
+              <NoScrollNumberInput
                 type="number"
                 min="1"
                 value={scaleForm.minQuantity}
@@ -296,7 +335,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Cantidad Máxima (opcional)
               </label>
-              <input
+              <NoScrollNumberInput
                 type="number"
                 min="1"
                 value={scaleForm.maxQuantity}
@@ -309,7 +348,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Precio ($) *
               </label>
-              <input
+              <NoScrollNumberInput
                 type="number"
                 step="0.01"
                 min="0"
@@ -334,7 +373,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
             <h3 className="font-semibold text-gray-900">Escalas actuales:</h3>
             {flavor.priceScales && flavor.priceScales.length > 0 ? (
               <div className="space-y-2">
-                {flavor.priceScales.map((scale: any) => (
+                {flavor.priceScales.map((scale) => (
                   <div
                     key={scale.id}
                     className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200"
@@ -396,7 +435,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Descuento (%)
               </label>
-              <input
+              <NoScrollNumberInput
                 type="number"
                 min="0"
                 max="100"
@@ -410,7 +449,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 O Precio Fijo ($)
               </label>
-              <input
+              <NoScrollNumberInput
                 type="number"
                 step="0.01"
                 min="0"
@@ -435,7 +474,7 @@ export function PricingManager({ flavor }: PricingManagerProps) {
             <h3 className="font-semibold text-gray-900">Descuentos actuales:</h3>
             {flavor.discounts && flavor.discounts.length > 0 ? (
               <div className="space-y-2">
-                {flavor.discounts.map((discount: any) => (
+                {flavor.discounts.map((discount) => (
                   <div
                     key={discount.id}
                     className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200"

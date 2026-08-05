@@ -3,6 +3,16 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { PricingManager } from "@/components/admin/PricingManager";
 
+function getResolvedFlavorPrice(flavor: { basePrice?: unknown; price?: unknown }) {
+  const basePrice = Number(flavor.basePrice ?? 0);
+  if (Number.isFinite(basePrice) && basePrice > 0) return basePrice;
+
+  const price = Number(flavor.price ?? 0);
+  if (Number.isFinite(price) && price > 0) return price;
+
+  return 0;
+}
+
 interface PricingPageProps {
   searchParams: {
     flavor?: string;
@@ -63,7 +73,7 @@ export default async function PricingPage({ searchParams }: PricingPageProps) {
               >
                 <p className="font-bold">{flavor.name}</p>
                 <p className={`mt-1 text-xs ${selectedFlavor?.id === flavor.id ? "text-slate-300" : "text-slate-500"}`}>
-                  {Number(flavor.basePrice || flavor.price || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" })}
+                  {getResolvedFlavorPrice(flavor).toLocaleString("es-MX", { style: "currency", currency: "MXN" })}
                 </p>
               </a>
             ))}

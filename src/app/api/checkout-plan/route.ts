@@ -40,6 +40,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Plan no encontrado" }, { status: 404 });
     }
 
+    const productPrice = Number(plan.product?.price ?? 0);
+    const discountPercent = Number(plan.product?.clubDiscountPercent ?? 0);
+    const derivedPackPrice = productPrice > 0
+      ? Math.max(0, productPrice * (1 - discountPercent / 100))
+      : Number(plan.price ?? 0);
+
     const client = await db.client.findUnique({
       where: { clerkUserId: userId },
       include: { addresses: true },
@@ -74,7 +80,7 @@ export async function POST(req: Request) {
 
       const stripePrice = await stripe.prices.create({
         product: stripeProduct.id,
-        unit_amount: Math.round(Number(plan.price) * 100),
+        unit_amount: Math.round(derivedPackPrice * 100),
         currency: "mxn",
         recurring: {
           interval: (plan.interval as "month" | "week" | "year") ?? "month",
