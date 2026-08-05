@@ -52,7 +52,10 @@ function getEditingTargetQty(item: EditingCartItem | null) {
   }
 
   const flavorTotal = item.flavors && typeof item.flavors === "object"
-    ? Object.values(item.flavors).reduce((sum, value) => sum + (Number(value) || 0), 0)
+    ? (Object.values(item.flavors) as Array<number | string | null | undefined>).reduce(
+        (sum: number, value) => sum + (Number(value ?? 0) || 0),
+        0,
+      )
     : 0;
 
   if (flavorTotal > 0) {
