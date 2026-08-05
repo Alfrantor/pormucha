@@ -21,8 +21,47 @@ type FlavorOption = {
   image?: string | null;
 };
 
+type EditingCartItem = {
+  packQuantity?: number | null;
+  quantity?: number | null;
+  composition?: Array<{ quantity?: number | string | null }>;
+  flavors?: Record<string, number | string | null> | null;
+};
+
+type EditingFlavorComposition = {
+  quantity?: number | string | null;
+};
+
 const FALLBACK_FLAVOR_IMAGE = "/botella-pormucha.png";
 const CLUB_DISCOUNT_PERCENT = 10;
+
+function getEditingTargetQty(item: EditingCartItem | null) {
+  if (!item) return 0;
+
+  const packQuantity = Number(item.packQuantity ?? 0);
+  if (Number.isFinite(packQuantity) && packQuantity > 0) {
+    return packQuantity;
+  }
+
+  const compositionTotal = Array.isArray(item.composition)
+    ? item.composition.reduce((sum: number, comp: EditingFlavorComposition) => sum + (Number(comp.quantity) || 0), 0)
+    : 0;
+
+  if (compositionTotal > 0) {
+    return compositionTotal;
+  }
+
+  const flavorTotal = item.flavors && typeof item.flavors === "object"
+    ? Object.values(item.flavors).reduce((sum, value) => sum + (Number(value) || 0), 0)
+    : 0;
+
+  if (flavorTotal > 0) {
+    return flavorTotal;
+  }
+
+  const fallbackQuantity = Number(item.quantity ?? 0);
+  return Number.isFinite(fallbackQuantity) && fallbackQuantity > 0 ? fallbackQuantity : 0;
+}
 
 export default function CheckoutPage() {
   const { cart, total, removeFromCart, updateCartItemQuantity, updateCartItem, clearCart } = useCart();
@@ -54,7 +93,7 @@ export default function CheckoutPage() {
 
   const hasItems = cart.length > 0;
   const editingItem = cart.find((item) => item.id === editingItemId) || null;
-  const editingTargetQty = editingItem?.packQuantity ?? editingItem?.quantity ?? 0;
+  const editingTargetQty = getEditingTargetQty(editingItem);
   const editingSelectedTotal = Object.values(editingSelections).reduce((sum, value) => sum + value, 0);
   const clubDiscount = total * (CLUB_DISCOUNT_PERCENT / 100);
   const clubPrice = Math.max(total - clubDiscount, 0);
