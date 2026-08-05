@@ -34,8 +34,11 @@ export default function SubscribeButton({ planId, isFeatured }: SubscribeButtonP
 
             if (data.url) {
                 window.location.href = data.url;
+            } else if (res.status === 422 && data.redirectTo) {
+                alert("Antes de suscribirte, completa tu perfil y tu dirección de envío.");
+                router.push(data.redirectTo);
             } else {
-                alert("Hubo un error al iniciar el pago. Intenta de nuevo.");
+                alert(data.error || "Hubo un error al iniciar el pago. Intenta de nuevo.");
             }
         } catch {
             alert("Error de conexión.");

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import { useState } from "react";
 import { ArrowLeft, Plus, Minus, ShoppingCart } from "lucide-react";
@@ -74,13 +75,16 @@ export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: a
                 const res = await fetch("/api/checkout-plan", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ planId: pack.id }),
+                    body: JSON.stringify({ planId: pack.subscriptionPlanId || pack.id }),
                 });
                 const data = await res.json();
                 if (data.url) {
                     window.location.href = data.url;
+                } else if (res.status === 422 && data.redirectTo) {
+                    alert("Antes de suscribirte, completa tu perfil y tu dirección de envío.");
+                    router.push(data.redirectTo);
                 } else {
-                    alert("Error al iniciar el pago. Intenta de nuevo.");
+                    alert(data.error || "Error al iniciar el pago. Intenta de nuevo.");
                 }
             } catch {
                 alert("Error de conexión.");

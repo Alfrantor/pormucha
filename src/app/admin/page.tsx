@@ -1,3 +1,4 @@
+import type React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentUser } from "@clerk/nextjs/server";
@@ -6,8 +7,8 @@ import {
   Boxes,
   BriefcaseBusiness,
   CreditCard,
-  Repeat,
   FlaskConical,
+  Repeat,
   ShieldCheck,
   ShoppingCart,
   Tags,
@@ -17,23 +18,69 @@ import {
 
 type Locale = "es" | "en";
 
-const COPY = {
+type ModuleCard = {
+  href: string;
+  title: string;
+  desc: string;
+  icon: React.ReactNode;
+};
+
+type SectionGroup = {
+  title: string;
+  items: ModuleCard[];
+};
+
+const COPY: Record<Locale, {
+  sections: SectionGroup[];
+  kpis: { revenue: string; orders: string; clients: string; locations: string };
+  operations: {
+    eyebrow: string;
+    title: string;
+    recentOrders: string;
+    latestActivity: string;
+    viewAll: string;
+    summary: string;
+    flavors: string;
+    products: string;
+    rawMaterials: string;
+    openTransfers: string;
+    activeProductions: string;
+    currentUser: string;
+    noClient: string;
+    noEmail: string;
+  };
+}> = {
   es: {
-    modules: [
-      { href: "/admin/orders", title: "Pedidos", desc: "Ventas web, POS, pagos y cancelaciones", icon: <ShoppingCart size={18} /> },
-      { href: "/admin/subscriptions", title: "Suscriptores", desc: "Club, ciclos de envio y mezcla de sabores", icon: <Repeat size={18} /> },
-      { href: "/admin/inventory", title: "Inventarios", desc: "Productos, materia prima, en proceso y traspasos", icon: <Boxes size={18} /> },
-      { href: "/admin/catalog", title: "Catálogo", desc: "Productos, suscripciones y catálogo comercial", icon: <Tags size={18} /> },
-      { href: "/admin/clients", title: "Clientes", desc: "CRM, crédito, direcciones e historial", icon: <BriefcaseBusiness size={18} /> },
-      { href: "/admin/production", title: "Producción", desc: "Cubetas, lotes y parámetros", icon: <FlaskConical size={18} /> },
-      { href: "/admin/users", title: "Usuarios", desc: "Equipo interno y roles", icon: <ShieldCheck size={18} /> },
+    sections: [
+      {
+        title: "Web",
+        items: [
+          { href: "/admin/orders", title: "Pedidos", desc: "Sólo web", icon: <ShoppingCart size={18} /> },
+          { href: "/admin/subscriptions", title: "Suscriptores", desc: "Club, ciclos y envíos", icon: <Repeat size={18} /> },
+          { href: "/admin/leads", title: "Leads", desc: "Captación y prospectos", icon: <Users size={18} /> },
+        ],
+      },
+      {
+        title: "POS",
+        items: [
+          { href: "/pos", title: "POS", desc: "Ir a caja", icon: <ArrowRight size={18} /> },
+          { href: "/admin/orders?channel=POS", title: "Pedidos", desc: "Pedidos creados desde POS", icon: <ShoppingCart size={18} /> },
+          { href: "/admin/catalog", title: "Catálogos", desc: "Productos, materia prima y más", icon: <Tags size={18} /> },
+          { href: "/admin/clients", title: "Clientes", desc: "CRM y crédito", icon: <BriefcaseBusiness size={18} /> },
+          { href: "/admin/inventory", title: "Inventarios", desc: "Stock, materia prima y traspasos", icon: <Boxes size={18} /> },
+          { href: "/admin/inventory/transfers", title: "Traspasos", desc: "Movimientos entre almacenes", icon: <Truck size={18} /> },
+        ],
+      },
+      {
+        title: "Producción",
+        items: [{ href: "/admin/production", title: "Producción", desc: "Cubetas, lotes y parámetros", icon: <FlaskConical size={18} /> }],
+      },
+      {
+        title: "Usuarios",
+        items: [{ href: "/admin/users", title: "Usuarios", desc: "Equipo interno y roles", icon: <ShieldCheck size={18} /> }],
+      },
     ],
-    kpis: {
-      revenue: "Ingresos",
-      orders: "Pedidos",
-      clients: "Clientes",
-      locations: "Ubicaciones",
-    },
+    kpis: { revenue: "Ingresos", orders: "Pedidos", clients: "Clientes", locations: "Ubicaciones" },
     operations: {
       eyebrow: "Operación del día",
       title: "Operación del día",
@@ -52,21 +99,36 @@ const COPY = {
     },
   },
   en: {
-    modules: [
-      { href: "/admin/orders", title: "Orders", desc: "Web sales, POS, payments, and cancellations", icon: <ShoppingCart size={18} /> },
-      { href: "/admin/subscriptions", title: "Subscribers", desc: "Club cycles, shipments, and flavor mix", icon: <Repeat size={18} /> },
-      { href: "/admin/inventory", title: "Inventory", desc: "Products, raw materials, in-process stock, and transfers", icon: <Boxes size={18} /> },
-      { href: "/admin/catalog", title: "Catalog", desc: "Products, subscriptions, and commercial catalog", icon: <Tags size={18} /> },
-      { href: "/admin/clients", title: "Clients", desc: "CRM, credit, addresses, and history", icon: <BriefcaseBusiness size={18} /> },
-      { href: "/admin/production", title: "Production", desc: "Buckets, lots, and parameters", icon: <FlaskConical size={18} /> },
-      { href: "/admin/users", title: "Users", desc: "Internal team and roles", icon: <ShieldCheck size={18} /> },
+    sections: [
+      {
+        title: "Web",
+        items: [
+          { href: "/admin/orders", title: "Orders", desc: "Web only", icon: <ShoppingCart size={18} /> },
+          { href: "/admin/subscriptions", title: "Subscribers", desc: "Club, cycles, and shipments", icon: <Repeat size={18} /> },
+          { href: "/admin/leads", title: "Leads", desc: "Prospects and capture", icon: <Users size={18} /> },
+        ],
+      },
+      {
+        title: "POS",
+        items: [
+          { href: "/pos", title: "Orders", desc: "Open checkout", icon: <ArrowRight size={18} /> },
+          { href: "/admin/catalog/products", title: "Products", desc: "Products for checkout", icon: <ShoppingCart size={18} /> },
+          { href: "/admin/catalog", title: "Catalogs", desc: "Products, raw materials, and more", icon: <Tags size={18} /> },
+          { href: "/admin/clients", title: "Clients", desc: "CRM and credit", icon: <BriefcaseBusiness size={18} /> },
+          { href: "/admin/inventory", title: "Inventory", desc: "Stock, raw materials, and transfers", icon: <Boxes size={18} /> },
+          { href: "/admin/inventory/transfers", title: "Transfers", desc: "Warehouse movements", icon: <Truck size={18} /> },
+        ],
+      },
+      {
+        title: "Production",
+        items: [{ href: "/admin/production", title: "Production", desc: "Buckets, lots, and parameters", icon: <FlaskConical size={18} /> }],
+      },
+      {
+        title: "Users",
+        items: [{ href: "/admin/users", title: "Users", desc: "Internal team and roles", icon: <ShieldCheck size={18} /> }],
+      },
     ],
-    kpis: {
-      revenue: "Revenue",
-      orders: "Orders",
-      clients: "Clients",
-      locations: "Locations",
-    },
+    kpis: { revenue: "Revenue", orders: "Orders", clients: "Clients", locations: "Locations" },
     operations: {
       eyebrow: "Daily operations",
       title: "Daily operations",
@@ -84,7 +146,7 @@ const COPY = {
       noEmail: "No email",
     },
   },
-} satisfies Record<Locale, any>;
+};
 
 export default async function AdminHomePage() {
   const user = await currentUser();
@@ -161,22 +223,31 @@ export default async function AdminHomePage() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {copy.modules.map((mod) => (
-          <Link
-            key={mod.href}
-            href={mod.href}
-            className="group rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="rounded-2xl bg-slate-950 p-3 text-white shadow-lg shadow-slate-950/10">
-                {mod.icon}
-              </div>
-              <ArrowRight className="mt-2 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-700" size={16} />
+      <section className="space-y-5">
+        {copy.sections.map((section) => (
+          <div key={section.title} className="space-y-3">
+            <div className="flex items-end justify-between gap-3">
+              <h2 className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">{section.title}</h2>
             </div>
-            <h3 className="mt-5 text-xl font-black tracking-tight text-slate-950">{mod.title}</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-500">{mod.desc}</p>
-          </Link>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {section.items.map((mod) => (
+                <Link
+                  key={mod.href}
+                  href={mod.href}
+                  className="group rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="rounded-2xl bg-slate-950 p-3 text-white shadow-lg shadow-slate-950/10">
+                      {mod.icon}
+                    </div>
+                    <ArrowRight className="mt-2 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-700" size={16} />
+                  </div>
+                  <h3 className="mt-5 text-xl font-black tracking-tight text-slate-950">{mod.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">{mod.desc}</p>
+                </Link>
+              ))}
+            </div>
+          </div>
         ))}
       </section>
 

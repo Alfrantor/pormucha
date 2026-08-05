@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
+import React from "react";
 import {
   LayoutDashboard,
   Users,
@@ -13,11 +14,10 @@ import {
   Truck,
   FlaskConical,
   Tags,
-  DollarSign,
   ArrowRight,
   Sparkles,
+  BriefcaseBusiness,
 } from "lucide-react";
-import React from "react";
 
 type NavLink = {
   href: string;
@@ -26,25 +26,70 @@ type NavLink = {
   icon: React.ReactNode;
 };
 
-const PRIMARY_LINKS: NavLink[] = [
-  { href: "/admin", label: "Inicio", description: "Resumen operativo", icon: <LayoutDashboard size={16} /> },
-  { href: "/admin/orders", label: "Pedidos", description: "Ventas y pagos", icon: <ShoppingCart size={16} /> },
-  { href: "/admin/subscriptions", label: "Suscriptores", description: "Club, ciclos y envios", icon: <Repeat size={16} /> },
-  { href: "/admin/inventory", label: "Inventarios", description: "Stock, materia prima y traspasos", icon: <Boxes size={16} /> },
-  { href: "/admin/catalog", label: "Catálogo", description: "Productos y suscripciones", icon: <Tags size={16} /> },
-  { href: "/admin/clients", label: "Clientes", description: "CRM y crédito", icon: <Users size={16} /> },
-  { href: "/admin/users", label: "Usuarios", description: "Equipo interno", icon: <ShieldCheck size={16} /> },
-];
-
-const SECONDARY_LINKS: NavLink[] = [
-  { href: "/admin/production", label: "Producción", description: "Tanques y lotes", icon: <FlaskConical size={16} /> },
-  { href: "/admin/pricing", label: "Precios", description: "Precios e historial", icon: <DollarSign size={16} /> },
-  { href: "/pos", label: "Abrir POS", description: "Ir a caja", icon: <ArrowRight size={16} /> },
+const SIDEBAR_SECTIONS: Array<{ title: string; links: NavLink[] }> = [
+  {
+    title: "Principal",
+    links: [{ href: "/admin", label: "Inicio", description: "Resumen operativo", icon: <LayoutDashboard size={16} /> }],
+  },
+  {
+    title: "Web",
+    links: [
+      { href: "/admin/orders", label: "Pedidos", description: "Sólo web", icon: <ShoppingCart size={16} /> },
+      { href: "/admin/subscriptions", label: "Suscriptores", description: "Club, ciclos y envíos", icon: <Repeat size={16} /> },
+      { href: "/admin/leads", label: "Leads", description: "Captación y prospectos", icon: <Users size={16} /> },
+    ],
+  },
+  {
+    title: "POS",
+    links: [
+      { href: "/pos", label: "POS", description: "Ir a caja", icon: <ArrowRight size={16} /> },
+      { href: "/admin/orders?channel=POS", label: "Pedidos", description: "Pedidos creados desde POS", icon: <ShoppingCart size={16} /> },
+      { href: "/admin/catalog", label: "Catálogos", description: "Productos, materia prima y más", icon: <Tags size={16} /> },
+      { href: "/admin/clients", label: "Clientes", description: "CRM y crédito", icon: <BriefcaseBusiness size={16} /> },
+      { href: "/admin/inventory", label: "Inventarios", description: "Stock, materia prima y traspasos", icon: <Boxes size={16} /> },
+      { href: "/admin/inventory/transfers", label: "Traspasos", description: "Movimientos entre almacenes", icon: <Truck size={16} /> },
+    ],
+  },
+  {
+    title: "Producción",
+    links: [{ href: "/admin/production", label: "Producción", description: "Cubetas, lotes y parámetros", icon: <FlaskConical size={16} /> }],
+  },
+  {
+    title: "Usuarios",
+    links: [{ href: "/admin/users", label: "Usuarios", description: "Equipo interno y roles", icon: <ShieldCheck size={16} /> }],
+  },
 ];
 
 function isActive(pathname: string, href: string) {
   if (href === "/admin") return pathname === href;
   return pathname.startsWith(href);
+}
+
+function SidebarLink({ pathname, item }: { pathname: string; item: NavLink }) {
+  const active = isActive(pathname, item.href);
+
+  return (
+    <Link
+      href={item.href}
+      className={[
+        "group flex items-start gap-3 rounded-2xl px-4 py-3 transition-all",
+        active ? "bg-white text-slate-950 shadow-lg shadow-black/10" : "text-slate-300 hover:bg-white/10 hover:text-white",
+      ].join(" ")}
+    >
+      <span
+        className={[
+          "mt-0.5 rounded-xl p-2 transition-all",
+          active ? "bg-slate-950 text-white" : "bg-white/10 text-slate-200 group-hover:bg-white/15",
+        ].join(" ")}
+      >
+        {item.icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold">{item.label}</span>
+        <span className="block text-[11px] leading-tight text-slate-500">{item.description}</span>
+      </span>
+    </Link>
+  );
 }
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
@@ -67,79 +112,18 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-8">
-            <section>
-              <p className="mb-3 px-3 text-[10px] font-black uppercase tracking-[0.35em] text-slate-500">
-                Principal
-              </p>
-              <div className="space-y-1">
-                {PRIMARY_LINKS.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={[
-                      "group flex items-start gap-3 rounded-2xl px-4 py-3 transition-all",
-                      isActive(pathname, item.href)
-                        ? "bg-white text-slate-950 shadow-lg shadow-black/10"
-                        : "text-slate-300 hover:bg-white/10 hover:text-white",
-                    ].join(" ")}
-                  >
-                    <span
-                      className={[
-                        "mt-0.5 rounded-xl p-2 transition-all",
-                        isActive(pathname, item.href)
-                          ? "bg-slate-950 text-white"
-                          : "bg-white/10 text-slate-200 group-hover:bg-white/15",
-                      ].join(" ")}
-                    >
-                      {item.icon}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold">{item.label}</span>
-                      <span className="block text-[11px] leading-tight text-slate-500">
-                        {item.description}
-                      </span>
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            </section>
-
-            <section>
-              <p className="mb-3 px-3 text-[10px] font-black uppercase tracking-[0.35em] text-slate-500">
-                Operaciones
-              </p>
-              <div className="space-y-1">
-                {SECONDARY_LINKS.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={[
-                      "group flex items-start gap-3 rounded-2xl px-4 py-3 transition-all",
-                      isActive(pathname, item.href)
-                        ? "bg-white text-slate-950 shadow-lg shadow-black/10"
-                        : "text-slate-300 hover:bg-white/10 hover:text-white",
-                    ].join(" ")}
-                  >
-                    <span
-                      className={[
-                        "mt-0.5 rounded-xl p-2 transition-all",
-                        isActive(pathname, item.href)
-                          ? "bg-slate-950 text-white"
-                          : "bg-white/10 text-slate-200 group-hover:bg-white/15",
-                      ].join(" ")}
-                    >
-                      {item.icon}
-                    </span>
-                    <span>
-                      <span className="block text-sm font-semibold">{item.label}</span>
-                      <span className="block text-[11px] leading-tight text-slate-500">
-                        {item.description}
-                      </span>
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            </section>
+            {SIDEBAR_SECTIONS.map((section) => (
+              <section key={section.title}>
+                <p className="mb-3 px-3 text-[10px] font-black uppercase tracking-[0.35em] text-slate-500">
+                  {section.title}
+                </p>
+                <div className="space-y-1">
+                  {section.links.map((item) => (
+                    <SidebarLink key={item.href} pathname={pathname} item={item} />
+                  ))}
+                </div>
+              </section>
+            ))}
           </div>
 
           <div className="border-t border-white/10 p-5">

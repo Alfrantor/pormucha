@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { createShippingLabel } from "@/lib/shipping-service";
 import { revalidatePath } from "next/cache";
+import { Decimal } from "@prisma/client/runtime/library";
 
 // ==========================================
 // UBICACIONES
@@ -141,6 +142,29 @@ export async function updatePackPrice(formData: FormData) {
   if (!currentProduct || Number(currentProduct.price) === newPrice) return;
   await db.productPriceHistory.create({ data: { productId, oldPrice: currentProduct.price, newPrice, userId: adminEmail } });
   await db.product.update({ where: { id: productId }, data: { price: newPrice } });
+
+  const updatedProduct = await db.product.findUnique({
+    where: { id: productId },
+    include: { plans: true },
+  });
+
+  if (updatedProduct) {
+    const discountPercent = Number(updatedProduct.clubDiscountPercent || 0);
+    const subscriptionPrice = Math.max(0, newPrice * (1 - discountPercent / 100));
+
+    await Promise.all(
+      updatedProduct.plans.map((plan) =>
+        db.plan.update({
+          where: { id: plan.id },
+          data: {
+            price: subscriptionPrice,
+            stripePriceId: null,
+          },
+        })
+      )
+    );
+  }
+
   revalidatePath("/admin");
 }
 
@@ -151,7 +175,6 @@ export async function updateFlavorPrice(formData: FormData) {
   const currentFlavor = await db.flavor.findUnique({ where: { id: flavorId } });
   if (!currentFlavor || Number(currentFlavor.price) === newPrice) return;
 
-  const { Decimal } = require("@prisma/client/runtime/library");
   const oldPriceDecimal = new Decimal(currentFlavor.price || 0);
   const newPriceDecimal = new Decimal(newPrice);
 
@@ -241,7 +264,34 @@ export async function createFlavor(formData: FormData) {
 export async function updateClubDiscountPercent(formData: FormData) {
   const productId = formData.get("productId") as string;
   const clubDiscountPercent = parseInt(formData.get("clubDiscountPercent") as string);
-  await db.product.update({ where: { id: productId }, data: { clubDiscountPercent: isNaN(clubDiscountPercent) ? 0 : clubDiscountPercent } });
+  const safeDiscount = isNaN(clubDiscountPercent) ? 0 : Math.max(0, Math.min(100, clubDiscountPercent));
+
+  await db.product.update({ where: { id: productId }, data: { clubDiscountPercent: safeDiscount } });
+
+  const updatedProduct = await db.product.findUnique({
+    where: { id: productId },
+    include: { plans: true },
+  });
+
+  if (updatedProduct) {
+    const subscriptionPrice = Math.max(
+      0,
+      Number(updatedProduct.price || 0) * (1 - safeDiscount / 100)
+    );
+
+    await Promise.all(
+      updatedProduct.plans.map((plan) =>
+        db.plan.update({
+          where: { id: plan.id },
+          data: {
+            price: subscriptionPrice,
+            stripePriceId: null,
+          },
+        })
+      )
+    );
+  }
+
   revalidatePath("/admin");
 }
 
@@ -290,9 +340,10 @@ export async function generateShippingLabel(orderId: string): Promise<{ success:
     const result = await createShippingLabel(orderId);
     revalidatePath("/admin");
     return result;
-  } catch (error: any) {
-    console.error("Error en guía:", error.message);
-    return { success: false, error: error.message };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error desconocido al generar guía";
+    console.error("Error en guía:", message);
+    return { success: false, error: message };
   }
 }
 
