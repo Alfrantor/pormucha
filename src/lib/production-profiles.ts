@@ -9,7 +9,7 @@ export type ParameterRange = {
 };
 
 export type ProductionProfile = {
-  type: ProductionType;
+  type: string;
   title: string;
   durationDays: number;
   durationHours: number;
@@ -20,7 +20,7 @@ export type ProductionProfile = {
 export type ProductionFormulaItemView = {
   id: string;
   sourceKind: "RAW_MATERIAL" | "BASE_BEVERAGE";
-  sourceProductionType?: ProductionType | null;
+  sourceProductionType?: string | null;
   rawMaterialId?: string | null;
   rawMaterialName: string;
   rawMaterialUnit: string;
@@ -41,13 +41,15 @@ export type ProductionFormulaStepView = {
 
 export type ProductionFormulaView = {
   id: string;
-  code: ProductionType;
+  code: string;
   name: string;
   description?: string | null;
   formulaSummary?: string | null;
   targetLiters?: number | null;
   durationDays: number;
   durationHours: number;
+  updatedAt?: string | null;
+  updatedByEmail?: string | null;
   phMin: number;
   phMax: number;
   brixMin: number;

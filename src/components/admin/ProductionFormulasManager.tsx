@@ -1,51 +1,31 @@
-﻿"use client";
+"use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveProductionFormula } from "@/app/_actions/production-formulas";
-import { PRODUCTION_PROFILES, formatFormulaDuration, type ProductionFormulaView, type ProductionType } from "@/lib/production-profiles";
+import type { ProductionFormulaView } from "@/lib/production-profiles";
 
-type FormulaStepItemState = {
+type IngredientState = {
   sourceKind: "RAW_MATERIAL" | "BASE_BEVERAGE";
-  sourceProductionType: "" | ProductionType;
+  sourceProductionType: string;
   rawMaterialId: string;
   quantity: string;
-  defaultLocationId: string;
-  notes: string;
 };
 
-type FormulaStepState = {
+type StepState = {
+  stepNumber: number;
   title: string;
-  instructions: string;
-  resultLiters: string;
-  items: FormulaStepItemState[];
+  ingredients: IngredientState[];
 };
 
-type FormulaFormState = {
-  id?: string;
-  code: ProductionType;
+type FormulaState = {
+  code: string;
   name: string;
-  description: string;
-  formulaSummary: string;
   targetLiters: string;
   durationDays: string;
-  durationHours: string;
-  phMin: string;
-  phMax: string;
-  brixMin: string;
-  brixMax: string;
-  temperatureMin: string;
-  temperatureMax: string;
-  acidityMin: string;
-  acidityMax: string;
-  isActive: boolean;
-  steps: FormulaStepState[];
-};
-
-type ScaledRequirement = {
-  label: string;
-  unit: string;
-  quantity: number;
+  updatedAt?: string | null;
+  updatedByEmail?: string | null;
+  steps: StepState[];
 };
 
 type CatalogItem = {
@@ -54,19 +34,8 @@ type CatalogItem = {
   unit?: string | null;
 };
 
-function createEmptyItem(): FormulaStepItemState {
-  return {
-    sourceKind: "RAW_MATERIAL",
-    sourceProductionType: "",
-    rawMaterialId: "",
-    quantity: "",
-    defaultLocationId: "",
-    notes: "",
-  };
-}
-
-function formatBaseDependencyLabel(sourceProductionType: "" | ProductionType, formulaCode: ProductionType) {
-  return `ProducciÃ³n final tipo ${sourceProductionType || formulaCode}`;
+function normalizeCode(value: string) {
+  return value.trim().toUpperCase();
 }
 
 function formatQuantity(value: number) {
@@ -75,398 +44,488 @@ function formatQuantity(value: number) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/\.?0+$/, "");
 }
 
-function buildScaledRequirements(
-  formula: FormulaFormState,
-  desiredLiters: string,
-  rawMaterialMap: Map<string, { name?: string; unit?: string | null }>
-) {
-  const target = Number(formula.targetLiters);
-  const desired = Number(desiredLiters);
-
-  if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(desired) || desired <= 0) {
-    return null;
-  }
-
-  const factor = desired / target;
-  const aggregated = new Map<string, ScaledRequirement>();
-  const stepResults = formula.steps.map((step, index) => {
-    const resultLiters = step.resultLiters.trim() ? Number(step.resultLiters) * factor : null;
-    const items = step.items
-      .filter((item) => Number(item.quantity) > 0)
-      .map((item) => {
-        const quantity = Number(item.quantity) * factor;
-        const label =
-          item.sourceKind === "BASE_BEVERAGE"
-            ? formatBaseDependencyLabel(item.sourceProductionType, formula.code)
-            : rawMaterialMap.get(item.rawMaterialId)?.name || "Materia prima";
-        const unit =
-          item.sourceKind === "BASE_BEVERAGE"
-            ? "L"
-            : rawMaterialMap.get(item.rawMaterialId)?.unit || "";
-        const key = `${item.sourceKind}:${label}:${unit}`;
-        const current = aggregated.get(key);
-        if (current) {
-          current.quantity += quantity;
-        } else {
-          aggregated.set(key, { label, unit, quantity });
-        }
-        return { label, unit, quantity };
-      });
-
-    return {
-      title: step.title || `Paso ${index + 1}`,
-      resultLiters,
-      items,
-    };
+function formatDateTime(value?: string | null) {
+  if (!value) return "";
+  return new Date(value).toLocaleString("es-MX", {
+    dateStyle: "short",
+    timeStyle: "short",
   });
+}
 
+function createEmptyIngredient(): IngredientState {
   return {
-    factor,
-    stepResults,
-    requirements: Array.from(aggregated.values()).sort((a, b) => a.label.localeCompare(b.label, "es-MX", { numeric: true, sensitivity: "base" })),
+    sourceKind: "RAW_MATERIAL",
+    sourceProductionType: "",
+    rawMaterialId: "",
+    quantity: "",
   };
 }
 
-function createDefaultStep(stepNumber: number): FormulaStepState {
+function createEmptyStep(stepNumber: number): StepState {
   return {
+    stepNumber,
     title: `Paso ${stepNumber}`,
-    instructions: "",
-    resultLiters: "",
-    items: [createEmptyItem()],
+    ingredients: [createEmptyIngredient()],
   };
 }
 
-function createDefaultFormula(code: ProductionType): FormulaFormState {
-  const base = PRODUCTION_PROFILES[code];
+function createDefaultFormula(code: string): FormulaState {
   return {
     code,
-    name: base.title,
-    description: "",
-    formulaSummary: base.formulaSummary,
-    targetLiters: "1",
-    durationDays: String(base.durationDays),
-    durationHours: String(base.durationHours),
-    phMin: String(base.parameters.ph.min),
-    phMax: String(base.parameters.ph.max),
-    brixMin: String(base.parameters.brix.min),
-    brixMax: String(base.parameters.brix.max),
-    temperatureMin: String(base.parameters.temperature.min),
-    temperatureMax: String(base.parameters.temperature.max),
-    acidityMin: String(base.parameters.acidity.min),
-    acidityMax: String(base.parameters.acidity.max),
-    isActive: true,
-    steps: [createDefaultStep(1)],
+    name: "",
+    targetLiters: "",
+    durationDays: "",
+    steps: [createEmptyStep(1)],
   };
 }
 
-function mapFormulaToState(formula: ProductionFormulaView | undefined, code: ProductionType): FormulaFormState {
-  if (!formula) return createDefaultFormula(code);
-
-  return {
-    id: formula.id,
-    code,
-    name: formula.name,
-    description: formula.description || "",
-    formulaSummary: formula.formulaSummary || "",
-    targetLiters: String(formula.targetLiters ?? 1),
-    durationDays: String(formula.durationDays),
-    durationHours: String(formula.durationHours),
-    phMin: String(formula.phMin),
-    phMax: String(formula.phMax),
-    brixMin: String(formula.brixMin),
-    brixMax: String(formula.brixMax),
-    temperatureMin: String(formula.temperatureMin),
-    temperatureMax: String(formula.temperatureMax),
-    acidityMin: String(formula.acidityMin),
-    acidityMax: String(formula.acidityMax),
-    isActive: formula.isActive,
-    steps: formula.steps.length
-      ? formula.steps.map((step, index) => ({
-          title: step.title || `Paso ${index + 1}`,
-          instructions: step.instructions || "",
-          resultLiters: step.resultLiters != null ? String(step.resultLiters) : "",
-          items: step.items.length
-            ? step.items.map((item) => ({
-                sourceKind: item.sourceKind || "RAW_MATERIAL",
-                sourceProductionType: item.sourceProductionType || "",
-                rawMaterialId: item.rawMaterialId || "",
-                quantity: String(item.quantity),
-                defaultLocationId: item.defaultLocationId || "",
-                notes: item.notes || "",
-              }))
-            : [createEmptyItem()],
+function mapFormulaToState(formula: ProductionFormulaView): FormulaState {
+  const steps =
+    formula.steps.length > 0
+      ? formula.steps.map((step, stepIndex) => ({
+          stepNumber: step.stepNumber || stepIndex + 1,
+          title: step.title || `Paso ${step.stepNumber || stepIndex + 1}`,
+          ingredients:
+            step.items.length > 0
+              ? step.items.map((item) => ({
+                  sourceKind: item.sourceKind || "RAW_MATERIAL",
+                  sourceProductionType: item.sourceProductionType || "",
+                  rawMaterialId: item.rawMaterialId || "",
+                  quantity: String(item.quantity ?? ""),
+                }))
+              : [createEmptyIngredient()],
         }))
-      : [createDefaultStep(1)],
+      : [
+          {
+            stepNumber: 1,
+            title: "Paso 1",
+            ingredients:
+              formula.items.length > 0
+                ? formula.items.map((item) => ({
+                    sourceKind: item.sourceKind || "RAW_MATERIAL",
+                    sourceProductionType: item.sourceProductionType || "",
+                    rawMaterialId: item.rawMaterialId || "",
+                    quantity: String(item.quantity ?? ""),
+                  }))
+                : [createEmptyIngredient()],
+          },
+        ];
+
+  return {
+    code: normalizeCode(formula.code),
+    name: formula.name || "",
+    targetLiters: formula.targetLiters != null ? String(formula.targetLiters) : "",
+    durationDays: String(formula.durationDays || 0),
+    updatedAt: formula.updatedAt || null,
+    updatedByEmail: formula.updatedByEmail || null,
+    steps,
   };
+}
+
+function buildInitialState(formulas: ProductionFormulaView[]) {
+  const entries = formulas
+    .map((formula) => [normalizeCode(formula.code), mapFormulaToState(formula)] as const)
+    .sort((a, b) => a[0].localeCompare(b[0], "es-MX", { numeric: true, sensitivity: "base" }));
+
+  return {
+    forms: Object.fromEntries(entries),
+    order: entries.map(([code]) => code),
+  };
+}
+
+function getNextFormulaCode(existingCodes: string[]) {
+  const normalized = new Set(existingCodes.map((code) => normalizeCode(code)));
+  for (const letter of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+    if (!normalized.has(letter)) return letter;
+  }
+  let counter = 1;
+  while (normalized.has(`F${counter}`)) counter += 1;
+  return `F${counter}`;
+}
+
+function IngredientField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function SimpleField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
+      {children}
+    </label>
+  );
 }
 
 export default function ProductionFormulasManager({
   formulas,
   rawMaterials,
-  locations,
 }: {
   formulas: ProductionFormulaView[];
   rawMaterials: CatalogItem[];
-  locations: CatalogItem[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
-  const formulaMap = new Map(formulas.map((formula) => [formula.code, formula]));
-  const rawMaterialMap = new Map(rawMaterials.map((item) => [item.id, item]));
-  const [forms, setForms] = useState<Record<ProductionType, FormulaFormState>>({
-    A: mapFormulaToState(formulaMap.get("A"), "A"),
-    B: mapFormulaToState(formulaMap.get("B"), "B"),
-    C: mapFormulaToState(formulaMap.get("C"), "C"),
-  });
-  const [scaleTargets, setScaleTargets] = useState<Record<ProductionType, string>>({
-    A: "100",
-    B: "100",
-    C: "100",
-  });
-  const [savingCode, setSavingCode] = useState<ProductionType | null>(null);
-  const [messages, setMessages] = useState<Record<string, string>>({});
+  const initialState = useMemo(() => buildInitialState(formulas), [formulas]);
+  const [forms, setForms] = useState<Record<string, FormulaState>>(initialState.forms);
+  const [order, setOrder] = useState<string[]>(initialState.order);
+  const [selectedCode, setSelectedCode] = useState<string>(initialState.order[0] || "");
+  const [editingCode, setEditingCode] = useState<string | null>(initialState.order[0] || null);
+  const [savingCode, setSavingCode] = useState<string | null>(null);
+  const [message, setMessage] = useState<Record<string, string>>({});
 
-  const formulaStepSummaries = (formula: FormulaFormState) =>
-    formula.steps.map((step, index) => {
-      const baseItems = step.items.filter((item) => item.sourceKind === "BASE_BEVERAGE");
-      const rawItems = step.items.filter((item) => item.sourceKind === "RAW_MATERIAL");
+  const rawMaterialOptions = Array.isArray(rawMaterials) ? rawMaterials : [];
+  const formulaOptions = order.length > 0 ? order : Object.keys(forms);
+  const currentFormula = selectedCode ? forms[selectedCode] : undefined;
+  const orderedSteps = useMemo(() => {
+    if (!currentFormula) return [];
+    return [...currentFormula.steps].sort((a, b) => b.stepNumber - a.stepNumber);
+  }, [currentFormula]);
+  const isEditing = editingCode === selectedCode;
 
-      return {
-        title: step.title || `Paso ${index + 1}`,
-        instructions: step.instructions.trim(),
-        resultLiters: step.resultLiters.trim(),
-        dependencyText: baseItems.length
-          ? baseItems.map((item) => formatBaseDependencyLabel(item.sourceProductionType, formula.code)).join(" Â· ")
-          : "",
-        rawItemsCount: rawItems.length,
-        totalItems: step.items.length,
-      };
+  const updateFormula = (code: string, updater: (current: FormulaState) => FormulaState) => {
+    setForms((prev) => {
+      const current = prev[code] ?? createDefaultFormula(code);
+      return { ...prev, [code]: updater(current) };
     });
-
-  const updateFormula = (code: ProductionType, updater: (current: FormulaFormState) => FormulaFormState) => {
-    setForms((prev) => ({ ...prev, [code]: updater(prev[code]) }));
   };
 
-  const saveFormula = async (code: ProductionType) => {
-    const formula = forms[code];
-    setSavingCode(code);
-    setMessages((prev) => ({ ...prev, [code]: "" }));
+  const updateCurrentStep = (stepNumber: number, updater: (current: StepState) => StepState) => {
+    if (!selectedCode) return;
+    updateFormula(selectedCode, (current) => ({
+      ...current,
+      steps: current.steps.map((step) => (step.stepNumber === stepNumber ? updater(step) : step)),
+    }));
+  };
+
+  const removeCurrentStep = (stepNumber: number) => {
+    if (!selectedCode) return;
+    updateFormula(selectedCode, (current) => ({
+      ...current,
+      steps: current.steps.length > 1 ? current.steps.filter((step) => step.stepNumber !== stepNumber) : current.steps,
+    }));
+  };
+
+  const getNextStepNumber = (steps: StepState[]) => steps.reduce((max, step) => Math.max(max, step.stepNumber || 0), 0) + 1;
+
+  const preserveScroll = (action: () => void) => {
+    if (typeof window === "undefined") {
+      action();
+      return;
+    }
+
+    const scrollTop = window.scrollY;
+    action();
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollTop, left: window.scrollX, behavior: "auto" });
+    });
+  };
+
+  const addFormula = () => {
+    const code = getNextFormulaCode(Object.keys(forms));
+    setForms((prev) => ({ ...prev, [code]: createDefaultFormula(code) }));
+    setOrder((prev) => [...prev, code]);
+    setSelectedCode(code);
+    setEditingCode(code);
+    setMessage((prev) => ({ ...prev, [code]: "" }));
+  };
+
+  const startEdit = () => {
+    if (!selectedCode) return;
+    setEditingCode(selectedCode);
+  };
+
+  const cancelEdit = () => {
+    if (!selectedCode) return;
+    setForms(initialState.forms);
+    setOrder(initialState.order);
+    setEditingCode(null);
+    setMessage((prev) => ({ ...prev, [selectedCode]: "" }));
+  };
+
+  const saveFormula = async () => {
+    if (!selectedCode) return;
+    const formula = forms[selectedCode];
+    if (!formula) return;
+    if (!window.confirm("¿Deseas guardar esta fórmula?")) return;
+
+    setSavingCode(selectedCode);
+    setMessage((prev) => ({ ...prev, [selectedCode]: "" }));
+
+    const validSteps = formula.steps
+      .map((step) => ({
+        title: step.title.trim(),
+        instructions: step.title.trim(),
+        resultLiters: formula.targetLiters ? Number(formula.targetLiters) : null,
+        items: step.ingredients
+          .filter((ingredient) => {
+            if (!(Number(ingredient.quantity) > 0)) return false;
+            return ingredient.sourceKind === "BASE_BEVERAGE" ? !!ingredient.sourceProductionType : !!ingredient.rawMaterialId;
+          })
+          .map((ingredient) => ({
+            sourceKind: ingredient.sourceKind,
+            sourceProductionType: ingredient.sourceKind === "BASE_BEVERAGE" ? (ingredient.sourceProductionType || formula.code) : null,
+            rawMaterialId: ingredient.sourceKind === "RAW_MATERIAL" ? ingredient.rawMaterialId || null : null,
+            quantity: Number(ingredient.quantity),
+            defaultLocationId: null,
+            notes: "",
+          })),
+      }))
+      .filter((step) => step.title);
+
+    if (validSteps.length === 0) {
+      setSavingCode(null);
+      setMessage((prev) => ({ ...prev, [selectedCode]: "Agrega al menos un paso" }));
+      return;
+    }
 
     const res = await saveProductionFormula({
-      code,
-      name: formula.name,
-      description: formula.description,
-      formulaSummary: formula.formulaSummary,
+      code: normalizeCode(formula.code),
+      name: formula.name.trim(),
       targetLiters: Number(formula.targetLiters),
       durationDays: Number(formula.durationDays),
-      durationHours: Number(formula.durationHours),
-      phMin: Number(formula.phMin),
-      phMax: Number(formula.phMax),
-      brixMin: Number(formula.brixMin),
-      brixMax: Number(formula.brixMax),
-      temperatureMin: Number(formula.temperatureMin),
-      temperatureMax: Number(formula.temperatureMax),
-      acidityMin: Number(formula.acidityMin),
-      acidityMax: Number(formula.acidityMax),
-      isActive: formula.isActive,
-      steps: formula.steps.map((step) => ({
-        title: step.title,
-        instructions: step.instructions,
-        resultLiters: step.resultLiters.trim() ? Number(step.resultLiters) : null,
-        items: step.items.map((item) => ({
-          sourceKind: item.sourceKind,
-          sourceProductionType: item.sourceKind === "BASE_BEVERAGE" ? (item.sourceProductionType || code) : null,
-          rawMaterialId: item.rawMaterialId || null,
-          quantity: Number(item.quantity),
-          defaultLocationId: item.defaultLocationId || null,
-          notes: item.notes,
-        })),
-      })),
+      durationHours: 0,
+      phMin: 0,
+      phMax: 0,
+      brixMin: 0,
+      brixMax: 0,
+      temperatureMin: 0,
+      temperatureMax: 0,
+      acidityMin: 0,
+      acidityMax: 0,
+      isActive: true,
+      steps: validSteps,
+      description: "",
+      formulaSummary: "",
     });
 
     setSavingCode(null);
-    setMessages((prev) => ({ ...prev, [code]: res.success ? "FÃ³rmula guardada" : res.error || "No se pudo guardar" }));
+    setMessage((prev) => ({
+      ...prev,
+      [selectedCode]: res.success ? "Formula guardada" : res.error || "No se pudo guardar",
+    }));
+
     if (res.success) {
+      setEditingCode(null);
       startTransition(() => router.refresh());
     }
   };
 
+  const canRenderForm = Boolean(currentFormula);
+
+  const renderIngredientSummary = (ingredient: IngredientState) => {
+    const label =
+      ingredient.sourceKind === "BASE_BEVERAGE"
+        ? `Formula base ${ingredient.sourceProductionType || selectedCode}`
+        : rawMaterialOptions.find((raw) => raw.id === ingredient.rawMaterialId)?.name || "Materia prima";
+    const quantity = Number(ingredient.quantity);
+    const unit = ingredient.sourceKind === "BASE_BEVERAGE" ? "L" : rawMaterialOptions.find((raw) => raw.id === ingredient.rawMaterialId)?.unit || "";
+
+    return `${label}: ${formatQuantity(quantity)}${unit ? ` ${unit}` : ""}`;
+  };
+
   return (
     <div className="space-y-6">
-      <section className="grid gap-6 xl:grid-cols-3">
-        {(["A", "B", "C"] as ProductionType[]).map((code) => {
-          const formula = forms[code];
-          const scaledPlan = buildScaledRequirements(formula, scaleTargets[code], rawMaterialMap);
-          return (
-            <article key={code} className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">FÃ³rmula {code}</p>
-                  <h2 className="mt-2 text-2xl font-black text-slate-950">{formula.name || `FÃ³rmula ${code}`}</h2>
-                  <p className="mt-2 text-sm text-slate-500">
-                    AquÃ­ defines cÃ³mo se realiza la fÃ³rmula paso por paso, quÃ© se hace, quÃ© insumos usa y cuÃ¡ntos litros deja cada etapa.
-                  </p>
-                  <p className="mt-2 text-xs font-semibold text-violet-700">
-                    DuraciÃ³n actual: {formatFormulaDuration({ durationDays: Number(formula.durationDays || 0), durationHours: Number(formula.durationHours || 0) })}
-                  </p>
-                </div>
-                <label className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={formula.isActive}
-                    onChange={(e) => updateFormula(code, (current) => ({ ...current, isActive: e.target.checked }))}
-                  />
-                  Activa
-                </label>
-              </div>
+      <div className="flex justify-end">
+        <button type="button" onClick={addFormula} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
+          Nueva formula
+        </button>
+      </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <Field label="Nombre">
-                  <input value={formula.name} onChange={(e) => updateFormula(code, (current) => ({ ...current, name: e.target.value }))} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-                </Field>
-                <Field label="FÃ³rmula para x litros">
-                  <input type="number" min="0.1" step="0.01" value={formula.targetLiters} onChange={(e) => updateFormula(code, (current) => ({ ...current, targetLiters: e.target.value }))} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-                </Field>
-                <Field label="DuraciÃ³n (dÃ­as)">
-                  <input type="number" min="0" value={formula.durationDays} onChange={(e) => updateFormula(code, (current) => ({ ...current, durationDays: e.target.value }))} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-                </Field>
-                <Field label="DuraciÃ³n (horas)">
-                  <input type="number" min="0" value={formula.durationHours} onChange={(e) => updateFormula(code, (current) => ({ ...current, durationHours: e.target.value }))} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-                </Field>
-              </div>
+      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
+        <aside className="rounded-[1.8rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-lg font-black text-slate-950">Formulas guardadas</h3>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{formulaOptions.length}</span>
+          </div>
 
-              <Field label="Resumen operativo">
-                <textarea value={formula.formulaSummary} onChange={(e) => updateFormula(code, (current) => ({ ...current, formulaSummary: e.target.value }))} rows={2} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-              </Field>
-
-              <Field label="DescripciÃ³n interna">
-                <textarea value={formula.description} onChange={(e) => updateFormula(code, (current) => ({ ...current, description: e.target.value }))} rows={2} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-              </Field>
-
-              <details className="mt-5 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
-                <summary className="cursor-pointer list-none select-none text-sm font-black text-slate-900">
-                  Detalles tecnicos <span className="ml-2 text-xs font-normal text-slate-400">mostrar / ocultar</span>
-                </summary>
-                <div className="mt-3 grid gap-4 lg:grid-cols-2">
-                  <div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <RangeField
-                        label="pH"
-                        min={formula.phMin}
-                        max={formula.phMax}
-                        onMinChange={(value) => updateFormula(code, (current) => ({ ...current, phMin: value }))}
-                        onMaxChange={(value) => updateFormula(code, (current) => ({ ...current, phMax: value }))}
-                      />
-                      <RangeField
-                        label="Brix"
-                        min={formula.brixMin}
-                        max={formula.brixMax}
-                        onMinChange={(value) => updateFormula(code, (current) => ({ ...current, brixMin: value }))}
-                        onMaxChange={(value) => updateFormula(code, (current) => ({ ...current, brixMax: value }))}
-                      />
-                      <RangeField
-                        label="Temperatura"
-                        min={formula.temperatureMin}
-                        max={formula.temperatureMax}
-                        onMinChange={(value) => updateFormula(code, (current) => ({ ...current, temperatureMin: value }))}
-                        onMaxChange={(value) => updateFormula(code, (current) => ({ ...current, temperatureMax: value }))}
-                      />
-                      <RangeField
-                        label="Acidez"
-                        min={formula.acidityMin}
-                        max={formula.acidityMax}
-                        onMinChange={(value) => updateFormula(code, (current) => ({ ...current, acidityMin: value }))}
-                        onMaxChange={(value) => updateFormula(code, (current) => ({ ...current, acidityMax: value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="flex flex-wrap items-end gap-3">
-                      <Field label="Quiero producir">
-                        <input
-                          type="number"
-                          min="0.1"
-                          step="0.1"
-                          value={scaleTargets[code]}
-                          onChange={(e) => setScaleTargets((prev) => ({ ...prev, [code]: e.target.value }))}
-                          className="w-40 rounded-xl border border-slate-200 p-3 text-sm"
-                        />
-                      </Field>
-                      <div className="rounded-xl bg-slate-950 px-4 py-3 text-white">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">Base</p>
-                        <p className="text-lg font-black">{formula.targetLiters ? `${formatQuantity(Number(formula.targetLiters))} L` : "Sin base"}</p>
+          <div className="mt-4 space-y-3">
+            {formulaOptions.length === 0 ? (
+              <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Aun no hay formulas. Crea la primera.</p>
+            ) : (
+              formulaOptions.map((code) => {
+                const formula = forms[code];
+                const active = selectedCode === code;
+                return (
+                  <button
+                    key={code}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCode(code);
+                      setEditingCode(null);
+                    }}
+                    className={`w-full rounded-2xl border p-4 text-left transition ${
+                      active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-white"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className={`text-sm font-black ${active ? "text-white/70" : "text-slate-400"}`}>Formula</p>
+                        <h4 className="mt-1 text-lg font-black">{formula?.name?.trim() || "Sin nombre"}</h4>
                       </div>
-                      <div className="rounded-xl bg-violet-50 px-4 py-3 text-violet-800">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-400">Factor</p>
-                        <p className="text-lg font-black">{scaledPlan ? `x${formatQuantity(scaledPlan.factor)}` : "-"}</p>
-                      </div>
+                      <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${active ? "bg-white text-slate-950" : "bg-slate-950 text-white"}`}>
+                        {formula?.durationDays ? `${formula.durationDays} d` : "Borrador"}
+                      </span>
                     </div>
-                    <p className="mt-3 text-xs text-slate-500">
-                      Si la formula base esta hecha para 5 litros y escribes 100 litros, el sistema multiplica todo por 20.
+                    <p className={`mt-3 text-xs ${active ? "text-white/70" : "text-slate-500"}`}>
+                      {formula?.targetLiters ? `${formula.targetLiters} L esperados` : "Sin litros definidos"}
                     </p>
-                    {scaledPlan ? (
-                      <div className="mt-4 space-y-3">
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                          <h4 className="text-sm font-black text-slate-900">Desglose requerido</h4>
-                          <div className="mt-3 space-y-2">
-                            {scaledPlan.requirements.map((item) => (
-                              <div key={`${code}-${item.label}-${item.unit}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                                <span className="font-medium text-slate-700">{item.label}</span>
-                                <span className="font-black text-slate-950">
-                                  {formatQuantity(item.quantity)}{item.unit ? ` ${item.unit}` : ""}
-                                </span>
-                              </div>
-                            ))}
-                            {scaledPlan.requirements.length === 0 && (
-                              <p className="text-sm text-slate-400">Todavia no hay insumos escalables en esta formula.</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                          <h4 className="text-sm font-black text-slate-900">Resultado por paso</h4>
-                          <div className="mt-3 space-y-2">
-                            {scaledPlan.stepResults.map((step, index) => (
-                              <div key={`${code}-scaled-step-${index}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                <div className="flex items-center justify-between gap-3 text-sm">
-                                  <span className="font-bold text-slate-900">{step.title}</span>
-                                  <span className="text-xs font-semibold text-violet-700">
-                                    {step.resultLiters != null ? `${formatQuantity(step.resultLiters)} L` : "Sin litros"}
-                                  </span>
-                                </div>
-                                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                                  {step.items.map((item, itemIndex) => (
-                                    <span key={`${code}-scaled-step-${index}-${itemIndex}`} className="rounded-full bg-slate-100 px-2 py-0.5">
-                                      {item.label}: {formatQuantity(item.quantity)}{item.unit ? ` ${item.unit}` : ""}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-sm text-rose-600">Completa el litraje base y el objetivo para ver el escalado.</p>
-                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </aside>
+
+        <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
+          {!canRenderForm ? (
+            <div className="rounded-[1.4rem] border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+              <p className="text-lg font-black text-slate-900">No hay ninguna formula seleccionada</p>
+              <p className="mt-2 text-sm text-slate-500">Crea una nueva para empezar.</p>
+            </div>
+          ) : !isEditing ? (
+            <div className="space-y-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Formula plasmada</p>
+                  <h3 className="mt-2 text-2xl font-black text-slate-950">{currentFormula?.name?.trim() || "Sin nombre"}</h3>
+                </div>
+                <button type="button" onClick={startEdit} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
+                  Editar
+                </button>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Nombre</p>
+                  <p className="mt-2 text-base font-bold text-slate-950">{currentFormula?.name?.trim() || "-"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Litros esperados</p>
+                  <p className="mt-2 text-base font-bold text-slate-950">{currentFormula?.targetLiters ? `${formatQuantity(Number(currentFormula.targetLiters))} L` : "-"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Tiempo de fermentacion</p>
+                  <p className="mt-2 text-base font-bold text-slate-950">{currentFormula?.durationDays ? `${formatQuantity(Number(currentFormula.durationDays))} dias` : "-"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900">Pasos</h4>
+                    <p className="mt-1 text-xs text-slate-500">Aqui se ve la formula ya plasmada. Presiona Editar para cambiarla.</p>
                   </div>
                 </div>
-              </details>
 
+                <div className="mt-4 space-y-3">
+                  {orderedSteps.map((step) => (
+                    <div key={`${selectedCode}-view-step-${step.stepNumber}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Paso {step.stepNumber}</p>
+                      <h5 className="mt-1 text-lg font-black text-slate-950">{step.title || `Paso ${step.stepNumber}`}</h5>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {step.ingredients.map((ingredient, ingredientIndex) => (
+                          <span key={`${selectedCode}-view-step-${step.stepNumber}-ing-${ingredientIndex}`} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                            {renderIngredientSummary(ingredient)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-              <div className="mt-5 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-500">
+                {currentFormula?.updatedAt
+                  ? `Ultima edicion: ${formatDateTime(currentFormula.updatedAt)}${currentFormula.updatedByEmail ? ` · ${currentFormula.updatedByEmail}` : ""}`
+                  : "Aun no se ha guardado esta formula"}
+              </div>
+
+              {message[selectedCode] && <p className="text-sm font-semibold text-rose-600">{message[selectedCode]}</p>}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Edicion</p>
+                  <h3 className="mt-2 text-2xl font-black text-slate-950">{currentFormula?.name?.trim() || "Nueva formula"}</h3>
+                </div>
+                <div className="flex gap-3">
+                  <button type="button" onClick={cancelEdit} className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-50">
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveFormula}
+                    disabled={savingCode === selectedCode}
+                    className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300"
+                  >
+                    {savingCode === selectedCode ? "Guardando..." : "Guardar formula"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <SimpleField label="Nombre de la formula">
+                  <input
+                    value={currentFormula?.name || ""}
+                    onChange={(e) => updateFormula(selectedCode, (current) => ({ ...current, name: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                    placeholder="Ej. Formula especial"
+                  />
+                </SimpleField>
+
+                <SimpleField label="Cuantos litros son esperados">
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="0.01"
+                    value={currentFormula?.targetLiters || ""}
+                    onChange={(e) => updateFormula(selectedCode, (current) => ({ ...current, targetLiters: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                    placeholder="Ej. 100"
+                  />
+                </SimpleField>
+
+                <SimpleField label="Tiempo de fermentacion">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={currentFormula?.durationDays || ""}
+                    onChange={(e) => updateFormula(selectedCode, (current) => ({ ...current, durationDays: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                    placeholder="Dias"
+                  />
+                </SimpleField>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Vista rapida</p>
+                  <p className="mt-2 text-sm text-slate-700">{currentFormula?.durationDays ? `${formatQuantity(Number(currentFormula.durationDays))} dias` : "Sin tiempo definido"}</p>
+                  <p className="text-sm text-slate-700">{currentFormula?.targetLiters ? `${formatQuantity(Number(currentFormula.targetLiters))} litros esperados` : "Sin litros definidos"}</p>
+                </div>
+              </div>
+
+              <section className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-black text-slate-900">Proceso por pasos</h3>
-                    <p className="mt-1 text-xs text-slate-500">Cada paso indica quÃ© se hace, quÃ© insumos necesita y cuÃ¡ntos litros resultan.</p>
+                    <h4 className="text-sm font-black text-slate-900">Que insumos llevara esta formula</h4>
+                    <p className="mt-1 text-xs text-slate-500">Agrega uno o varios insumos. Puedes usar materia prima o una formula base.</p>
                   </div>
                   <button
+                    type="button"
                     onClick={() =>
-                      updateFormula(code, (current) => ({
-                        ...current,
-                        steps: [...current.steps, createDefaultStep(current.steps.length + 1)],
-                      }))
+                      preserveScroll(() =>
+                        updateFormula(selectedCode, (current) => ({
+                          ...current,
+                          steps: [...current.steps, createEmptyStep(getNextStepNumber(current.steps))],
+                        }))
+                      )
                     }
                     className="rounded-full bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
                   >
@@ -474,371 +533,177 @@ export default function ProductionFormulasManager({
                   </button>
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-dashed border-violet-200 bg-white p-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-500">Vista resumida</p>
-                  <div className="mt-3 space-y-2">
-                    {formulaStepSummaries(formula).map((step, index) => (
-                      <div key={`${code}-summary-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                        <div className="flex flex-wrap items-center gap-2 text-sm">
-                          <span className="rounded-full bg-slate-950 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.2em] text-white">
-                            Paso {index + 1}
-                          </span>
-                          <span className="font-bold text-slate-900">{step.title}</span>
-                          {step.resultLiters ? (
-                            <span className="text-xs font-semibold text-emerald-700">Resultado: {step.resultLiters} L</span>
-                          ) : (
-                            <span className="text-xs font-semibold text-slate-400">Sin litros resultantes definidos</span>
-                          )}
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                          <span>{step.totalItems} insumo(s)</span>
-                          <span>Â·</span>
-                          <span>{step.rawItemsCount} materia(s) prima(s)</span>
-                          {step.dependencyText && (
-                            <>
-                              <span>Â·</span>
-                              <span className="font-semibold text-violet-700">{step.dependencyText}</span>
-                            </>
-                          )}
-                        </div>
-                        {step.instructions && <p className="mt-1 text-xs leading-5 text-slate-600">{step.instructions}</p>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-4">
-                  {formula.steps.map((step, stepIndex) => (
-                    <div key={`${code}-step-${stepIndex}`} className="rounded-[1.2rem] border border-slate-200 bg-white p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Paso {stepIndex + 1}</p>
-                          <h4 className="mt-1 text-lg font-black text-slate-950">{step.title || `Paso ${stepIndex + 1}`}</h4>
-                        </div>
-                        {formula.steps.length > 1 && (
-                          <button
-                            onClick={() =>
-                              updateFormula(code, (current) => ({
-                                ...current,
-                                steps: current.steps.filter((_, index) => index !== stepIndex),
-                              }))
-                            }
-                            className="rounded-full bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100"
-                          >
+                <div className="mt-4 space-y-3">
+                  {orderedSteps.map((step) => (
+                    <div key={`${selectedCode}-ingredient-step-${step.stepNumber}`} className="rounded-2xl border border-slate-200 bg-white p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-black text-slate-900">Paso {step.stepNumber}</p>
+                        {currentFormula.steps.length > 1 && (
+                          <button type="button" onClick={() => removeCurrentStep(step.stepNumber)} className="rounded-full bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100">
                             Quitar paso
                           </button>
                         )}
                       </div>
 
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <Field label="Nombre del paso">
+                      <div className="mt-3 space-y-4">
+                        <SimpleField label="Se hace en este paso">
                           <input
                             value={step.title}
-                            onChange={(e) =>
-                              updateFormula(code, (current) => ({
-                                ...current,
-                                steps: current.steps.map((row, index) => index === stepIndex ? { ...row, title: e.target.value } : row),
-                              }))
-                            }
+                            onChange={(e) => updateCurrentStep(step.stepNumber, (current) => ({ ...current, title: e.target.value }))}
                             className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                            placeholder="Escribe qué se hace"
                           />
-                        </Field>
-                        <Field label="Litros resultantes">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={step.resultLiters}
-                            onChange={(e) =>
-                              updateFormula(code, (current) => ({
-                                ...current,
-                                steps: current.steps.map((row, index) => index === stepIndex ? { ...row, resultLiters: e.target.value } : row),
-                              }))
-                            }
-                            className="w-full rounded-xl border border-slate-200 p-3 text-sm"
-                          />
-                        </Field>
-                      </div>
+                        </SimpleField>
 
-                      <Field label="QuÃ© se hace en este paso">
-                        <textarea
-                          value={step.instructions}
-                          onChange={(e) =>
-                            updateFormula(code, (current) => ({
-                              ...current,
-                              steps: current.steps.map((row, index) => index === stepIndex ? { ...row, instructions: e.target.value } : row),
-                            }))
-                          }
-                          rows={3}
-                          className="w-full rounded-xl border border-slate-200 p-3 text-sm"
-                        />
-                      </Field>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Insumos del paso</p>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                preserveScroll(() =>
+                                  updateCurrentStep(step.stepNumber, (current) => ({
+                                    ...current,
+                                    ingredients: [createEmptyIngredient(), ...current.ingredients],
+                                  }))
+                                )
+                              }
+                              className="rounded-full bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
+                            >
+                              Agregar insumo
+                            </button>
+                          </div>
 
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-sm font-black text-slate-900">Insumos necesarios para este paso</h5>
-                          <button
-                            onClick={() =>
-                              updateFormula(code, (current) => ({
-                                ...current,
-                                steps: current.steps.map((row, index) =>
-                                  index === stepIndex ? { ...row, items: [...row.items, createEmptyItem()] } : row
-                                ),
-                              }))
-                            }
-                            className="text-xs font-bold text-blue-700 hover:underline"
-                          >
-                            Agregar insumo
-                          </button>
-                        </div>
-
-                        <div className="mt-3 space-y-3">
-                          {step.items.map((item, itemIndex) => (
-                            <div key={`${code}-step-${stepIndex}-item-${itemIndex}`} className="rounded-2xl border border-slate-200 bg-white p-3">
-                              <div className="grid gap-3 sm:grid-cols-2">
-                                <Field label="Tipo de insumo">
-                                  <select
-                                    value={item.sourceKind}
-                                    onChange={(e) =>
-                                      updateFormula(code, (current) => ({
-                                        ...current,
-                                        steps: current.steps.map((row, index) =>
-                                          index === stepIndex
-                                            ? {
-                                                ...row,
-                                                items: row.items.map((entry, entryIndex) =>
-                                                  entryIndex === itemIndex
-                                                    ? {
-                                                        ...entry,
-                                                        sourceKind: e.target.value as "RAW_MATERIAL" | "BASE_BEVERAGE",
-                                                        sourceProductionType: e.target.value === "BASE_BEVERAGE" ? (entry.sourceProductionType || code) : "",
-                                                        rawMaterialId: "",
-                                                      }
-                                                    : entry
-                                                ),
-                                              }
-                                            : row
-                                        ),
-                                      }))
-                                    }
-                                    className="w-full rounded-xl border border-slate-200 p-3 text-sm"
-                                  >
-                                    <option value="RAW_MATERIAL">Materia prima</option>
-                                    <option value="BASE_BEVERAGE">Bebida base procesada</option>
-                                  </select>
-                                </Field>
-
-                                <Field label={item.sourceKind === "BASE_BEVERAGE" ? "Tipo de bebida base" : "Materia prima"}>
-                                  {item.sourceKind === "BASE_BEVERAGE" ? (
-                                    <div className="space-y-2">
-                                      <select
-                                        value={item.sourceProductionType || code}
-                                        onChange={(e) =>
-                                          updateFormula(code, (current) => ({
-                                            ...current,
-                                            steps: current.steps.map((row, index) =>
-                                              index === stepIndex
-                                                ? {
-                                                    ...row,
-                                                    items: row.items.map((entry, entryIndex) =>
-                                                      entryIndex === itemIndex ? { ...entry, sourceProductionType: e.target.value as "" | ProductionType } : entry
-                                                    ),
-                                                  }
-                                                : row
-                                            ),
-                                          }))
-                                        }
-                                        className="w-full rounded-xl border border-slate-200 p-3 text-sm"
-                                      >
-                                        {(["A", "B", "C"] as ProductionType[]).map((sourceType) => (
-                                          <option key={sourceType} value={sourceType}>ProducciÃ³n final tipo {sourceType}</option>
-                                        ))}
-                                      </select>
-                                      <p className="text-[11px] leading-5 text-slate-500">
-                                        Esta lÃ­nea apunta al lote final que se reutiliza como insumo del siguiente paso. Si es la misma fÃ³rmula, deja el mismo tipo.
-                                      </p>
-                                    </div>
-                                  ) : (
+                          <div className="mt-3 space-y-2">
+                            {step.ingredients.map((ingredient, ingredientIndex) => (
+                              <div key={`${selectedCode}-ingredient-${step.stepNumber}-${ingredientIndex}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                                <div className="grid gap-3 md:grid-cols-3">
+                                  <IngredientField label="Tipo">
                                     <select
-                                      value={item.rawMaterialId}
+                                      value={ingredient.sourceKind}
                                       onChange={(e) =>
-                                        updateFormula(code, (current) => ({
+                                        updateCurrentStep(step.stepNumber, (current) => ({
                                           ...current,
-                                          steps: current.steps.map((row, index) =>
-                                            index === stepIndex
+                                          ingredients: current.ingredients.map((entry, entryIndex) =>
+                                            entryIndex === ingredientIndex
                                               ? {
-                                                  ...row,
-                                                  items: row.items.map((entry, entryIndex) =>
-                                                    entryIndex === itemIndex ? { ...entry, rawMaterialId: e.target.value } : entry
-                                                  ),
+                                                  ...entry,
+                                                  sourceKind: e.target.value as "RAW_MATERIAL" | "BASE_BEVERAGE",
+                                                  sourceProductionType: e.target.value === "BASE_BEVERAGE" ? entry.sourceProductionType || selectedCode : "",
+                                                  rawMaterialId: "",
                                                 }
-                                              : row
+                                              : entry
                                           ),
                                         }))
                                       }
                                       className="w-full rounded-xl border border-slate-200 p-3 text-sm"
                                     >
-                                      <option value="">Selecciona</option>
-                                      {rawMaterials.map((rawMaterial) => (
-                                        <option key={rawMaterial.id} value={rawMaterial.id}>{rawMaterial.name} ({rawMaterial.unit})</option>
-                                      ))}
+                                      <option value="RAW_MATERIAL">Materia prima</option>
+                                      <option value="BASE_BEVERAGE">Formula base</option>
                                     </select>
-                                  )}
-                                </Field>
+                                  </IngredientField>
 
-                                <Field label="Cantidad">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={item.quantity}
-                                    onChange={(e) =>
-                                      updateFormula(code, (current) => ({
+                                  <IngredientField label={ingredient.sourceKind === "BASE_BEVERAGE" ? "Formula base" : "Materia prima"}>
+                                    {ingredient.sourceKind === "BASE_BEVERAGE" ? (
+                                      <select
+                                        value={ingredient.sourceProductionType || selectedCode}
+                                        onChange={(e) =>
+                                          updateCurrentStep(step.stepNumber, (current) => ({
+                                            ...current,
+                                            ingredients: current.ingredients.map((entry, entryIndex) =>
+                                              entryIndex === ingredientIndex ? { ...entry, sourceProductionType: e.target.value } : entry
+                                            ),
+                                          }))
+                                        }
+                                        className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                                      >
+                                        <option value={selectedCode}>Formula {selectedCode}</option>
+                                        {formulaOptions
+                                          .filter((code) => code !== selectedCode)
+                                          .map((code) => (
+                                            <option key={code} value={code}>
+                                              Formula {code}
+                                            </option>
+                                          ))}
+                                      </select>
+                                    ) : (
+                                      <select
+                                        value={ingredient.rawMaterialId}
+                                        onChange={(e) =>
+                                          updateCurrentStep(step.stepNumber, (current) => ({
+                                            ...current,
+                                            ingredients: current.ingredients.map((entry, entryIndex) =>
+                                              entryIndex === ingredientIndex ? { ...entry, rawMaterialId: e.target.value } : entry
+                                            ),
+                                          }))
+                                        }
+                                        className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                                      >
+                                        <option value="">Selecciona</option>
+                                        {rawMaterialOptions.map((rawMaterial) => (
+                                          <option key={rawMaterial.id} value={rawMaterial.id}>
+                                            {rawMaterial.name}
+                                            {rawMaterial.unit ? ` (${rawMaterial.unit})` : ""}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </IngredientField>
+
+                                  <IngredientField label="Cantidad">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={ingredient.quantity}
+                                      onChange={(e) =>
+                                        updateCurrentStep(step.stepNumber, (current) => ({
+                                          ...current,
+                                          ingredients: current.ingredients.map((entry, entryIndex) =>
+                                            entryIndex === ingredientIndex ? { ...entry, quantity: e.target.value } : entry
+                                          ),
+                                        }))
+                                      }
+                                      className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                                    />
+                                  </IngredientField>
+                                </div>
+
+                                <div className="mt-3 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateCurrentStep(step.stepNumber, (current) => ({
                                         ...current,
-                                        steps: current.steps.map((row, index) =>
-                                          index === stepIndex
-                                            ? {
-                                                ...row,
-                                                items: row.items.map((entry, entryIndex) =>
-                                                  entryIndex === itemIndex ? { ...entry, quantity: e.target.value } : entry
-                                                ),
-                                              }
-                                            : row
-                                        ),
+                                        ingredients:
+                                          current.ingredients.length > 1
+                                            ? current.ingredients.filter((_, entryIndex) => entryIndex !== ingredientIndex)
+                                            : [createEmptyIngredient()],
                                       }))
                                     }
-                                    className="w-full rounded-xl border border-slate-200 p-3 text-sm"
-                                  />
-                                </Field>
-
-                                <Field label="UbicaciÃ³n por defecto">
-                                  <select
-                                    value={item.defaultLocationId}
-                                    onChange={(e) =>
-                                      updateFormula(code, (current) => ({
-                                        ...current,
-                                        steps: current.steps.map((row, index) =>
-                                          index === stepIndex
-                                            ? {
-                                                ...row,
-                                                items: row.items.map((entry, entryIndex) =>
-                                                  entryIndex === itemIndex ? { ...entry, defaultLocationId: e.target.value } : entry
-                                                ),
-                                              }
-                                            : row
-                                        ),
-                                      }))
-                                    }
-                                    className="w-full rounded-xl border border-slate-200 p-3 text-sm"
+                                    className="rounded-full bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100"
                                   >
-                                    <option value="">Sin ubicaciÃ³n fija</option>
-                                    {locations.map((location) => (
-                                      <option key={location.id} value={location.id}>{location.name}</option>
-                                    ))}
-                                  </select>
-                                </Field>
-
-                                <Field label="Notas del insumo">
-                                  <input
-                                    value={item.notes}
-                                    onChange={(e) =>
-                                      updateFormula(code, (current) => ({
-                                        ...current,
-                                        steps: current.steps.map((row, index) =>
-                                          index === stepIndex
-                                            ? {
-                                                ...row,
-                                                items: row.items.map((entry, entryIndex) =>
-                                                  entryIndex === itemIndex ? { ...entry, notes: e.target.value } : entry
-                                                ),
-                                              }
-                                            : row
-                                        ),
-                                      }))
-                                    }
-                                    className="w-full rounded-xl border border-slate-200 p-3 text-sm"
-                                  />
-                                </Field>
+                                    Quitar
+                                  </button>
+                                </div>
                               </div>
-
-                              <div className="mt-3 flex justify-end">
-                                <button
-                                  onClick={() =>
-                                    updateFormula(code, (current) => ({
-                                      ...current,
-                                      steps: current.steps.map((row, index) =>
-                                        index === stepIndex
-                                          ? {
-                                              ...row,
-                                              items: row.items.length > 1 ? row.items.filter((_, entryIndex) => entryIndex !== itemIndex) : [createEmptyItem()],
-                                            }
-                                          : row
-                                      ),
-                                    }))
-                                  }
-                                  className="rounded-full bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100"
-                                >
-                                  Quitar insumo
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
 
-              {messages[code] && (
-                <p className={`mt-4 text-sm font-semibold ${messages[code].toLowerCase().includes("guardada") ? "text-emerald-600" : "text-rose-600"}`}>
-                  {messages[code]}
+              {message[selectedCode] && (
+                <p className={`text-sm font-semibold ${message[selectedCode].toLowerCase().includes("guardada") ? "text-emerald-600" : "text-rose-600"}`}>
+                  {message[selectedCode]}
                 </p>
               )}
-
-              <button
-                onClick={() => saveFormula(code)}
-                disabled={savingCode === code}
-                className="mt-5 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300"
-              >
-                {savingCode === code ? "Guardando..." : `Guardar fÃ³rmula ${code}`}
-              </button>
-            </article>
-          );
-        })}
-      </section>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="mt-4 block">
-      <span className="mb-1 block text-xs font-black uppercase tracking-[0.18em] text-slate-400">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function RangeField({
-  label,
-  min,
-  max,
-  onMinChange,
-  onMaxChange,
-}: {
-  label: string;
-  min: string;
-  max: string;
-  onMinChange: (value: string) => void;
-  onMaxChange: (value: string) => void;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3">
-      <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">{label}</p>
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <input type="number" step="0.01" value={min} onChange={(e) => onMinChange(e.target.value)} className="w-full rounded-xl border border-slate-200 p-3 text-sm" placeholder="MÃ­n" />
-        <input type="number" step="0.01" value={max} onChange={(e) => onMaxChange(e.target.value)} className="w-full rounded-xl border border-slate-200 p-3 text-sm" placeholder="MÃ¡x" />
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

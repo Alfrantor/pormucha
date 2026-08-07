@@ -3,13 +3,15 @@ import type { ProductionFormulaView } from "@/lib/production-profiles";
 
 type FormulaRow = {
   id: string;
-  code: "A" | "B" | "C";
+  code: string;
   name: string;
   description: string | null;
   formulaSummary: string | null;
   targetLiters: number | string | null;
   durationDays: number;
   durationHours: number;
+  updatedAt: Date | string;
+  updatedByEmail: string | null;
   phMin: number | string;
   phMax: number | string;
   brixMin: number | string;
@@ -26,7 +28,7 @@ type FormulaRow = {
   step_result_liters: number | string | null;
   item_id: string | null;
   item_source_kind: "RAW_MATERIAL" | "BASE_BEVERAGE" | null;
-  item_source_production_type: "A" | "B" | "C" | null;
+  item_source_production_type: string | null;
   item_quantity: number | string | null;
   item_notes: string | null;
   raw_material_id: string | null;
@@ -45,6 +47,10 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
   await db.$executeRawUnsafe(`
     ALTER TABLE "ProductionFormula"
     ADD COLUMN IF NOT EXISTS "targetLiters" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "updatedByEmail" TEXT
   `).catch(() => null);
   await db.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "ProductionFormulaStep" (
@@ -90,6 +96,8 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
       pf."targetLiters",
       pf."durationDays",
       pf."durationHours",
+      pf."updatedAt",
+      pf."updatedByEmail",
       pf."phMin",
       pf."phMax",
       pf."brixMin",
@@ -137,6 +145,8 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         targetLiters: row.targetLiters != null ? toNumber(row.targetLiters) : null,
         durationDays: Number(row.durationDays),
         durationHours: Number(row.durationHours),
+        updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
+        updatedByEmail: row.updatedByEmail,
         phMin: toNumber(row.phMin),
         phMax: toNumber(row.phMax),
         brixMin: toNumber(row.brixMin),

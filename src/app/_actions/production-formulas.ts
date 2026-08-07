@@ -2,11 +2,12 @@
 
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
+import { currentUser } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 
 type FormulaItemInput = {
   sourceKind: "RAW_MATERIAL" | "BASE_BEVERAGE";
-  sourceProductionType?: "A" | "B" | "C" | null;
+  sourceProductionType?: string | null;
   rawMaterialId?: string | null;
   quantity: number;
   defaultLocationId?: string | null;
@@ -21,7 +22,7 @@ type FormulaStepInput = {
 };
 
 export async function saveProductionFormula(data: {
-  code: "A" | "B" | "C";
+  code: string;
   name: string;
   description?: string;
   formulaSummary?: string;
@@ -40,6 +41,9 @@ export async function saveProductionFormula(data: {
   steps: FormulaStepInput[];
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await currentUser().catch(() => null);
+    const updatedByEmail = user?.emailAddresses?.[0]?.emailAddress || null;
+
     if (!data.code) return { success: false, error: "Codigo requerido" };
     if (!data.name.trim()) return { success: false, error: "Nombre requerido" };
     if ((!Number.isFinite(data.durationDays) || data.durationDays < 0) || (!Number.isFinite(data.durationHours) || data.durationHours < 0)) {
@@ -55,6 +59,10 @@ export async function saveProductionFormula(data: {
     await db.$executeRawUnsafe(`
       ALTER TABLE "ProductionFormula"
       ADD COLUMN IF NOT EXISTS "targetLiters" DECIMAL(65,30)
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormula"
+      ADD COLUMN IF NOT EXISTS "updatedByEmail" TEXT
     `).catch(() => null);
     await db.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "ProductionFormulaStep" (
@@ -119,9 +127,9 @@ export async function saveProductionFormula(data: {
 
       await tx.$executeRaw`
         INSERT INTO "ProductionFormula"
-        ("id","code","name","description","formulaSummary","targetLiters","durationDays","durationHours","phMin","phMax","brixMin","brixMax","temperatureMin","temperatureMax","acidityMin","acidityMax","isActive","createdAt","updatedAt")
+        ("id","code","name","description","formulaSummary","targetLiters","durationDays","durationHours","phMin","phMax","brixMin","brixMax","temperatureMin","temperatureMax","acidityMin","acidityMax","isActive","updatedByEmail","createdAt","updatedAt")
         VALUES
-        (${formulaId}, ${data.code}, ${data.name.trim()}, ${data.description?.trim() || null}, ${data.formulaSummary?.trim() || null}, ${Number(data.targetLiters)}, ${data.durationDays}, ${data.durationHours}, ${data.phMin}, ${data.phMax}, ${data.brixMin}, ${data.brixMax}, ${data.temperatureMin}, ${data.temperatureMax}, ${data.acidityMin}, ${data.acidityMax}, ${data.isActive ?? true}, NOW(), NOW())
+        (${formulaId}, ${data.code}, ${data.name.trim()}, ${data.description?.trim() || null}, ${data.formulaSummary?.trim() || null}, ${Number(data.targetLiters)}, ${data.durationDays}, ${data.durationHours}, ${data.phMin}, ${data.phMax}, ${data.brixMin}, ${data.brixMax}, ${data.temperatureMin}, ${data.temperatureMax}, ${data.acidityMin}, ${data.acidityMax}, ${data.isActive ?? true}, ${updatedByEmail}, NOW(), NOW())
         ON CONFLICT ("code")
         DO UPDATE SET
           "name" = EXCLUDED."name",
@@ -139,6 +147,7 @@ export async function saveProductionFormula(data: {
           "acidityMin" = EXCLUDED."acidityMin",
           "acidityMax" = EXCLUDED."acidityMax",
           "isActive" = EXCLUDED."isActive",
+          "updatedByEmail" = EXCLUDED."updatedByEmail",
           "updatedAt" = NOW()
       `;
 

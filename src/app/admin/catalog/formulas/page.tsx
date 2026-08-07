@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { loadProductionFormulas } from "@/lib/production-formulas";
 import ProductionFormulasManager from "@/components/admin/ProductionFormulasManager";
+import type { ProductionFormulaView } from "@/lib/production-profiles";
 
 function isDecimalLike(value: unknown): value is { toNumber: () => number } {
   if (!value || typeof value !== "object") return false;
@@ -12,7 +13,7 @@ function isDecimalLike(value: unknown): value is { toNumber: () => number } {
   );
 }
 
-function serialize(value: any): any {
+function serialize(value: unknown): unknown {
   if (value === null || value === undefined) return value;
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "bigint") return Number(value);
@@ -53,7 +54,11 @@ export default async function CatalogFormulasPage() {
         <Metric label="Ubicaciones disponibles" value={locations.length} />
       </section>
 
-      <ProductionFormulasManager formulas={serialize(formulas)} rawMaterials={serialize(rawMaterials)} locations={serialize(locations)} />
+      <ProductionFormulasManager
+        key={formulas.map((formula) => `${formula.id}:${formula.code}:${formula.updatedAt ?? ""}:${formula.name}:${formula.targetLiters ?? ""}:${formula.durationDays}:${formula.durationHours}:${formula.isActive ? "1" : "0"}`).join("|")}
+        formulas={serialize(formulas) as ProductionFormulaView[]}
+        rawMaterials={serialize(rawMaterials) as { id: string; name: string; unit?: string | null }[]}
+      />
     </div>
   );
 }

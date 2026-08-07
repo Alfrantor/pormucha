@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { startTransition, useState } from "react";
 import TabProduccion from "@/components/admin/TabProduccion";
@@ -12,7 +13,7 @@ import {
 } from "@/app/_actions/production-processes";
 import { useRouter } from "next/navigation";
 
-type WorkspaceTab = "bebida" | "gasificado" | "etiquetado";
+type WorkspaceTab = "bebida" | "gasificado" | "etiquetado" | "formulas";
 
 function fmtDate(value: string | Date | null | undefined) {
   if (!value) return "-";
@@ -33,6 +34,7 @@ export default function ProductionWorkspace({
 }: any) {
   const router = useRouter();
   const [tab, setTab] = useState<WorkspaceTab>("bebida");
+  const safeFormulas = Array.isArray(formulas) ? formulas : [];
 
   return (
     <div className="space-y-6">
@@ -41,6 +43,7 @@ export default function ProductionWorkspace({
           <TabButton active={tab === "bebida"} onClick={() => setTab("bebida")} title="Bebida base" desc="Cubetas, lotes e insumos" />
           <TabButton active={tab === "gasificado"} onClick={() => setTab("gasificado")} title="Gasificado" desc="Carbonatacion y cierre" />
           <TabButton active={tab === "etiquetado"} onClick={() => setTab("etiquetado")} title="Etiquetado" desc="Botellas, etiquetas y salida" />
+          <TabButton active={tab === "formulas"} onClick={() => setTab("formulas")} title="Fórmulas" desc="Revisar recetas y pasos" />
         </div>
       </section>
 
@@ -76,6 +79,8 @@ export default function ProductionWorkspace({
           onRefresh={() => startTransition(() => router.refresh())}
         />
       )}
+
+      {tab === "formulas" && <FormulaLibraryPanel formulas={safeFormulas} />}
     </div>
   );
 }
@@ -402,6 +407,100 @@ function LabelingPanel({ locations, flavors, batches, userEmail, onRefresh }: an
           onRefresh();
         }}
       />
+    </div>
+  );
+}
+
+function FormulaLibraryPanel({ formulas }: { formulas: any[] }) {
+  const visibleFormulas = Array.isArray(formulas) ? formulas : [];
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Biblioteca</p>
+        <h3 className="mt-2 text-2xl font-black text-slate-950">Fórmulas</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Aquí puedes revisar las fórmulas activas, sus pasos, duración y los insumos que usa cada una.
+        </p>
+
+        <div className="mt-5 space-y-3">
+          {visibleFormulas.length === 0 && (
+            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+              Todavía no hay fórmulas cargadas.
+            </div>
+          )}
+
+          {visibleFormulas.map((formula: any) => {
+            const totalSteps = Array.isArray(formula.steps) ? formula.steps.length : 0;
+            const totalItems = Array.isArray(formula.items) ? formula.items.length : 0;
+
+            return (
+              <button
+                key={formula.id}
+                type="button"
+                className="w-full rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-slate-300 hover:bg-white"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">Tipo {formula.code}</p>
+                    <h4 className="mt-1 text-lg font-black text-slate-950">{formula.name}</h4>
+                    {formula.description && <p className="mt-1 text-sm text-slate-500">{formula.description}</p>}
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] ${formula.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
+                    {formula.isActive ? "Activa" : "Inactiva"}
+                  </span>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                  <MetricChip label="Pasos" value={totalSteps} />
+                  <MetricChip label="Insumos" value={totalItems} />
+                  <MetricChip label="Días" value={formula.durationDays ?? 0} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-[1.8rem] border border-dashed border-slate-200 bg-slate-50 p-6 shadow-sm">
+        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Detalle</p>
+        <h3 className="mt-2 text-2xl font-black text-slate-950">Vista rápida</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Más adelante aquí podemos abrir cada fórmula para editar sus pasos y el checklist de preparación.
+        </p>
+
+        <div className="mt-5 space-y-4">
+          {visibleFormulas.slice(0, 3).map((formula: any) => (
+            <div key={formula.id} className="rounded-[1.3rem] border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-slate-950">{formula.name}</p>
+                  <p className="text-xs text-slate-500">Tipo {formula.code}</p>
+                </div>
+                <span className="rounded-full bg-slate-950 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-white">
+                  {formula.targetLiters != null ? `${Number(formula.targetLiters).toLocaleString("es-MX")} Lt` : "Sin objetivo"}
+                </span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {(Array.isArray(formula.steps) ? formula.steps : []).map((step: any, index: number) => (
+                  <div key={step.id || `${formula.id}-${index}`} className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                    <span className="font-black text-slate-950">Paso {step.stepNumber || index + 1}:</span> {step.title || "Sin título"}
+                    {step.instructions ? <span className="block text-xs text-slate-500">{step.instructions}</span> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MetricChip({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl bg-white px-3 py-2">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{label}</p>
+      <p className="mt-1 text-lg font-black text-slate-950">{value}</p>
     </div>
   );
 }
