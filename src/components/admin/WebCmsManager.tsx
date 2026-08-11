@@ -67,7 +67,7 @@ function replaceFileExtension(filename: string, nextExtension: string) {
   return `${cleanName || "asset"}.${nextExtension}`;
 }
 
-async function fileToImageBitmap(file: File) {
+async function fileToImageBitmap(file: File): Promise<ImageBitmap | HTMLCanvasElement> {
   if ("createImageBitmap" in window) {
     return createImageBitmap(file);
   }
@@ -105,8 +105,8 @@ async function optimizeImageForWeb(file: File) {
   }
 
   const source = await fileToImageBitmap(file);
-  const sourceWidth = "width" in source ? source.width : source.naturalWidth;
-  const sourceHeight = "height" in source ? source.height : source.naturalHeight;
+  const sourceWidth = source.width;
+  const sourceHeight = source.height;
 
   const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(sourceWidth, sourceHeight));
   const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
