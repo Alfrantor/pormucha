@@ -538,7 +538,7 @@ export default function ProductionFormulasManager({
                     <div key={`${selectedCode}-ingredient-step-${step.stepNumber}`} className="rounded-2xl border border-slate-200 bg-white p-3">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-black text-slate-900">Paso {step.stepNumber}</p>
-                        {currentFormula?.steps.length > 1 && (
+                        {(currentFormula?.steps?.length ?? 0) > 1 && (
                           <button type="button" onClick={() => removeCurrentStep(step.stepNumber)} className="rounded-full bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100">
                             Quitar paso
                           </button>
