@@ -8,6 +8,7 @@ import {
   BriefcaseBusiness,
   CreditCard,
   FlaskConical,
+  PenTool,
   Repeat,
   ShieldCheck,
   ShoppingCart,
@@ -58,6 +59,7 @@ const COPY: Record<Locale, {
           { href: "/admin/orders", title: "Pedidos", desc: "Sólo web", icon: <ShoppingCart size={18} /> },
           { href: "/admin/subscriptions", title: "Suscriptores", desc: "Club, ciclos y envíos", icon: <Repeat size={18} /> },
           { href: "/admin/leads", title: "Leads", desc: "Captación y prospectos", icon: <Users size={18} /> },
+          { href: "/admin/web-design", title: "Diseño web", desc: "CMS, bloques y contenido", icon: <PenTool size={18} /> },
         ],
       },
       {

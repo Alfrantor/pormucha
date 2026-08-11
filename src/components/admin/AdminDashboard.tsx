@@ -344,9 +344,15 @@ type CancelStep = "confirm" | "stock" | "replacement" | "note" | "done";
 
 const PAGE_SIZE = 30;
 
-export function TabPedidos({ orders = [] }: { orders: any[] }) {
+export function TabPedidos({
+  orders = [],
+  initialChannelFilter = "all",
+}: {
+  orders: any[];
+  initialChannelFilter?: "all" | "POS" | "WEB" | "CANCELLED" | "UNPAID";
+}) {
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
-  const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB" | "CANCELLED" | "UNPAID">("all");
+  const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB" | "CANCELLED" | "UNPAID">(initialChannelFilter);
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -363,6 +369,7 @@ export function TabPedidos({ orders = [] }: { orders: any[] }) {
 
   // Sincronizar si cambia el prop (refresco de página)
   React.useEffect(() => { setLocalOrders(orders); }, [orders]);
+  React.useEffect(() => { setChannelFilter(initialChannelFilter); }, [initialChannelFilter]);
 
   // Resetear página al cambiar filtros
   React.useEffect(() => { setPage(1); }, [channelFilter, search, dateFrom, dateTo]);

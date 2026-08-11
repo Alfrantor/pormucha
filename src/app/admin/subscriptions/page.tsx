@@ -130,7 +130,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
       : {}),
   };
 
-  const [subscriptions, totalSubscriptions, activeSubscriptions, plans, monthlyRecurringOrders] = await Promise.all([
+  const [subscriptions, totalSubscriptions, activeSubscriptions, monthlyRecurringOrders] = await Promise.all([
     db.subscription.findMany({
       where,
       include: {
@@ -153,7 +153,6 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
     }),
     db.subscription.count(),
     db.subscription.count({ where: { status: "active" } }),
-    db.plan.count({ where: { isActive: true } }),
     db.order.count({
       where: {
         subscriptionId: { not: null },
@@ -185,10 +184,6 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
 
   const lockedCount = enrichedSubscriptions.filter(
     (subscription) => subscription.status === "active" && !subscription.summary.editable,
-  ).length;
-
-  const overdueCount = enrichedSubscriptions.filter(
-    (subscription) => subscription.status === "active" && subscription.summary.daysUntilShipment < 0,
   ).length;
 
   return (
@@ -378,37 +373,6 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
           </p>
         </section>
       ) : null}
-
-      <section className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-[1.6rem] border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Flujo actual</p>
-          <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">Como esta funcionando hoy la suscripcion</h3>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {[
-              "El cliente elige plan y entra a Stripe Checkout autenticado con Clerk.",
-              "Cuando Stripe confirma, el webhook crea o actualiza la suscripcion local.",
-              "Se liga al cliente y se registra fecha de cobro y fecha de proximo envio.",
-              "Se genera el surtido inicial y despues los recurrentes segun el ciclo.",
-              "El cliente puede cambiar sabores hasta 5 dias antes del envio.",
-              "Desde su perfil puede actualizar direccion, sabores y cancelar en Stripe.",
-            ].map((item) => (
-              <div key={item} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-[1.6rem] border border-slate-200 bg-slate-950 p-6 text-white shadow-lg">
-          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-white/60">Observaciones</p>
-          <ul className="mt-4 space-y-3 text-sm text-white/85">
-            <li>Los suscriptores ya tienen panel para direccion, sabores y cancelacion.</li>
-            <li>La operacion ahora queda separada de los planes para que admin vea personas, no solo catalogo.</li>
-            <li>Los planes activos actuales son {plans}.</li>
-            <li>Suscripciones vencidas en surtido: {overdueCount}.</li>
-          </ul>
-        </div>
-      </section>
     </div>
   );
 }

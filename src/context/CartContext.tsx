@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 
 // 1. ACTUALIZAMOS LA INTERFAZ PARA QUE ACEPTE LA COMPOSICIÓN
 interface CartItem {
@@ -30,25 +30,29 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  // Inicializamos el carrito desde localStorage para conservarlo entre recargas.
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    if (typeof window === "undefined") return [];
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCartReady, setIsCartReady] = useState(false);
 
+  useEffect(() => {
     const savedCart = localStorage.getItem("pormucha_cart");
-    if (!savedCart) return [];
+    if (!savedCart) {
+      setIsCartReady(true);
+      return;
+    }
 
     try {
-      return JSON.parse(savedCart);
+      setCart(JSON.parse(savedCart));
     } catch (e) {
       console.error("Error cargando carrito:", e);
-      return [];
+    } finally {
+      setIsCartReady(true);
     }
-  });
+  }, []);
 
-  // Efecto opcional: Guardar carrito en localStorage cuando cambie
   useEffect(() => {
+    if (!isCartReady) return;
     localStorage.setItem("pormucha_cart", JSON.stringify(cart));
-  }, [cart]);
+  }, [cart, isCartReady]);
 
   const addToCart = (item: CartItem) => {
     setCart((prev) => [...prev, item]);

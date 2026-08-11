@@ -205,6 +205,7 @@ model Flavor {
   name                 String
   slug                 String                @unique
   image                String?
+  imageEuro            String?
 
   // Precios - Compatibilidad con BD existente + nuevos
   price                Decimal?              @default(0) // Campo original (se usa como basePrice)
@@ -303,6 +304,11 @@ model Product {
   id                  String                @id @default(cuid())
   name                String
   description         String?
+  image               String?
+  subscriptionNote    String?
+  subscriptionBenefit1 String?
+  subscriptionBenefit2 String?
+  subscriptionBenefit3 String?
   price               Decimal
   clubDiscountPercent Int                   @default(10)
   quantity            Int

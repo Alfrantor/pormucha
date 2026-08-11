@@ -262,7 +262,7 @@ export default async function OrdersPage({
         </details>
       ) : null}
 
-      <TabPedidos orders={serializedOrders} />
+      <TabPedidos orders={serializedOrders} initialChannelFilter={channel} />
     </div>
   );
 }

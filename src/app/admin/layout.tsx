@@ -8,7 +8,8 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }) {
   const { sessionClaims } = await auth();
-  const role = (sessionClaims?.metadata as any)?.role;
+  const metadata = sessionClaims?.metadata as { role?: string } | undefined;
+  const role = metadata?.role;
 
   if (role !== "admin" && role !== "vendedor") {
     redirect("/perfil");

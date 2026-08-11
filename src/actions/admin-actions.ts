@@ -196,6 +196,62 @@ export async function updateFlavorPrice(formData: FormData) {
   revalidatePath("/pos");
 }
 
+export async function updatePackImage(formData: FormData) {
+  const productId = formData.get("productId") as string;
+  const image = ((formData.get("image") as string) || "").trim();
+
+  await db.product.update({
+    where: { id: productId },
+    data: { image: image || null },
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/catalog/products");
+  revalidatePath("/tienda");
+  revalidatePath("/suscripciones");
+}
+
+export async function updatePackSubscriptionCopy(formData: FormData) {
+  const productId = formData.get("productId") as string;
+  const subscriptionNote = ((formData.get("subscriptionNote") as string) || "").trim();
+  const subscriptionBenefit1 = ((formData.get("subscriptionBenefit1") as string) || "").trim();
+  const subscriptionBenefit2 = ((formData.get("subscriptionBenefit2") as string) || "").trim();
+  const subscriptionBenefit3 = ((formData.get("subscriptionBenefit3") as string) || "").trim();
+
+  await db.product.update({
+    where: { id: productId },
+    data: {
+      subscriptionNote: subscriptionNote || null,
+      subscriptionBenefit1: subscriptionBenefit1 || null,
+      subscriptionBenefit2: subscriptionBenefit2 || null,
+      subscriptionBenefit3: subscriptionBenefit3 || null,
+    },
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/catalog/products");
+  revalidatePath("/suscripciones");
+}
+
+export async function updateFlavorImages(formData: FormData) {
+  const flavorId = formData.get("flavorId") as string;
+  const image = ((formData.get("image") as string) || "").trim();
+  const imageEuro = ((formData.get("imageEuro") as string) || "").trim();
+
+  await db.flavor.update({
+    where: { id: flavorId },
+    data: {
+      image: image || null,
+      imageEuro: imageEuro || null,
+    },
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/catalog/products");
+  revalidatePath("/tienda");
+  revalidatePath("/checkout");
+}
+
 // ==========================================
 // PRODUCTOS Y SABORES
 // ==========================================
@@ -204,13 +260,14 @@ export async function createProduct(formData: FormData) {
   const price = parseFloat(formData.get("price") as string);
   const quantity = parseInt(formData.get("quantity") as string);
   const clubDiscountPercent = parseInt(formData.get("clubDiscountPercent") as string) || 0;
+  const image = ((formData.get("image") as string) || "").trim();
 
   const weight = parseFloat(formData.get("weight") as string) || 1.5;
   const height = parseFloat(formData.get("height") as string) || 20;
   const width = parseFloat(formData.get("width") as string) || 20;
   const length = parseFloat(formData.get("length") as string) || 20;
 
-  await db.product.create({ data: { name, price, quantity, clubDiscountPercent, weight, height, width, length } });
+  await db.product.create({ data: { name, price, quantity, clubDiscountPercent, image: image || null, weight, height, width, length } });
   revalidatePath("/admin");
 }
 
@@ -228,6 +285,8 @@ export async function createFlavor(formData: FormData) {
   const name = formData.get("name") as string;
   const slug = formData.get("slug") as string;
   const price = parseFloat(formData.get("price") as string);
+  const image = ((formData.get("image") as string) || "").trim();
+  const imageEuro = ((formData.get("imageEuro") as string) || "").trim();
   const initialStock = parseInt(formData.get("stock") as string) || 0;
   const adminEmail = formData.get("adminEmail") as string || "system";
 
@@ -238,7 +297,7 @@ export async function createFlavor(formData: FormData) {
 
   // 2. Creamos el sabor
   const newFlavor = await db.flavor.create({
-    data: { name, slug, price }
+    data: { name, slug, price, image: image || null, imageEuro: imageEuro || null }
   });
 
   // 3. Si mandaste un stock inicial, lo registramos en la ubicación encontrada

@@ -2,7 +2,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { Eye, EyeOff, Package2, Percent, ShoppingCart } from "lucide-react";
 import { toggleStatus } from "@/actions/toggle-status";
-import { updateClubDiscountPercent, updatePackPrice, updateFlavorPrice } from "@/actions/admin-actions";
+import { updateClubDiscountPercent, updateFlavorImages, updateFlavorPrice, updatePackImage, updatePackPrice, updatePackSubscriptionCopy } from "@/actions/admin-actions";
 import { NoScrollNumberInput } from "@/components/NoScrollNumberInput";
 
 function getResolvedPrice(priceLike: unknown, fallbackLike: unknown = 0) {
@@ -16,10 +16,11 @@ function getResolvedPrice(priceLike: unknown, fallbackLike: unknown = 0) {
 export default async function CatalogProductsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ showArchived?: string }>;
+  searchParams?: Promise<{ showArchived?: string; scope?: string }>;
 }) {
   const params = (await searchParams) || {};
   const showArchived = params.showArchived === "1";
+  const webScope = params.scope === "web";
   const user = await currentUser();
   const adminEmail = user?.emailAddresses[0]?.emailAddress || "system";
 
@@ -36,6 +37,10 @@ export default async function CatalogProductsPage({
   const visibleFlavors = showArchived ? flavors : flavors.filter((flavor) => !flavor.isArchived);
   const archivedProducts = products.filter((product) => product.isArchived).length;
   const archivedFlavors = flavors.filter((flavor) => flavor.isArchived).length;
+  const hiddenCount = archivedProducts + (webScope ? 0 : archivedFlavors);
+  const toggleHref = showArchived
+    ? `/admin/catalog/products${webScope ? "?scope=web" : ""}`
+    : `/admin/catalog/products?showArchived=1${webScope ? "&scope=web" : ""}`;
 
   return (
     <div className="space-y-6">
@@ -45,27 +50,29 @@ export default async function CatalogProductsPage({
           <div>
             <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Productos</h1>
             <p className="mt-2 text-sm text-slate-500">
-              Aqui controlas el precio que se muestra en POS y web, el descuento de suscripcion y que productos quedan ocultos.
+              {webScope
+                ? "Aqui controlas los packs y el texto comercial de suscripciones para la parte web."
+                : "Aqui controlas el precio que se muestra en POS y web, el descuento de suscripcion y que productos quedan ocultos."}
             </p>
           </div>
           <a
-            href={`/admin/catalog/products${showArchived ? "" : "?showArchived=1"}`}
+            href={toggleHref}
             className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-950 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-white hover:bg-slate-800"
           >
             {showArchived ? <Eye size={14} /> : <EyeOff size={14} />}
-            {showArchived ? "Ver solo activos" : `Ver ocultos (${archivedProducts + archivedFlavors})`}
+            {showArchived ? "Ver solo activos" : `Ver ocultos (${hiddenCount})`}
           </a>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
+      <section className={`grid gap-4 ${webScope ? "md:grid-cols-2 xl:max-w-3xl" : "md:grid-cols-4"}`}>
         <Metric label="Packs visibles" value={products.filter((product) => !product.isArchived).length} />
-        <Metric label="Sabores visibles" value={flavors.filter((flavor) => !flavor.isArchived).length} />
         <Metric label="Packs ocultos" value={archivedProducts} />
-        <Metric label="Sabores ocultos" value={archivedFlavors} />
+        {!webScope ? <Metric label="Sabores visibles" value={flavors.filter((flavor) => !flavor.isArchived).length} /> : null}
+        {!webScope ? <Metric label="Sabores ocultos" value={archivedFlavors} /> : null}
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
+      <section className={`grid gap-6 ${webScope ? "xl:max-w-4xl" : "lg:grid-cols-2"}`}>
         <div className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-2">
             <Package2 size={18} className="text-slate-500" />
@@ -162,6 +169,76 @@ export default async function CatalogProductsPage({
                     </form>
                   </div>
 
+                  <div className="mt-3 grid gap-3">
+                    <form action={updatePackImage} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <input type="hidden" name="productId" value={product.id} />
+                      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
+                        <ShoppingCart size={12} />
+                        Imagen del pack
+                      </div>
+                      <input
+                        name="image"
+                        defaultValue={product.image || ""}
+                        placeholder="/pack-6.PNG"
+                        className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-950 outline-none"
+                        disabled={product.isArchived}
+                      />
+                      <p className="mt-2 text-xs text-slate-400">Esta imagen se usa en tienda y suscripciones para la tarjeta del pack.</p>
+                      <button
+                        className="mt-3 w-full rounded-xl bg-slate-950 px-4 py-2 text-[11px] font-black uppercase tracking-[0.25em] text-white transition hover:bg-slate-800 disabled:opacity-50"
+                        disabled={product.isArchived}
+                      >
+                        Guardar imagen
+                      </button>
+                    </form>
+
+                    <form action={updatePackSubscriptionCopy} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <input type="hidden" name="productId" value={product.id} />
+                      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
+                        <ShoppingCart size={12} />
+                        Texto de suscripcion
+                      </div>
+                      <textarea
+                        name="subscriptionNote"
+                        defaultValue={product.subscriptionNote || product.description || ""}
+                        placeholder="Texto corto que aparece en la tarjeta de suscripcion."
+                        rows={3}
+                        className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-950 outline-none"
+                        disabled={product.isArchived}
+                      />
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <input
+                          name="subscriptionBenefit1"
+                          defaultValue={product.subscriptionBenefit1 || "Sabores 100% personalizables"}
+                          placeholder="Beneficio 1"
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-950 outline-none"
+                          disabled={product.isArchived}
+                        />
+                        <input
+                          name="subscriptionBenefit2"
+                          defaultValue={product.subscriptionBenefit2 || "Cobertura nacional con envio seguro"}
+                          placeholder="Beneficio 2"
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-950 outline-none"
+                          disabled={product.isArchived}
+                        />
+                        <input
+                          name="subscriptionBenefit3"
+                          defaultValue={product.subscriptionBenefit3 || ""}
+                          placeholder="Beneficio 3 opcional"
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-950 outline-none"
+                          disabled={product.isArchived}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-slate-400">Esto controla lo que dice la tarjeta del pack en la pagina de suscripciones.</p>
+                      <button
+                        className="mt-3 w-full rounded-xl bg-slate-950 px-4 py-2 text-[11px] font-black uppercase tracking-[0.25em] text-white transition hover:bg-slate-800 disabled:opacity-50"
+                        disabled={product.isArchived}
+                      >
+                        Guardar texto
+                      </button>
+                    </form>
+                  </div>
+
                   <div className="mt-4 flex justify-end">
                     <form action={toggleStatus}>
                       <input type="hidden" name="id" value={product.id} />
@@ -182,6 +259,7 @@ export default async function CatalogProductsPage({
           </div>
         </div>
 
+        {!webScope ? (
         <div className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-2">
             <Package2 size={18} className="text-slate-500" />
@@ -228,6 +306,46 @@ export default async function CatalogProductsPage({
                     </button>
                   </form>
                 </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <form action={updateFlavorImages} className="rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
+                    <input type="hidden" name="flavorId" value={flavor.id} />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
+                          <ShoppingCart size={12} />
+                          Imagen normal / bala
+                        </div>
+                        <input
+                          name="image"
+                          defaultValue={flavor.image || ""}
+                          placeholder="/jamaica.jpeg"
+                          className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-950 outline-none"
+                          disabled={flavor.isArchived}
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
+                          <ShoppingCart size={12} />
+                          Imagen euro
+                        </div>
+                        <input
+                          name="imageEuro"
+                          defaultValue={flavor.imageEuro || ""}
+                          placeholder="/euro-jamaica.jpeg"
+                          className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-950 outline-none"
+                          disabled={flavor.isArchived}
+                        />
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-400">La imagen normal se usa para bala/checkout. La euro se usa cuando el pack trabaja en formato euro.</p>
+                    <button
+                      className="mt-3 w-full rounded-xl bg-slate-950 px-4 py-2 text-[11px] font-black uppercase tracking-[0.25em] text-white transition hover:bg-slate-800 disabled:opacity-50"
+                      disabled={flavor.isArchived}
+                    >
+                      Guardar imagenes
+                    </button>
+                  </form>
+                </div>
                 <div className="mt-4 flex justify-end">
                   <form action={toggleStatus}>
                     <input type="hidden" name="id" value={flavor.id} />
@@ -242,6 +360,7 @@ export default async function CatalogProductsPage({
             ))}
           </div>
         </div>
+        ) : null}
       </section>
     </div>
   );

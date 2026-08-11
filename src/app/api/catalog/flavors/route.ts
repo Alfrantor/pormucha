@@ -1,26 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-const EURO_IMAGE_BY_FLAVOR: Record<string, string> = {
-  "kombucha te verde": "/euro-verde.jpeg",
-  "kombucha te negro": "/euro-negro.jpeg",
-  "kombucha jamaica": "/euro-jamaica.jpeg",
-  "kombucha pina": "/euro-piña.jpeg",
-};
-
-function normalizeFlavorKey(name: string) {
-  return name
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
 function resolveFlavorImage(name: string, image?: string | null) {
-  const normalized = normalizeFlavorKey(name);
-  const euroImage = EURO_IMAGE_BY_FLAVOR[normalized];
-  if (euroImage) return euroImage;
-
   const cleanName = name
     .toLowerCase()
     .replace("kombucha", "")
@@ -40,6 +21,7 @@ export async function GET() {
         id: true,
         name: true,
         image: true,
+        imageEuro: true,
       },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
@@ -48,6 +30,7 @@ export async function GET() {
       flavors: flavors.map((flavor) => ({
         ...flavor,
         image: resolveFlavorImage(flavor.name, flavor.image),
+        imageEuro: flavor.imageEuro || resolveFlavorImage(flavor.name, flavor.image),
       })),
     });
   } catch (error) {

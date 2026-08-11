@@ -1,22 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
 import React from "react";
 import {
+  ArrowRight,
+  Boxes,
+  BriefcaseBusiness,
+  FlaskConical,
   LayoutDashboard,
-  Users,
+  PenTool,
+  Repeat,
   ShieldCheck,
   ShoppingCart,
-  Repeat,
-  Boxes,
-  Truck,
-  FlaskConical,
-  Tags,
-  ArrowRight,
   Sparkles,
-  BriefcaseBusiness,
+  Tags,
+  Truck,
+  Users,
 } from "lucide-react";
 
 type NavLink = {
@@ -35,8 +36,10 @@ const SIDEBAR_SECTIONS: Array<{ title: string; links: NavLink[] }> = [
     title: "Web",
     links: [
       { href: "/admin/orders", label: "Pedidos", description: "Sólo web", icon: <ShoppingCart size={16} /> },
+      { href: "/admin/catalog/products?scope=web", label: "Packs y suscripciones", description: "Catálogo comercial web", icon: <Tags size={16} /> },
       { href: "/admin/subscriptions", label: "Suscriptores", description: "Club, ciclos y envíos", icon: <Repeat size={16} /> },
       { href: "/admin/leads", label: "Leads", description: "Captación y prospectos", icon: <Users size={16} /> },
+      { href: "/admin/web-design", label: "Diseño web", description: "CMS y contenido editable", icon: <PenTool size={16} /> },
     ],
   },
   {
@@ -44,7 +47,7 @@ const SIDEBAR_SECTIONS: Array<{ title: string; links: NavLink[] }> = [
     links: [
       { href: "/pos", label: "POS", description: "Ir a caja", icon: <ArrowRight size={16} /> },
       { href: "/admin/orders?channel=POS", label: "Pedidos", description: "Pedidos creados desde POS", icon: <ShoppingCart size={16} /> },
-      { href: "/admin/catalog", label: "Catálogos", description: "Productos, materia prima y más", icon: <Tags size={16} /> },
+      { href: "/admin/catalog", label: "Catálogos", description: "Productos y fórmulas", icon: <Tags size={16} /> },
       { href: "/admin/clients", label: "Clientes", description: "CRM y crédito", icon: <BriefcaseBusiness size={16} /> },
       { href: "/admin/inventory", label: "Inventarios", description: "Stock, materia prima y traspasos", icon: <Boxes size={16} /> },
       { href: "/admin/inventory/transfers", label: "Traspasos", description: "Movimientos entre almacenes", icon: <Truck size={16} /> },
@@ -59,6 +62,11 @@ const SIDEBAR_SECTIONS: Array<{ title: string; links: NavLink[] }> = [
     links: [{ href: "/admin/users", label: "Usuarios", description: "Equipo interno y roles", icon: <ShieldCheck size={16} /> }],
   },
 ];
+
+const ClientUserButton = dynamic(() => import("@clerk/nextjs").then((mod) => mod.UserButton), {
+  ssr: false,
+  loading: () => <div className="h-8 w-8 rounded-full bg-slate-100" />,
+});
 
 function isActive(pathname: string, href: string) {
   if (href === "/admin") return pathname === href;
@@ -98,10 +106,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.75),_rgba(248,250,252,0.2)_38%,_#edf1f7_72%,_#e8edf4_100%)] text-slate-900">
       <div className="flex min-h-screen">
-        <aside className="hidden xl:flex w-80 flex-col border-r border-slate-200/80 bg-slate-950 text-white shadow-2xl shadow-slate-950/10">
-          <div className="p-6 border-b border-white/10">
+        <aside className="hidden w-80 flex-col border-r border-slate-200/80 bg-slate-950 text-white shadow-2xl shadow-slate-950/10 xl:flex">
+          <div className="border-b border-white/10 p-6">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-slate-950 font-black">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white font-black text-slate-950">
                 P
               </div>
               <div>
@@ -111,7 +119,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-8">
+          <div className="flex-1 space-y-8 overflow-y-auto p-4">
             {SIDEBAR_SECTIONS.map((section) => (
               <section key={section.title}>
                 <p className="mb-3 px-3 text-[10px] font-black uppercase tracking-[0.35em] text-slate-500">
@@ -166,7 +174,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   Abrir POS
                 </Link>
                 <div className="rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm">
-                  <UserButton />
+                  <ClientUserButton />
                 </div>
               </div>
             </div>

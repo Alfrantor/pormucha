@@ -1,23 +1,27 @@
 "use client";
-import { useState } from "react";
+
+import { useState, useSyncExternalStore } from "react";
 import { useCart } from "@/context/CartContext";
 import Link from "next/link";
 import Image from "next/image";
-import { UserButton, SignedIn, SignedOut } from "@clerk/nextjs";
-import { ShoppingCart, Menu, X } from "lucide-react";
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import { Menu, ShoppingCart, X } from "lucide-react";
 
 export default function Navbar() {
   const { cart } = useCart();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const isMounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
-  const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
+  const toggleMenu = () => setIsMenuOpen((current) => !current);
 
   return (
-    <nav className="sticky top-0 z-50 bg-[#F5F2EB]/80 backdrop-blur-md px-6 py-4 border-b border-gray-200/10">
-      <div className="max-w-7xl mx-auto flex justify-between items-center">
-
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-3 hover:opacity-70 transition relative z-50">
+    <nav className="sticky top-0 z-50 border-b border-gray-200/10 bg-[#F5F2EB]/80 px-6 py-4 backdrop-blur-md">
+      <div className="mx-auto flex max-w-7xl items-center justify-between">
+        <Link href="/" className="relative z-50 flex items-center gap-3 transition hover:opacity-70">
           <Image
             src="/logo-white.png"
             alt="Logo Pormucha"
@@ -28,61 +32,62 @@ export default function Navbar() {
           />
         </Link>
 
-        {/* Contenedor Derecha */}
-        <div className="flex items-center gap-4 md:gap-8 text-sm font-sans tracking-widest font-bold text-gray-800">
-
-          {/* Menú Escritorio (Solo md+) */}
-          <div className="hidden md:flex items-center gap-8">
-            <Link href="/" className="hover:text-[#8B3A28] transition-colors">INICIO</Link>
-            <Link href="/nosotros" className="hover:text-[#8B3A28] transition-colors">NOSOTROS</Link>
-            <Link href="/tienda" className="hover:text-[#8B3A28] transition-colors">TIENDA</Link>
-            <Link href="/suscripciones" className="hover:text-[#8B3A28] transition-colors">CLUB PORMUCHA</Link>
-            <Link href="/contacto" className="hover:text-[#8B3A28] transition-colors">CONTACTO</Link>
-            <div className="h-4 w-px bg-gray-300"></div>
+        <div className="flex items-center gap-4 text-sm font-bold tracking-widest text-gray-800 md:gap-8">
+          <div className="hidden items-center gap-8 md:flex">
+            <Link href="/" className="transition-colors hover:text-[#8B3A28]">INICIO</Link>
+            <Link href="/nosotros" className="transition-colors hover:text-[#8B3A28]">NOSOTROS</Link>
+            <Link href="/tienda" className="transition-colors hover:text-[#8B3A28]">TIENDA</Link>
+            <Link href="/suscripciones" className="transition-colors hover:text-[#8B3A28]">CLUB PORMUCHA</Link>
+            <Link href="/contacto" className="transition-colors hover:text-[#8B3A28]">CONTACTO</Link>
+            <div className="h-4 w-px bg-gray-300" />
           </div>
 
-          {/* Carrito y Perfil */}
-          <div className="flex items-center gap-3 relative z-50">
-            <Link href="/checkout" className="flex items-center gap-2 group">
+          <div className="relative z-50 flex items-center gap-3">
+            <Link href="/checkout" className="group flex items-center gap-2">
               <div className="relative">
-                <ShoppingCart size={20} className="text-gray-800 group-hover:text-[#8B3A28] transition-colors" />
-                {cart.length > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-[#8B3A28] text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold">
+                <ShoppingCart size={20} className="text-gray-800 transition-colors group-hover:text-[#8B3A28]" />
+                {isMounted && cart.length > 0 ? (
+                  <span className="absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-[#8B3A28] text-[10px] font-bold text-white">
                     {cart.length}
                   </span>
-                )}
+                ) : null}
               </div>
-              <span className="group-hover:text-[#8B3A28] transition-colors hidden sm:inline">CARRITO</span>
+              <span className="hidden transition-colors group-hover:text-[#8B3A28] sm:inline">CARRITO</span>
             </Link>
 
-            {/* Usuario logueado: avatar con menú */}
-            <SignedIn>
-              <UserButton afterSignOutUrl="/">
-                <UserButton.MenuItems>
-                  <UserButton.Action
-                    label="Mi Perfil"
-                    labelIcon={<div className="text-xs">👤</div>}
-                    onClick={() => window.location.href = '/perfil'}
-                  />
-                </UserButton.MenuItems>
-              </UserButton>
-            </SignedIn>
+            {isMounted ? (
+              <>
+                <SignedIn>
+                  <UserButton afterSignOutUrl="/">
+                    <UserButton.MenuItems>
+                      <UserButton.Action
+                        label="Mi Perfil"
+                        labelIcon={<div className="text-xs">Perfil</div>}
+                        onClick={() => {
+                          window.location.href = "/perfil";
+                        }}
+                      />
+                    </UserButton.MenuItems>
+                  </UserButton>
+                </SignedIn>
 
-            {/* Sin sesión: botón de iniciar sesión */}
-            <SignedOut>
-              <Link
-                href="/sign-in"
-                className="text-xs font-bold uppercase tracking-widest text-[#8B3A28] border border-[#8B3A28]/30 px-4 py-2 rounded-full hover:bg-[#8B3A28] hover:text-white transition-all"
-              >
-                Iniciar Sesión
-              </Link>
-            </SignedOut>
+                <SignedOut>
+                  <Link
+                    href="/sign-in"
+                    className="rounded-full border border-[#8B3A28]/30 px-4 py-2 text-xs font-bold uppercase tracking-widest text-[#8B3A28] transition-all hover:bg-[#8B3A28] hover:text-white"
+                  >
+                    Iniciar Sesion
+                  </Link>
+                </SignedOut>
+              </>
+            ) : (
+              <div className="h-10 w-10 rounded-full border border-[#8B3A28]/20 bg-white/60" aria-hidden="true" />
+            )}
           </div>
 
-          {/* Botón Hamburguesa (Solo móvil) */}
           <button
             onClick={toggleMenu}
-            className="md:hidden p-2 text-gray-800 hover:text-[#8B3A28] transition-colors relative z-50"
+            className="relative z-50 p-2 text-gray-800 transition-colors hover:text-[#8B3A28] md:hidden"
             aria-label="Menu"
           >
             {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
@@ -90,12 +95,11 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Menú Móvil con Overlay */}
-      {isMenuOpen && (
+      {isMenuOpen ? (
         <>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-90 md:hidden animate-in fade-in" onClick={toggleMenu} />
-          <div className="fixed top-0 right-0 h-screen w-[85%] max-w-sm bg-[#F5F2EB] z-100 md:hidden p-10 flex flex-col gap-8 shadow-2xl animate-in slide-in-from-right duration-300">
-            <div className="flex justify-between items-center mb-10 border-b pb-6">
+          <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden" onClick={toggleMenu} />
+          <div className="fixed top-0 right-0 z-50 flex h-screen w-[85%] max-w-sm flex-col gap-8 bg-[#F5F2EB] p-10 shadow-2xl md:hidden">
+            <div className="mb-10 flex items-center justify-between border-b pb-6">
               <Image
                 src="/logo-white.png"
                 alt="Logo Pormucha"
@@ -107,22 +111,27 @@ export default function Navbar() {
                 <X size={28} />
               </button>
             </div>
-            <div className="flex flex-col gap-6 font-sans tracking-widest font-bold text-gray-900 text-lg">
+
+            <div className="flex flex-col gap-6 text-lg font-bold tracking-widest text-gray-900">
               <Link href="/" onClick={toggleMenu} className="hover:text-[#8B3A28]">INICIO</Link>
               <Link href="/nosotros" onClick={toggleMenu} className="hover:text-[#8B3A28]">NOSOTROS</Link>
               <Link href="/tienda" onClick={toggleMenu} className="hover:text-[#8B3A28]">TIENDA</Link>
               <Link href="/suscripciones" onClick={toggleMenu} className="hover:text-[#8B3A28]">CLUB PORMUCHA</Link>
               <Link href="/contacto" onClick={toggleMenu} className="hover:text-[#8B3A28]">CONTACTO</Link>
-              <SignedOut>
-                <Link href="/sign-in" onClick={toggleMenu} className="text-[#8B3A28]">INICIAR SESIÓN</Link>
-              </SignedOut>
-              <SignedIn>
-                <Link href="/perfil" onClick={toggleMenu} className="hover:text-[#8B3A28]">MI PERFIL</Link>
-              </SignedIn>
+              {isMounted ? (
+                <>
+                  <SignedOut>
+                    <Link href="/sign-in" onClick={toggleMenu} className="text-[#8B3A28]">INICIAR SESION</Link>
+                  </SignedOut>
+                  <SignedIn>
+                    <Link href="/perfil" onClick={toggleMenu} className="hover:text-[#8B3A28]">MI PERFIL</Link>
+                  </SignedIn>
+                </>
+              ) : null}
             </div>
           </div>
         </>
-      )}
+      ) : null}
     </nav>
   );
 }
