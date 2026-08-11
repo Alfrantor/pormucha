@@ -484,7 +484,9 @@ export function PricingManager({ flavor }: PricingManagerProps) {
                       <p className="text-gray-600">
                         {discount.discountPercent
                           ? `${discount.discountPercent}% descuento`
-                          : `Precio fijo: $${discount.fixedPrice.toFixed(2)}`}
+                          : discount.fixedPrice !== null
+                            ? `Precio fijo: $${discount.fixedPrice.toFixed(2)}`
+                            : "Descuento sin configuracion"}
                       </p>
                       {discount.validUntil && (
                         <p className="text-xs text-gray-500">
