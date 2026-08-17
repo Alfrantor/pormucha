@@ -94,6 +94,10 @@ export default function TiendaPageClient({
     pickBlock(page, 9, { type: "faq", label: "FAQ tienda 3", title: "", body: "" }),
     pickBlock(page, 10, { type: "faq", label: "FAQ tienda 4", title: "", body: "" }),
   ].filter((item) => item.title.trim() || item.body.trim());
+  const normalizedPacks = packs.map((pack) => ({
+    ...pack,
+    clubDiscountPercent: pack.clubDiscountPercent ?? 0,
+  }));
 
   return (
     <main className="min-h-screen bg-[#F5F2EB] selection:bg-[#8B3A28] selection:text-white font-sans">
@@ -110,7 +114,7 @@ export default function TiendaPageClient({
         buttonHref={hero.buttonHref}
       />
 
-      <StoreGrid packs={packs} flavors={flavors} />
+      <StoreGrid packs={normalizedPacks} flavors={flavors} />
 
       <section className="bg-[#EAE7DD] py-20 px-6 border-t border-[#8B3A18]/20 relative overflow-hidden">
         <div className="absolute top-10 -left-16 w-64 bg-[#9B1C1C] text-white text-xs font-bold tracking-[0.2em] transform -rotate-45 text-center py-2 shadow-2xl border-b-4 border-[#EBDAAB] z-10 hidden lg:block">

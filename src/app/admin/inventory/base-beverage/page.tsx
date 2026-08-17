@@ -1,158 +1,150 @@
 import { db } from "@/lib/db";
-import { FlaskConical, Beaker } from "lucide-react";
-import { emptyBaseBeverageContainer, updateBaseBeverageInventoryDisposition } from "@/app/_actions/production";
+import { Beaker } from "lucide-react";
+import { BaseBeverageInventoryManager } from "@/components/admin/BaseBeverageInventoryManager";
+
+async function ensureBaseBeverageStorageTables() {
+  await db.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "BaseBeverageStorageTank" (
+      "id" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "formulaCode" TEXT,
+      "formulaName" TEXT,
+      "capacityLt" DECIMAL(65,30),
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "notes" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "BaseBeverageStorageTank_pkey" PRIMARY KEY ("id")
+    )
+  `).catch(() => null);
+
+  await db.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "BaseBeverageStorageTank_name_key"
+    ON "BaseBeverageStorageTank"("name")
+  `).catch(() => null);
+
+  await db.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "BaseBeverageStorageEntry" (
+      "id" TEXT NOT NULL,
+      "storageTankId" TEXT NOT NULL,
+      "baseBeverageInventoryId" TEXT NOT NULL,
+      "productionId" TEXT,
+      "productType" TEXT NOT NULL,
+      "productionFormulaId" TEXT,
+      "formulaLabel" TEXT,
+      "litersAdded" DECIMAL(65,30) NOT NULL,
+      "notes" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "BaseBeverageStorageEntry_pkey" PRIMARY KEY ("id")
+    )
+  `).catch(() => null);
+
+  await db.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "BaseBeverageStorageEntry_baseBeverageInventoryId_key"
+    ON "BaseBeverageStorageEntry"("baseBeverageInventoryId")
+  `).catch(() => null);
+
+  await db.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "BaseBeverageStorageEntry_storageTankId_idx"
+    ON "BaseBeverageStorageEntry"("storageTankId")
+  `).catch(() => null);
+}
 
 export default async function BaseBeverageInventoryPage() {
-  const rows = await db.$queryRawUnsafe<any[]>(`
-    SELECT
-      bbi.*,
-      t.id AS tank_id_ref,
-      t.name AS tank_name,
-      p.id AS production_id_ref,
-      p.name AS production_name
-    FROM "BaseBeverageInventory" bbi
-    LEFT JOIN "Tank" t ON t.id = bbi."tankId"
-    LEFT JOIN "Production" p ON p.id = bbi."productionId"
-    ORDER BY bbi."createdAt" DESC
-  `).catch(() => []);
+  await ensureBaseBeverageStorageTables();
 
-  const totalProduced = rows.reduce((sum: number, row: any) => sum + Number(row.litersProduced || 0), 0);
-  const totalRemaining = rows.reduce((sum: number, row: any) => sum + Number(row.litersRemaining || 0), 0);
+  const [rows, storageTanksRaw, storageEntriesRaw] = await Promise.all([
+    db.$queryRawUnsafe<any[]>(`
+      SELECT
+        bbi.*,
+        t.id AS tank_id_ref,
+        t.name AS tank_name,
+        p.id AS production_id_ref,
+        p.name AS production_name,
+        p."productionFormulaId",
+        pf."code" AS formula_code,
+        pf."name" AS formula_name
+      FROM "BaseBeverageInventory" bbi
+      LEFT JOIN "Tank" t ON t.id = bbi."tankId"
+      LEFT JOIN "Production" p ON p.id = bbi."productionId"
+      LEFT JOIN "ProductionFormula" pf ON pf.id = p."productionFormulaId"
+      ORDER BY bbi."createdAt" DESC
+    `).catch(() => []),
+    db.$queryRawUnsafe<any[]>(`
+      SELECT
+        st.*,
+        COALESCE(SUM(se."litersAdded"), 0) AS "currentLiters",
+        COUNT(se."id") AS "sourceCount"
+      FROM "BaseBeverageStorageTank" st
+      LEFT JOIN "BaseBeverageStorageEntry" se ON se."storageTankId" = st."id"
+      GROUP BY st."id"
+      ORDER BY st."createdAt" DESC
+    `).catch(() => []),
+    db.$queryRawUnsafe<any[]>(`
+      SELECT
+        se.*,
+        p."name" AS production_name,
+        pf."code" AS formula_code,
+        COALESCE(pf."name", se."formulaLabel") AS formula_name
+      FROM "BaseBeverageStorageEntry" se
+      LEFT JOIN "Production" p ON p."id" = se."productionId"
+      LEFT JOIN "ProductionFormula" pf ON pf."id" = se."productionFormulaId"
+      ORDER BY se."createdAt" DESC
+    `).catch(() => []),
+  ]);
+
+  const storageEntriesByTank = new Map<string, any[]>();
+  (storageEntriesRaw as any[]).forEach((entry) => {
+    const list = storageEntriesByTank.get(entry.storageTankId) || [];
+    list.push({
+      ...entry,
+      litersAdded: Number(entry.litersAdded || 0),
+      createdAt: entry.createdAt instanceof Date ? entry.createdAt.toISOString() : String(entry.createdAt),
+    });
+    storageEntriesByTank.set(entry.storageTankId, list);
+  });
+
+  const storageTanks = (storageTanksRaw as any[]).map((tank) => ({
+    ...tank,
+    capacityLt: tank.capacityLt != null ? Number(tank.capacityLt) : null,
+    currentLiters: Number(tank.currentLiters || 0),
+    sourceCount: Number(tank.sourceCount || 0),
+    entries: storageEntriesByTank.get(tank.id) || [],
+  }));
+
+  const inventoryRows = (rows as any[]).map((row) => ({
+    ...row,
+    litersEntered: row.litersEntered != null ? Number(row.litersEntered) : null,
+    litersProduced: Number(row.litersProduced || 0),
+    litersRemaining: row.litersRemaining != null ? Number(row.litersRemaining) : null,
+  }));
+
+  const totalProduced = inventoryRows.reduce((sum: number, row: any) => sum + Number(row.litersProduced || 0), 0);
+  const totalRemaining = inventoryRows.reduce((sum: number, row: any) => sum + Number(row.litersRemaining || 0), 0);
+  const storageTotal = storageTanks.reduce((sum: number, tank: any) => sum + Number(tank.currentLiters || 0), 0);
 
   return (
     <div className="space-y-6">
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Inventario</p>
         <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Inventario de bebida base</h1>
-        <p className="mt-2 text-sm text-slate-500">Aqui queda registrado lo que entro al proceso, lo que salio y lo que quedo por cada lote completado.</p>
+        <p className="mt-2 text-sm text-slate-500">Aquí queda registrado lo que entró al proceso, lo que salió, lo que quedó y lo que ya fue unificado en tanques de resguardo.</p>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <Metric label="Lotes disponibles" value={rows.length} />
+      <section className="grid gap-4 md:grid-cols-4">
+        <Metric label="Lotes registrados" value={inventoryRows.length} />
         <Metric label="Litros producidos" value={totalProduced} unit="Lt" />
         <Metric label="Litros remanentes" value={totalRemaining} unit="Lt" />
+        <Metric label="En tanques de resguardo" value={storageTotal} unit="Lt" />
       </section>
 
-      <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center gap-2">
-          <FlaskConical size={18} className="text-slate-500" />
-          <h2 className="text-xl font-black text-slate-950">Lotes de bebida base</h2>
-        </div>
-
-        <div className="mt-5 space-y-4">
-          {rows.length === 0 && (
-            <div className="rounded-2xl bg-slate-50 p-6 text-sm text-slate-500">
-              Aun no hay bebida base en inventario. Los lotes entran aqui cuando la produccion se marca como completada.
-            </div>
-          )}
-
-          {rows.map((row: any) => {
-            const entered = row.litersEntered != null ? Number(row.litersEntered) : null;
-            const produced = Number(row.litersProduced || 0);
-            const remaining = row.litersRemaining != null ? Number(row.litersRemaining) : null;
-            const loss = entered != null ? Math.max(entered - produced, 0) : null;
-
-            return (
-              <div key={row.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-lg font-black text-slate-950">{row.production_name || "Lote sin referencia"}</p>
-                    <p className="mt-1 text-xs text-slate-400">Tipo {row.productType} | Cubeta: {row.tank_name || "-"}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] ${
-                      row.status === "HELD"
-                        ? "bg-amber-100 text-amber-700"
-                        : row.status === "MIX_PENDING"
-                          ? "bg-violet-100 text-violet-700"
-                          : row.status === "DISPATCHED"
-                            ? "bg-sky-100 text-sky-700"
-                        : row.status === "AVAILABLE"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : row.status === "EMPTIED"
-                            ? "bg-slate-200 text-slate-600"
-                            : "bg-slate-100 text-slate-600"
-                    }`}>
-                      {row.status === "HELD"
-                        ? "En cubeta"
-                        : row.status === "MIX_PENDING"
-                          ? "Listo para unificar"
-                          : row.status === "DISPATCHED"
-                            ? "Con salida"
-                            : row.status === "AVAILABLE"
-                              ? "Disponible"
-                              : row.status === "EMPTIED"
-                                ? "Cubeta vaciada"
-                                : row.status}
-                    </span>
-                    {remaining != null && remaining > 0 && row.status !== "MIX_PENDING" && row.status !== "EMPTIED" && (
-                      <form action={async () => {
-                        "use server";
-                        await updateBaseBeverageInventoryDisposition(row.id, "MIX_PENDING");
-                      }}>
-                        <button className="rounded-full bg-violet-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-violet-500">
-                          Marcar para unificar
-                        </button>
-                      </form>
-                    )}
-                    {remaining != null && remaining > 0 && row.status !== "AVAILABLE" && row.status !== "EMPTIED" && (
-                      <form action={async () => {
-                        "use server";
-                        await updateBaseBeverageInventoryDisposition(row.id, "AVAILABLE");
-                      }}>
-                        <button className="rounded-full bg-emerald-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-emerald-500">
-                          Mantener disponible
-                        </button>
-                      </form>
-                    )}
-                    {remaining != null && remaining > 0 && row.status !== "DISPATCHED" && row.status !== "EMPTIED" && (
-                      <form action={async () => {
-                        "use server";
-                        await updateBaseBeverageInventoryDisposition(row.id, "DISPATCHED");
-                      }}>
-                        <button className="rounded-full bg-sky-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-sky-500">
-                          Marcar con salida
-                        </button>
-                      </form>
-                    )}
-                    {["HELD", "MIX_PENDING", "DISPATCHED", "AVAILABLE"].includes(String(row.status)) && (
-                      <form action={async () => {
-                        "use server";
-                        await emptyBaseBeverageContainer(row.id);
-                      }}>
-                        <button className="rounded-full bg-slate-950 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-slate-800">
-                          Vaciar cubeta
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-3 md:grid-cols-4">
-                  <CardStat label="Litros de entrada" value={entered} />
-                  <CardStat label="Litros de salida" value={produced} />
-                  <CardStat label="Litros remanentes" value={remaining} />
-                  <CardStat label="Diferencia" value={loss} />
-                </div>
-
-                {remaining != null && remaining > 0 && row.status !== "EMPTIED" && (
-                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                    Quedan <span className="font-black">{remaining.toLocaleString("es-MX")} Lt</span> utilizables para un nuevo proceso, unificacion o embotellado.
-                  </div>
-                )}
-
-                {row.notes && <p className="mt-4 text-sm text-slate-500">{row.notes}</p>}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      <BaseBeverageInventoryManager rows={inventoryRows} storageTanks={storageTanks} />
 
       <section className="rounded-[1.8rem] border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
         <div className="flex items-center gap-2">
           <Beaker size={16} className="text-slate-500" />
           <p>
-            Este inventario representa bebida base terminada. Desde aqui puedes decidir despues si un lote se mantiene, se unifica o se prepara para salida sin perder el control del remanente.
+            La unificación mueve el remanente del lote origen a un tanque de resguardo y conserva qué proceso aportó cuántos litros. Eso deja libre la cubeta original y mantiene la trazabilidad detallada.
           </p>
         </div>
       </section>
@@ -168,15 +160,6 @@ function Metric({ label, value, unit = "" }: { label: string; value: number; uni
         {value.toLocaleString("es-MX")}
         {unit ? ` ${unit}` : ""}
       </p>
-    </div>
-  );
-}
-
-function CardStat({ label, value }: { label: string; value: number | null }) {
-  return (
-    <div className="rounded-xl bg-white px-4 py-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">{label}</p>
-      <p className="mt-2 text-xl font-black text-slate-950">{value != null ? `${value.toLocaleString("es-MX")} Lt` : "-"}</p>
     </div>
   );
 }

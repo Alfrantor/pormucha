@@ -25,9 +25,21 @@ export type ProductionFormulaItemView = {
   rawMaterialName: string;
   rawMaterialUnit: string;
   quantity: number;
+  freeTextName?: string | null;
+  sharePercent?: number | null;
   defaultLocationId?: string | null;
   defaultLocationName?: string | null;
   notes?: string | null;
+};
+
+export type ProductionFormulaBlendItemView = {
+  id: string;
+  rawMaterialId?: string | null;
+  rawMaterialName?: string | null;
+  freeTextName?: string | null;
+  sharePercent: number;
+  gramsPerLiter: number;
+  unit?: string | null;
 };
 
 export type ProductionFormulaStepView = {
@@ -46,6 +58,11 @@ export type ProductionFormulaView = {
   description?: string | null;
   formulaSummary?: string | null;
   targetLiters?: number | null;
+  teaType?: string | null;
+  teaGramsPerLiter?: number | null;
+  sugarGramsPerLiter?: number | null;
+  yeastPitchRatePercent?: number | null;
+  brewWaterPercent?: number | null;
   durationDays: number;
   durationHours: number;
   updatedAt?: string | null;
@@ -61,6 +78,7 @@ export type ProductionFormulaView = {
   isActive: boolean;
   steps: ProductionFormulaStepView[];
   items: ProductionFormulaItemView[];
+  blendItems: ProductionFormulaBlendItemView[];
 };
 
 export const PRODUCTION_PROFILES: Record<ProductionType, ProductionProfile> = {

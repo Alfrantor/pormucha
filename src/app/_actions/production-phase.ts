@@ -4,6 +4,40 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
+async function ensureProductionPhaseTable(client: typeof db) {
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ProductionPhaseRecord" (
+      "id" TEXT NOT NULL,
+      "productionId" TEXT NOT NULL,
+      "phase" INTEGER NOT NULL,
+      "receivedCondition" TEXT,
+      "receivedBy" TEXT,
+      "measuredBy" TEXT,
+      "startedBy" TEXT,
+      "measuredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "ph" DECIMAL(65,30),
+      "brix" DECIMAL(65,30),
+      "temperature" DECIMAL(65,30),
+      "acidity" DECIMAL(65,30),
+      "notes" TEXT,
+      "receivedLiters" DECIMAL(65,30),
+      "remainingLiters" DECIMAL(65,30),
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ProductionPhaseRecord_pkey" PRIMARY KEY ("id")
+    )
+  `).catch(() => null);
+
+  await client.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProductionPhaseRecord_productionId_idx"
+    ON "ProductionPhaseRecord"("productionId")
+  `).catch(() => null);
+
+  await client.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProductionPhaseRecord_productionId_phase_idx"
+    ON "ProductionPhaseRecord"("productionId", "phase")
+  `).catch(() => null);
+}
+
 export async function createProductionSecondPhase(data: {
   productionId: string;
   receivedCondition?: string;
@@ -30,6 +64,8 @@ export async function createProductionSecondPhase(data: {
     const validAdditions = (data.additions || []).filter((item) => item.rawMaterialId && item.quantity > 0);
 
     await db.$transaction(async (tx) => {
+      await ensureProductionPhaseTable(tx as typeof db);
+
       const existingPhase = await tx.$queryRaw<{ id: string }[]>`
         SELECT "id"
         FROM "ProductionPhaseRecord"
@@ -41,11 +77,6 @@ export async function createProductionSecondPhase(data: {
       if (existingPhase.length > 0) {
         throw new Error("La fase dos ya fue iniciada para esta produccion");
       }
-
-      await tx.$executeRawUnsafe(`
-        ALTER TABLE "ProductionPhaseRecord"
-        ADD COLUMN IF NOT EXISTS "receivedLiters" DECIMAL(65,30)
-      `).catch(() => null);
 
       await tx.$executeRaw`
         INSERT INTO "ProductionPhaseRecord"
@@ -147,6 +178,8 @@ export async function createProductionThirdPhase(data: {
       return { success: false, error: "Indica cuantos litros quedan en el contenedor" };
     }
 
+    await ensureProductionPhaseTable(db);
+
     const phaseRows = await db.$queryRaw<{ phase: number }[]>`
       SELECT "phase"
       FROM "ProductionPhaseRecord"
@@ -163,11 +196,6 @@ export async function createProductionThirdPhase(data: {
     if (hasPhase3) {
       return { success: false, error: "La fase tres ya fue registrada para esta produccion" };
     }
-
-    await db.$executeRawUnsafe(`
-      ALTER TABLE "ProductionPhaseRecord"
-      ADD COLUMN IF NOT EXISTS "remainingLiters" DECIMAL(65,30)
-    `).catch(() => null);
 
     await db.$executeRaw`
       INSERT INTO "ProductionPhaseRecord"

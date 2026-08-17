@@ -524,6 +524,11 @@ model ProductionFormula {
   description    String?
   formulaSummary String?
   targetLiters   Decimal?
+  teaType        String?
+  teaGramsPerLiter Decimal?
+  sugarGramsPerLiter Decimal?
+  yeastPitchRatePercent Decimal?
+  brewWaterPercent Decimal?
   durationDays   Int                     @default(0)
   durationHours  Int
   phMin          Decimal
@@ -572,6 +577,8 @@ model ProductionFormulaItem {
   rawMaterialId     String?
   rawMaterial       RawMaterial?       @relation(fields: [rawMaterialId], references: [id])
   quantity          Decimal
+  freeTextName      String?
+  sharePercent      Decimal?
   defaultLocationId String?
   defaultLocation   Location?          @relation(fields: [defaultLocationId], references: [id], onDelete: SetNull)
   notes             String?

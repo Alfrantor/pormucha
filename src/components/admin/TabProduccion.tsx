@@ -44,15 +44,64 @@ function parseNum(value: string) {
   return Number.isNaN(n) ? undefined : n;
 }
 
-function buildIngredientsFromFormula(formula: ProductionFormulaView | null | undefined): IngredientInput[] {
-  if (!formula) return [];
-  return formula.items
-    .filter((item) => item.sourceKind !== "BASE_BEVERAGE" && item.rawMaterialId)
-    .map((item) => ({
-      rawMaterialId: item.rawMaterialId as string,
-      quantity: Number(item.quantity),
-      locationId: item.defaultLocationId || "",
-    }));
+function findRawMaterialByKeywords(rawMaterials: any[], keywords: string[]) {
+  return rawMaterials.find((item: any) => {
+    const haystack = `${item?.name || ""} ${item?.category || ""}`.toLowerCase();
+    return keywords.some((keyword) => haystack.includes(keyword));
+  });
+}
+
+function buildIngredientsFromFormula(
+  formula: ProductionFormulaView | null | undefined,
+  targetLiters: number,
+  rawMaterials: any[],
+  defaultLocationId?: string,
+): IngredientInput[] {
+  if (!formula || !(targetLiters > 0)) return [];
+
+  const rows: IngredientInput[] = [];
+  const blendItems = Array.isArray(formula.blendItems) ? formula.blendItems : [];
+
+  blendItems.forEach((item) => {
+    if (!item.rawMaterialId) return;
+    const quantity = Number(item.gramsPerLiter || 0) * targetLiters;
+    if (!(quantity > 0)) return;
+    rows.push({
+      rawMaterialId: item.rawMaterialId,
+      quantity,
+      locationId: defaultLocationId || "",
+    });
+  });
+
+  const sugarMaterial = findRawMaterialByKeywords(rawMaterials, ["azúcar", "azucar", "sugar"]);
+  const sugarQuantity = Number(formula.sugarGramsPerLiter || 0) * targetLiters;
+  if (sugarMaterial?.id && sugarQuantity > 0) {
+    rows.push({
+      rawMaterialId: sugarMaterial.id,
+      quantity: sugarQuantity,
+      locationId: defaultLocationId || "",
+    });
+  }
+
+  const waterMaterial = findRawMaterialByKeywords(rawMaterials, ["agua", "water"]);
+  const hotWaterQuantity = targetLiters * (Number(formula.brewWaterPercent || 0) / 100);
+  if (waterMaterial?.id && hotWaterQuantity > 0) {
+    rows.push({
+      rawMaterialId: waterMaterial.id,
+      quantity: hotWaterQuantity,
+      locationId: defaultLocationId || "",
+    });
+  }
+
+  return rows;
+}
+
+function formatBatchQuantity(value: number, unit = "") {
+  if (!Number.isFinite(value)) return "-";
+  if (unit.toLowerCase() === "g" && value >= 1000) {
+    return `${(value / 1000).toLocaleString("es-MX", { maximumFractionDigits: 2 })} kg`;
+  }
+  return `${value.toLocaleString("es-MX", { maximumFractionDigits: 2 })}${unit ? ` ${unit}` : ""}`;
 }
 
 function formatStepIngredient(item: any) {
@@ -102,10 +151,10 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [tankSaving, setTankSaving] = useState(false);
   const [tankError, setTankError] = useState("");
 
-  const [newProdType, setNewProdType] = useState<ProductionType>("A");
+  const [newProdType, setNewProdType] = useState<string>("");
   const [newProdTank, setNewProdTank] = useState("");
   const [newProdStart, setNewProdStart] = useState(() => new Date().toISOString().slice(0, 16));
-  const [newProdInputLiters, setNewProdInputLiters] = useState("");
+  const [newProdInputLiters, setNewProdInputLiters] = useState("50");
   const [newProdNotes, setNewProdNotes] = useState("");
   const [ingredients, setIngredients] = useState<IngredientInput[]>([]);
   const [prodSaving, setProdSaving] = useState(false);
@@ -133,7 +182,6 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [completeSaving, setCompleteSaving] = useState(false);
 
   const [phase2Condition, setPhase2Condition] = useState("Aceptado");
-  const [phase2ReceivedLiters, setPhase2ReceivedLiters] = useState("");
   const [phase2ReceivedBy, setPhase2ReceivedBy] = useState("");
   const [phase2MeasuredBy, setPhase2MeasuredBy] = useState("");
   const [phase2StartedBy, setPhase2StartedBy] = useState(userEmail || "");
@@ -160,6 +208,12 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       }
     });
     return map;
+  }, [safeFormulas]);
+
+  const formulaOptions = useMemo(() => {
+    return safeFormulas
+      .filter((formula: any) => formula?.isActive)
+      .sort((a: any, b: any) => String(a?.name || "").localeCompare(String(b?.name || ""), "es-MX", { sensitivity: "base" }));
   }, [safeFormulas]);
 
   const filteredProds = useMemo(() => {
@@ -223,12 +277,26 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     );
   }, [safeBaseBeverageInventory]);
 
-  const selectedFormula = formulasByCode.get(newProdType) || null;
+  const selectedFormula = (newProdType ? formulasByCode.get(newProdType) : null) || formulaOptions[0] || null;
   const profile = profileFromFormula(selectedFormula, newProdType);
   const selectedTankForNewProd = safeTanks.find((tank: any) => tank.id === newProdTank) || null;
   const generatedProdName = newProdTank
-    ? formatProductionName(newProdStart, selectedTankForNewProd?.name, newProdType)
+    ? formatProductionName(newProdStart, selectedTankForNewProd?.name, selectedFormula?.code || newProdType || "F1")
     : "";
+  const newProdTargetLiters = Number(newProdInputLiters || 0);
+  const projectedTeaTotal = Number(selectedFormula?.teaGramsPerLiter || 0) * newProdTargetLiters;
+  const projectedSugarTotal = Number(selectedFormula?.sugarGramsPerLiter || 0) * newProdTargetLiters;
+  const projectedStarterLiters = newProdTargetLiters * (Number(selectedFormula?.yeastPitchRatePercent || 0) / 100);
+  const projectedHotWater = newProdTargetLiters * (Number(selectedFormula?.brewWaterPercent || 0) / 100);
+  const projectedColdWater = Math.max(0, newProdTargetLiters - projectedHotWater);
+  const projectedBlendItems = Array.isArray(selectedFormula?.blendItems)
+    ? selectedFormula.blendItems
+        .filter((item: any) => item?.rawMaterialId || item?.freeTextName)
+        .map((item: any) => ({
+          ...item,
+          calculatedQuantity: Number(item.gramsPerLiter || 0) * newProdTargetLiters,
+        }))
+    : [];
   const currentParamCheck = evaluateProductionParametersWithFormula(selectedProd?.formula, selectedProd?.productType || "A", {
     ph: parseNum(paramPh),
     brix: parseNum(paramBrix),
@@ -246,8 +314,14 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const selectedProdPhase3 = selectedPhaseRecords.find((record: any) => Number(record.phase) === 3) || null;
 
   useEffect(() => {
-    setIngredients(buildIngredientsFromFormula(selectedFormula));
-  }, [selectedFormula]);
+    if (!newProdType && formulaOptions[0]?.code) {
+      setNewProdType(formulaOptions[0].code);
+    }
+  }, [newProdType, formulaOptions]);
+
+  useEffect(() => {
+    setIngredients(buildIngredientsFromFormula(selectedFormula, newProdTargetLiters, safeRM, safeLocations[0]?.id || ""));
+  }, [selectedFormula, newProdTargetLiters, safeRM, safeLocations]);
 
   const addIngredientRow = () => {
     setIngredients((prev) => [...prev, { rawMaterialId: "", quantity: 0, locationId: safeLocations[0]?.id || "" }]);
@@ -276,8 +350,16 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
   const handleCreateProd = async () => {
     setProdError("");
+    if (!selectedFormula) {
+      setProdError("Selecciona una receta");
+      return;
+    }
     if (!newProdTank) {
       setProdError("Selecciona una cubeta");
+      return;
+    }
+    if (!(newProdTargetLiters > 0)) {
+      setProdError("Indica un volumen objetivo válido");
       return;
     }
 
@@ -303,10 +385,10 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     }
 
     setShowCreateProd(false);
-    setNewProdType("A");
+    setNewProdType(formulaOptions[0]?.code || "");
     setNewProdTank("");
     setNewProdStart(new Date().toISOString().slice(0, 16));
-    setNewProdInputLiters("");
+    setNewProdInputLiters("50");
     setNewProdNotes("");
     setIngredients([]);
     window.location.reload();
@@ -430,7 +512,6 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const openSecondPhase = (prod: any) => {
     setSecondPhaseTarget(prod);
     setPhase2Condition("Aceptado");
-    setPhase2ReceivedLiters(prod?.inputLiters != null ? String(Number(prod.inputLiters)) : "");
     setPhase2ReceivedBy("");
     setPhase2MeasuredBy("");
     setPhase2StartedBy(userEmail || "");
@@ -457,7 +538,6 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     const res = await createProductionSecondPhase({
       productionId: secondPhaseTarget.id,
       receivedCondition: phase2Condition,
-      receivedLiters: parseNum(phase2ReceivedLiters),
       receivedBy: phase2ReceivedBy,
       measuredBy: phase2MeasuredBy,
       startedBy: phase2StartedBy,
@@ -607,8 +687,8 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
               const producedLiters = prod.litersProduced != null ? Number(prod.litersProduced) : null;
               const remainingLiters = phase3?.remainingLiters != null ? Number(phase3.remainingLiters) : null;
               const processLoss = enteredLiters != null && producedLiters != null ? Math.max(enteredLiters - producedLiters, 0) : null;
-              const phase2ReceivedLiters = phase2?.receivedLiters != null ? Number(phase2.receivedLiters) : enteredLiters;
-              const outputLoss = phase2ReceivedLiters != null && producedLiters != null ? Math.max(phase2ReceivedLiters - producedLiters, 0) : null;
+              const phase2VolumeBase = enteredLiters;
+              const outputLoss = phase2VolumeBase != null && producedLiters != null ? Math.max(phase2VolumeBase - producedLiters, 0) : null;
               const fermentationMetrics = getFermentationMetrics(prod, formulaForProd);
               const fermentationStatus = getFermentationVisualStatus(prod, formulaForProd);
               const fermentationBorder = getFermentationVisualClasses(fermentationStatus);
@@ -732,7 +812,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
                           <p className="font-black uppercase tracking-[0.2em] text-violet-400">Fase 2</p>
                           <p>{phase2 ? fmtDate(phase2.measuredAt) : "Pendiente"}</p>
-                          {phase2ReceivedLiters != null && <p>Recibidos: {phase2ReceivedLiters} Lt</p>}
+                          {enteredLiters != null && <p>Objetivo: {enteredLiters} Lt</p>}
                         </div>
                         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
                           <p className="font-black uppercase tracking-[0.2em] text-emerald-400">Fase 3</p>
@@ -753,7 +833,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                       )}
                       {phase2 && (
                         <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
-                          Fase dos iniciada por {phase2.startedBy || "-"} | Recibio: {phase2.receivedBy || "-"} | Midio: {phase2.measuredBy || "-"} | Estado recibido: {phase2.receivedCondition || "-"} | Litros recibidos: {phase2ReceivedLiters != null ? `${phase2ReceivedLiters} Lt` : "-"}
+                          Fase dos iniciada por {phase2.startedBy || "-"} | Recibió: {phase2.receivedBy || "-"} | Midió: {phase2.measuredBy || "-"} | Estado recibido: {phase2.receivedCondition || "-"}
                         </div>
                       )}
                       {phase3 && (
@@ -899,15 +979,18 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                       <input
                         value={generatedProdName}
                         readOnly
-                        placeholder="Selecciona fecha, tanque y tipo"
+                        placeholder="Selecciona fecha, cubeta y receta"
                         className="w-full rounded-lg border bg-slate-50 p-2 text-sm text-slate-600"
                       />
                     </Field>
-                    <Field label="Tipo">
-                      <select value={newProdType} onChange={(e) => setNewProdType(e.target.value as ProductionType)} className="w-full rounded-lg border p-2 text-sm">
-                        <option value="A">A</option>
-                        <option value="B">B</option>
-                        <option value="C">C</option>
+                    <Field label="Receta">
+                      <select value={newProdType} onChange={(e) => setNewProdType(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
+                        <option value="">Selecciona</option>
+                        {formulaOptions.map((formula: any) => (
+                          <option key={formula.id} value={formula.code}>
+                            {formula.name} ({formula.code})
+                          </option>
+                        ))}
                       </select>
                     </Field>
                     <Field label="Cubeta">
@@ -921,39 +1004,83 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                     <Field label="Inicio">
                       <input type="datetime-local" value={newProdStart} onChange={(e) => setNewProdStart(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
                     </Field>
-                    <Field label="Litros ingresados">
+                    <Field label="Volumen objetivo (L)">
                       <input type="number" min="0" step="0.1" value={newProdInputLiters} onChange={(e) => setNewProdInputLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
                     </Field>
                   </div>
                   <p className="text-xs text-slate-500">
-                    El nombre se genera automaticamente con este formato: dia-mes-año-numeroTanque-tipoProceso.
+                    El nombre se genera automáticamente con este formato: dia-mes-año-numeroTanque-tipoProceso.
                   </p>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-slate-900">Cálculo automático de receta</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Al elegir la receta y el volumen objetivo, el sistema calcula cuánto se necesitará de cada cosa.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">
+                        {newProdTargetLiters > 0 ? `${newProdTargetLiters.toLocaleString("es-MX")} L` : "Sin volumen"}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      <CalcChip label="Té" value={formatBatchQuantity(projectedTeaTotal, "g")} />
+                      <CalcChip label="Azúcar" value={formatBatchQuantity(projectedSugarTotal, "g")} />
+                      <CalcChip label="Cultivo inicial" value={formatBatchQuantity(projectedStarterLiters, "L")} />
+                      <CalcChip label="Agua caliente" value={formatBatchQuantity(projectedHotWater, "L")} />
+                      <CalcChip label="Agua fría" value={formatBatchQuantity(projectedColdWater, "L")} />
+                      <CalcChip label="Fermentación" value={selectedFormula?.durationDays ? `${selectedFormula.durationDays} días` : "-"} />
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white p-4">
+                      <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Desglose del blend</p>
+                      <div className="mt-3 space-y-2">
+                        {projectedBlendItems.length > 0 ? (
+                          projectedBlendItems.map((item: any, index: number) => (
+                            <div key={`${item.id || index}-blend-preview`} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                              <div>
+                                <p className="font-bold text-slate-900">
+                                  {item.rawMaterialName || item.freeTextName || `Componente ${index + 1}`}
+                                </p>
+                                <p className="text-xs text-slate-500">{Number(item.sharePercent || 0).toLocaleString("es-MX")} % del té total</p>
+                              </div>
+                              <p className="font-black text-slate-950">{formatBatchQuantity(Number(item.calculatedQuantity || 0), item.unit || "g")}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-xs italic text-slate-400">La receta no tiene ingredientes de blend ligados al inventario.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-black text-slate-900">Formula inicial</p>
                       <div className="flex items-center gap-3">
-                        <button onClick={() => setIngredients(buildIngredientsFromFormula(selectedFormula))} className="text-xs font-bold text-violet-700 hover:underline">Recargar formula</button>
+                        <button onClick={() => setIngredients(buildIngredientsFromFormula(selectedFormula, newProdTargetLiters, safeRM, safeLocations[0]?.id || ""))} className="text-xs font-bold text-violet-700 hover:underline">Recargar receta</button>
                         <button onClick={addIngredientRow} className="text-xs font-bold text-blue-700 hover:underline">Agregar insumo</button>
                       </div>
                     </div>
                     <p className="mt-1 text-xs text-slate-500">
                       {selectedFormula
-                        ? `Se aplicara ${selectedFormula.name} como base del lote y puedes ajustar insumos antes de guardar.`
-                        : "No hay una formula activa para este tipo. Puedes capturar los insumos manualmente."}
+                        ? `Se aplicará ${selectedFormula.name} como base del lote y el volumen objetivo recalcula los insumos antes de guardar.`
+                        : "No hay una receta activa seleccionada. Puedes capturar los insumos manualmente."}
                     </p>
                     <details className="mt-4 rounded-xl border border-violet-200 bg-white p-4">
                       <summary className="cursor-pointer list-none text-sm font-black text-violet-950">
-                        Ver pasos y formula
+                        Ver receta y parámetros
                       </summary>
                       <div className="mt-4">
                         {selectedFormula?.steps?.length ? (
                           <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-4">
                             <div className="flex items-center justify-between gap-3">
                               <div>
-                                <p className="text-sm font-black text-violet-950">Checklist de preparacion</p>
+                                <p className="text-sm font-black text-violet-950">Checklist de preparación</p>
                                 <p className="mt-1 text-xs text-violet-700">
-                                  Formula para {selectedFormula.targetLiters != null ? Number(selectedFormula.targetLiters).toLocaleString("es-MX") : "-"} Lt
+                                  Receta base por {selectedFormula.targetLiters != null ? Number(selectedFormula.targetLiters).toLocaleString("es-MX") : "-"} Lt
                                 </p>
                               </div>
                             </div>
@@ -1343,9 +1470,6 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                     <option value="Requiere ajuste">Requiere ajuste</option>
                   </select>
                 </Field>
-                <Field label="Litros recibidos en fase 2">
-                  <input type="number" min="0" step="0.1" value={phase2ReceivedLiters} onChange={(e) => setPhase2ReceivedLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
-                </Field>
                 <Field label="Fecha y hora de lectura">
                   <input type="datetime-local" value={phase2Date} onChange={(e) => setPhase2Date(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
                 </Field>
@@ -1576,6 +1700,15 @@ function MiniField({ label, children }: { label: string; children: React.ReactNo
     <div>
       <label className="mb-1 block text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{label}</label>
       {children}
+    </div>
+  );
+}
+
+function CalcChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</p>
+      <p className="mt-2 text-sm font-black text-slate-950">{value}</p>
     </div>
   );
 }

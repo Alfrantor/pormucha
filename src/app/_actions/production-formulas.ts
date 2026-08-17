@@ -5,55 +5,67 @@ import { revalidatePath } from "next/cache";
 import { currentUser } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 
-type FormulaItemInput = {
-  sourceKind: "RAW_MATERIAL" | "BASE_BEVERAGE";
-  sourceProductionType?: string | null;
+type BlendItemInput = {
   rawMaterialId?: string | null;
-  quantity: number;
-  defaultLocationId?: string | null;
-  notes?: string;
-};
-
-type FormulaStepInput = {
-  title: string;
-  instructions?: string;
-  resultLiters?: number | null;
-  items: FormulaItemInput[];
+  freeTextName?: string;
+  sharePercent: number;
 };
 
 export async function saveProductionFormula(data: {
   code: string;
   name: string;
-  description?: string;
-  formulaSummary?: string;
-  targetLiters?: number | null;
+  teaType?: string;
+  teaGramsPerLiter: number;
+  sugarGramsPerLiter: number;
+  yeastPitchRatePercent: number;
+  brewWaterPercent: number;
   durationDays: number;
-  durationHours: number;
   phMin: number;
   phMax: number;
-  brixMin: number;
-  brixMax: number;
+  brixTarget: number;
+  ttaTarget: number;
   temperatureMin: number;
   temperatureMax: number;
-  acidityMin: number;
-  acidityMax: number;
-  isActive?: boolean;
-  steps: FormulaStepInput[];
+  blendItems: BlendItemInput[];
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const user = await currentUser().catch(() => null);
     const updatedByEmail = user?.emailAddresses?.[0]?.emailAddress || null;
 
-    if (!data.code) return { success: false, error: "Codigo requerido" };
+    if (!data.code.trim()) return { success: false, error: "Código requerido" };
     if (!data.name.trim()) return { success: false, error: "Nombre requerido" };
-    if ((!Number.isFinite(data.durationDays) || data.durationDays < 0) || (!Number.isFinite(data.durationHours) || data.durationHours < 0)) {
-      return { success: false, error: "La duracion no es valida" };
+    if (!Number.isFinite(data.teaGramsPerLiter) || data.teaGramsPerLiter <= 0) {
+      return { success: false, error: "Indica cuántos gramos de té lleva por litro" };
     }
-    if (data.durationDays === 0 && data.durationHours === 0) {
-      return { success: false, error: "La duracion debe ser mayor a cero" };
+    if (!Number.isFinite(data.sugarGramsPerLiter) || data.sugarGramsPerLiter < 0) {
+      return { success: false, error: "El azúcar por litro no es válida" };
     }
-    if (!Number.isFinite(Number(data.targetLiters)) || Number(data.targetLiters) <= 0) {
-      return { success: false, error: "Debes indicar para cuantos litros se define la formula" };
+    if (!Number.isFinite(data.yeastPitchRatePercent) || data.yeastPitchRatePercent < 0) {
+      return { success: false, error: "El porcentaje de cultivo inicial no es válido" };
+    }
+    if (!Number.isFinite(data.brewWaterPercent) || data.brewWaterPercent <= 0 || data.brewWaterPercent > 100) {
+      return { success: false, error: "El porcentaje de agua de cocción debe estar entre 0 y 100" };
+    }
+    if (!Number.isFinite(data.durationDays) || data.durationDays <= 0) {
+      return { success: false, error: "Los días de fermentación deben ser mayores a cero" };
+    }
+    if (!Number.isFinite(data.phMin) || !Number.isFinite(data.phMax)) {
+      return { success: false, error: "Los objetivos de pH no son válidos" };
+    }
+    if (data.phMin > data.phMax) {
+      return { success: false, error: "El pH mínimo no puede ser mayor que el máximo" };
+    }
+    if (!Number.isFinite(data.brixTarget) || data.brixTarget < 0) {
+      return { success: false, error: "El objetivo de Brix no es válido" };
+    }
+    if (!Number.isFinite(data.ttaTarget) || data.ttaTarget < 0) {
+      return { success: false, error: "El objetivo de TTA no es válido" };
+    }
+    if (!Number.isFinite(data.temperatureMin) || !Number.isFinite(data.temperatureMax)) {
+      return { success: false, error: "Los objetivos de temperatura no son válidos" };
+    }
+    if (data.temperatureMin > data.temperatureMax) {
+      return { success: false, error: "La temperatura mínima no puede ser mayor que la máxima" };
     }
 
     await db.$executeRawUnsafe(`
@@ -63,6 +75,26 @@ export async function saveProductionFormula(data: {
     await db.$executeRawUnsafe(`
       ALTER TABLE "ProductionFormula"
       ADD COLUMN IF NOT EXISTS "updatedByEmail" TEXT
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormula"
+      ADD COLUMN IF NOT EXISTS "teaType" TEXT
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormula"
+      ADD COLUMN IF NOT EXISTS "teaGramsPerLiter" DECIMAL(65,30)
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormula"
+      ADD COLUMN IF NOT EXISTS "sugarGramsPerLiter" DECIMAL(65,30)
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormula"
+      ADD COLUMN IF NOT EXISTS "yeastPitchRatePercent" DECIMAL(65,30)
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormula"
+      ADD COLUMN IF NOT EXISTS "brewWaterPercent" DECIMAL(65,30)
     `).catch(() => null);
     await db.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "ProductionFormulaStep" (
@@ -97,22 +129,26 @@ export async function saveProductionFormula(data: {
       ALTER TABLE "ProductionFormulaItem"
       ALTER COLUMN "rawMaterialId" DROP NOT NULL
     `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormulaItem"
+      ADD COLUMN IF NOT EXISTS "freeTextName" TEXT
+    `).catch(() => null);
+    await db.$executeRawUnsafe(`
+      ALTER TABLE "ProductionFormulaItem"
+      ADD COLUMN IF NOT EXISTS "sharePercent" DECIMAL(65,30)
+    `).catch(() => null);
 
-    const validSteps = data.steps
-      .map((step) => ({
-        ...step,
-        title: step.title.trim(),
-        instructions: step.instructions?.trim() || "",
-        items: step.items.filter((item) => {
-          if (!(Number(item.quantity) > 0)) return false;
-          if (item.sourceKind === "BASE_BEVERAGE") return !!item.sourceProductionType || !!data.code;
-          return !!item.rawMaterialId;
-        }),
+    const validBlendItems = data.blendItems
+      .map((item) => ({
+        rawMaterialId: item.rawMaterialId || null,
+        freeTextName: item.freeTextName?.trim() || "",
+        sharePercent: Number(item.sharePercent),
       }))
-      .filter((step) => step.title);
+      .filter((item) => (item.rawMaterialId || item.freeTextName) && item.sharePercent > 0);
 
-    if (validSteps.length === 0) {
-      return { success: false, error: "Agrega al menos un paso en la formula" };
+    const totalShare = validBlendItems.reduce((sum, item) => sum + item.sharePercent, 0);
+    if (validBlendItems.length > 0 && Math.abs(totalShare - 100) > 0.01) {
+      return { success: false, error: "La mezcla de té debe sumar 100%" };
     }
 
     await db.$transaction(async (tx) => {
@@ -124,18 +160,32 @@ export async function saveProductionFormula(data: {
       `;
 
       const formulaId = existing[0]?.id || randomUUID();
+      const formulaSummary = [
+        data.teaType?.trim() ? `Té: ${data.teaType.trim()}` : null,
+        `${data.teaGramsPerLiter} g/L de té`,
+        `${data.sugarGramsPerLiter} g/L de azúcar`,
+        `${data.yeastPitchRatePercent}% de cultivo inicial`,
+        `${data.brewWaterPercent}% de agua de cocción`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
 
       await tx.$executeRaw`
         INSERT INTO "ProductionFormula"
-        ("id","code","name","description","formulaSummary","targetLiters","durationDays","durationHours","phMin","phMax","brixMin","brixMax","temperatureMin","temperatureMax","acidityMin","acidityMax","isActive","updatedByEmail","createdAt","updatedAt")
+        ("id","code","name","description","formulaSummary","targetLiters","teaType","teaGramsPerLiter","sugarGramsPerLiter","yeastPitchRatePercent","brewWaterPercent","durationDays","durationHours","phMin","phMax","brixMin","brixMax","temperatureMin","temperatureMax","acidityMin","acidityMax","isActive","updatedByEmail","createdAt","updatedAt")
         VALUES
-        (${formulaId}, ${data.code}, ${data.name.trim()}, ${data.description?.trim() || null}, ${data.formulaSummary?.trim() || null}, ${Number(data.targetLiters)}, ${data.durationDays}, ${data.durationHours}, ${data.phMin}, ${data.phMax}, ${data.brixMin}, ${data.brixMax}, ${data.temperatureMin}, ${data.temperatureMax}, ${data.acidityMin}, ${data.acidityMax}, ${data.isActive ?? true}, ${updatedByEmail}, NOW(), NOW())
+        (${formulaId}, ${data.code}, ${data.name.trim()}, NULL, ${formulaSummary}, 1, ${data.teaType?.trim() || null}, ${data.teaGramsPerLiter}, ${data.sugarGramsPerLiter}, ${data.yeastPitchRatePercent}, ${data.brewWaterPercent}, ${data.durationDays}, 0, ${data.phMin}, ${data.phMax}, ${data.brixTarget}, ${data.brixTarget}, ${data.temperatureMin}, ${data.temperatureMax}, ${data.ttaTarget}, ${data.ttaTarget}, true, ${updatedByEmail}, NOW(), NOW())
         ON CONFLICT ("code")
         DO UPDATE SET
           "name" = EXCLUDED."name",
           "description" = EXCLUDED."description",
           "formulaSummary" = EXCLUDED."formulaSummary",
           "targetLiters" = EXCLUDED."targetLiters",
+          "teaType" = EXCLUDED."teaType",
+          "teaGramsPerLiter" = EXCLUDED."teaGramsPerLiter",
+          "sugarGramsPerLiter" = EXCLUDED."sugarGramsPerLiter",
+          "yeastPitchRatePercent" = EXCLUDED."yeastPitchRatePercent",
+          "brewWaterPercent" = EXCLUDED."brewWaterPercent",
           "durationDays" = EXCLUDED."durationDays",
           "durationHours" = EXCLUDED."durationHours",
           "phMin" = EXCLUDED."phMin",
@@ -160,24 +210,22 @@ export async function saveProductionFormula(data: {
         WHERE "formulaId" = ${formulaId}
       `;
 
-      for (const [index, step] of validSteps.entries()) {
-        const stepId = randomUUID();
+      const stepId = randomUUID();
+      await tx.$executeRaw`
+        INSERT INTO "ProductionFormulaStep"
+        ("id","formulaId","stepNumber","title","instructions","resultLiters","createdAt","updatedAt")
+        VALUES
+        (${stepId}, ${formulaId}, 1, ${"Receta base por litro"}, ${"Los componentes del blend de té se guardan por litro y se escalan según el lote deseado."}, 1, NOW(), NOW())
+      `;
 
+      for (const item of validBlendItems) {
+        const gramsPerLiter = (data.teaGramsPerLiter * item.sharePercent) / 100;
         await tx.$executeRaw`
-          INSERT INTO "ProductionFormulaStep"
-          ("id","formulaId","stepNumber","title","instructions","resultLiters","createdAt","updatedAt")
+          INSERT INTO "ProductionFormulaItem"
+          ("id","formulaId","stepId","sourceKind","sourceProductionType","rawMaterialId","quantity","freeTextName","sharePercent","defaultLocationId","notes","createdAt","updatedAt")
           VALUES
-          (${stepId}, ${formulaId}, ${index + 1}, ${step.title}, ${step.instructions || null}, ${step.resultLiters != null && Number.isFinite(step.resultLiters) ? step.resultLiters : null}, NOW(), NOW())
+          (${randomUUID()}, ${formulaId}, ${stepId}, ${"RAW_MATERIAL"}, NULL, ${item.rawMaterialId}, ${gramsPerLiter}, ${item.freeTextName || null}, ${item.sharePercent}, NULL, ${"TEA_BLEND"}, NOW(), NOW())
         `;
-
-        for (const item of step.items) {
-          await tx.$executeRaw`
-            INSERT INTO "ProductionFormulaItem"
-            ("id","formulaId","stepId","sourceKind","sourceProductionType","rawMaterialId","quantity","defaultLocationId","notes","createdAt","updatedAt")
-            VALUES
-            (${randomUUID()}, ${formulaId}, ${stepId}, ${item.sourceKind}, ${item.sourceKind === "BASE_BEVERAGE" ? item.sourceProductionType || data.code : null}, ${item.sourceKind === "RAW_MATERIAL" ? item.rawMaterialId || null : null}, ${item.quantity}, ${item.defaultLocationId || null}, ${item.notes?.trim() || null}, NOW(), NOW())
-          `;
-        }
       }
     });
 
@@ -188,7 +236,7 @@ export async function saveProductionFormula(data: {
   } catch (error: unknown) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "No se pudo guardar la formula",
+      error: error instanceof Error ? error.message : "No se pudo guardar la fórmula",
     };
   }
 }

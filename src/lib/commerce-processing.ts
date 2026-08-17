@@ -11,9 +11,7 @@ import {
 } from "@/lib/subscriptions";
 import { sendPurchaseConfirmationEmail, sendSubscriptionConfirmationEmail } from "@/lib/order-emails";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
-  apiVersion: "2023-10-16",
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
 function getStripeCurrentPeriodEnd(
   subscription: Stripe.Subscription,

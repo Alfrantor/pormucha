@@ -8,6 +8,11 @@ type FormulaRow = {
   description: string | null;
   formulaSummary: string | null;
   targetLiters: number | string | null;
+  teaType: string | null;
+  teaGramsPerLiter: number | string | null;
+  sugarGramsPerLiter: number | string | null;
+  yeastPitchRatePercent: number | string | null;
+  brewWaterPercent: number | string | null;
   durationDays: number;
   durationHours: number;
   updatedAt: Date | string;
@@ -30,6 +35,8 @@ type FormulaRow = {
   item_source_kind: "RAW_MATERIAL" | "BASE_BEVERAGE" | null;
   item_source_production_type: string | null;
   item_quantity: number | string | null;
+  item_free_text_name: string | null;
+  item_share_percent: number | string | null;
   item_notes: string | null;
   raw_material_id: string | null;
   raw_material_name: string | null;
@@ -51,6 +58,26 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
   await db.$executeRawUnsafe(`
     ALTER TABLE "ProductionFormula"
     ADD COLUMN IF NOT EXISTS "updatedByEmail" TEXT
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "teaType" TEXT
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "teaGramsPerLiter" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "sugarGramsPerLiter" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "yeastPitchRatePercent" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "brewWaterPercent" DECIMAL(65,30)
   `).catch(() => null);
   await db.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "ProductionFormulaStep" (
@@ -85,6 +112,14 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
     ALTER TABLE "ProductionFormulaItem"
     ADD COLUMN IF NOT EXISTS "sourceProductionType" TEXT
   `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormulaItem"
+    ADD COLUMN IF NOT EXISTS "freeTextName" TEXT
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormulaItem"
+    ADD COLUMN IF NOT EXISTS "sharePercent" DECIMAL(65,30)
+  `).catch(() => null);
 
   const rows = await db.$queryRawUnsafe<FormulaRow[]>(`
     SELECT
@@ -94,6 +129,11 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
       pf."description",
       pf."formulaSummary",
       pf."targetLiters",
+      pf."teaType",
+      pf."teaGramsPerLiter",
+      pf."sugarGramsPerLiter",
+      pf."yeastPitchRatePercent",
+      pf."brewWaterPercent",
       pf."durationDays",
       pf."durationHours",
       pf."updatedAt",
@@ -116,6 +156,8 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
       pfi."sourceKind" AS item_source_kind,
       pfi."sourceProductionType" AS item_source_production_type,
       pfi."quantity" AS item_quantity,
+      pfi."freeTextName" AS item_free_text_name,
+      pfi."sharePercent" AS item_share_percent,
       pfi."notes" AS item_notes,
       rm."id" AS raw_material_id,
       rm."name" AS raw_material_name,
@@ -143,6 +185,11 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         description: row.description,
         formulaSummary: row.formulaSummary,
         targetLiters: row.targetLiters != null ? toNumber(row.targetLiters) : null,
+        teaType: row.teaType,
+        teaGramsPerLiter: row.teaGramsPerLiter != null ? toNumber(row.teaGramsPerLiter) : null,
+        sugarGramsPerLiter: row.sugarGramsPerLiter != null ? toNumber(row.sugarGramsPerLiter) : null,
+        yeastPitchRatePercent: row.yeastPitchRatePercent != null ? toNumber(row.yeastPitchRatePercent) : null,
+        brewWaterPercent: row.brewWaterPercent != null ? toNumber(row.brewWaterPercent) : null,
         durationDays: Number(row.durationDays),
         durationHours: Number(row.durationHours),
         updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
@@ -158,6 +205,7 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         isActive: row.isActive,
         steps: [],
         items: [],
+        blendItems: [],
       });
     }
 
@@ -188,6 +236,8 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         rawMaterialName: isBaseBeverage ? `Bebida base tipo ${baseType || "-"}` : rawName || "Materia prima",
         rawMaterialUnit: isBaseBeverage ? "Lt" : rawUnit || "-",
         quantity: toNumber(row.item_quantity),
+        freeTextName: row.item_free_text_name,
+        sharePercent: row.item_share_percent != null ? toNumber(row.item_share_percent) : null,
         defaultLocationId: row.location_id,
         defaultLocationName: row.location_name,
         notes: row.item_notes,
@@ -197,6 +247,18 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
 
       if (row.step_id) {
         currentFormula?.steps.find((step) => step.id === row.step_id)?.items.push(itemView);
+      }
+
+      if (row.item_share_percent != null && currentFormula) {
+        currentFormula.blendItems.push({
+          id: row.item_id,
+          rawMaterialId: row.raw_material_id,
+          rawMaterialName: row.raw_material_name,
+          freeTextName: row.item_free_text_name,
+          sharePercent: toNumber(row.item_share_percent),
+          gramsPerLiter: toNumber(row.item_quantity),
+          unit: row.raw_material_unit || "g",
+        });
       }
     }
   });

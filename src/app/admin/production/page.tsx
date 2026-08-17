@@ -27,6 +27,35 @@ function serialize(value: any): any {
   return value;
 }
 
+async function ensureProductionPhaseTable() {
+  await db.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ProductionPhaseRecord" (
+      "id" TEXT NOT NULL,
+      "productionId" TEXT NOT NULL,
+      "phase" INTEGER NOT NULL,
+      "receivedCondition" TEXT,
+      "receivedBy" TEXT,
+      "measuredBy" TEXT,
+      "startedBy" TEXT,
+      "measuredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "ph" DECIMAL(65,30),
+      "brix" DECIMAL(65,30),
+      "temperature" DECIMAL(65,30),
+      "acidity" DECIMAL(65,30),
+      "notes" TEXT,
+      "receivedLiters" DECIMAL(65,30),
+      "remainingLiters" DECIMAL(65,30),
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ProductionPhaseRecord_pkey" PRIMARY KEY ("id")
+    )
+  `).catch(() => null);
+
+  await db.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProductionPhaseRecord_productionId_idx"
+    ON "ProductionPhaseRecord"("productionId")
+  `).catch(() => null);
+}
+
 export default async function ProductionPage() {
   const { sessionClaims } = await auth();
   const role = (sessionClaims?.metadata as any)?.role;
@@ -35,6 +64,8 @@ export default async function ProductionPage() {
   if (role !== "admin" && role !== "vendedor") {
     redirect("/perfil");
   }
+
+  await ensureProductionPhaseTable();
 
   const [tanks, productions, rawMaterials, locations, flavors, gasRows, labelRows, phaseRows, formulas, productionFormulaRefs, productionInputLitersRows, baseBeverageInventory] = await Promise.all([
     db.tank.findMany({ orderBy: { createdAt: "asc" } }),
