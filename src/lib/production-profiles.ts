@@ -56,7 +56,7 @@ export type ProductionFormulaView = {
   id: string;
   code: string;
   name: string;
-  recipeType?: "ACIDIFIER" | "FLAVOR" | string | null;
+  recipeType?: "ACIDIFIER" | "SCOOBY" | "FLAVOR" | string | null;
   description?: string | null;
   formulaSummary?: string | null;
   targetLiters?: number | null;

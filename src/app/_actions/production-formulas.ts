@@ -62,7 +62,7 @@ async function ensureProductionFormulaColumns() {
 
 export async function saveProductionFormula(data: {
   code: string;
-  recipeType: "ACIDIFIER" | "FLAVOR";
+  recipeType: "ACIDIFIER" | "SCOOBY" | "FLAVOR";
   name: string;
   teaType?: string;
   teaGramsPerLiter?: number;
@@ -91,7 +91,7 @@ export async function saveProductionFormula(data: {
     if (!data.code.trim()) return { success: false, error: "Código requerido" };
     if (!data.name.trim()) return { success: false, error: "Nombre requerido" };
 
-    const recipeType = data.recipeType === "FLAVOR" ? "FLAVOR" : "ACIDIFIER";
+    const recipeType = data.recipeType === "FLAVOR" ? "FLAVOR" : data.recipeType === "SCOOBY" ? "SCOOBY" : "ACIDIFIER";
 
     let formulaSummary = "";
     let targetLiters = 1;
@@ -121,7 +121,7 @@ export async function saveProductionFormula(data: {
       notes: string;
     }> = [];
 
-    if (recipeType === "ACIDIFIER") {
+    if (recipeType !== "FLAVOR") {
       if (!Number.isFinite(data.teaGramsPerLiter) || Number(data.teaGramsPerLiter) <= 0) {
         return { success: false, error: "Indica cuántos gramos de té lleva por litro" };
       }
@@ -319,7 +319,7 @@ export async function saveProductionFormula(data: {
         INSERT INTO "ProductionFormulaStep"
         ("id","formulaId","stepNumber","title","instructions","resultLiters","createdAt","updatedAt")
         VALUES
-        (${stepId}, ${formulaId}, 1, ${recipeType === "FLAVOR" ? "Sabor por litro" : "Receta base por litro"}, ${recipeType === "FLAVOR" ? "Los ingredientes de sabor se guardan por litro para usarse en F2." : "Los componentes del blend de té se guardan por litro y se escalan según el lote deseado."}, 1, NOW(), NOW())
+        (${stepId}, ${formulaId}, 1, ${recipeType === "FLAVOR" ? "Sabor por litro" : recipeType === "SCOOBY" ? "SCOOBY por litro" : "Receta base por litro"}, ${recipeType === "FLAVOR" ? "Los ingredientes de sabor se guardan por litro para usarse en F2." : "Los componentes del blend de té se guardan por litro y se escalan según el lote deseado."}, 1, NOW(), NOW())
       `;
 
       for (const item of itemRows) {

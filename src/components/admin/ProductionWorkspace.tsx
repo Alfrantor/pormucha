@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { startTransition, useState } from "react";
+import ProductionFormulasManager from "@/components/admin/ProductionFormulasManager";
 import TabProduccion from "@/components/admin/TabProduccion";
 import {
   cancelGasificationBatch,
@@ -31,11 +32,21 @@ export default function ProductionWorkspace({
   labelingBatches,
   baseBeverageInventory,
   finalBeverageBlends,
+  initialTab = "bebida",
   userEmail,
 }: any) {
   const router = useRouter();
-  const [tab, setTab] = useState<WorkspaceTab>("bebida");
+  const [tab, setTab] = useState<WorkspaceTab>(initialTab);
+  const [formulaModalOpen, setFormulaModalOpen] = useState(false);
+  const [formulaModalCode, setFormulaModalCode] = useState<string | null>(null);
+  const [formulaModalKey, setFormulaModalKey] = useState(0);
   const safeFormulas = Array.isArray(formulas) ? formulas : [];
+
+  const openFormulaModal = (code: string | null = null) => {
+    setFormulaModalCode(code);
+    setFormulaModalKey((current) => current + 1);
+    setFormulaModalOpen(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -83,7 +94,28 @@ export default function ProductionWorkspace({
         />
       )}
 
-      {tab === "formulas" && <FormulaLibraryPanel formulas={safeFormulas} />}
+      {tab === "formulas" && (
+        <FormulaLibraryPanel
+          formulas={safeFormulas}
+          onCreate={() => openFormulaModal(null)}
+          onEdit={(code: string) => openFormulaModal(code)}
+        />
+      )}
+
+      {formulaModalOpen && (
+        <FormulaModal onClose={() => setFormulaModalOpen(false)}>
+          <ProductionFormulasManager
+            key={`${formulaModalKey}-${formulaModalCode || "new"}`}
+            formulas={safeFormulas}
+            rawMaterials={rawMaterials}
+            initialSelectedCode={formulaModalCode || undefined}
+            hideTopAction
+            autoCreateNew={formulaModalCode === null}
+            compactModal
+            onDone={() => setFormulaModalOpen(false)}
+          />
+        </FormulaModal>
+      )}
     </div>
   );
 }
@@ -438,17 +470,32 @@ function LabelingPanel({ locations, flavors, batches, userEmail, onRefresh }: an
   );
 }
 
-function FormulaLibraryPanel({ formulas }: { formulas: any[] }) {
+function FormulaLibraryPanel({
+  formulas,
+  onCreate,
+  onEdit,
+}: {
+  formulas: any[];
+  onCreate: () => void;
+  onEdit: (code: string) => void;
+}) {
   const visibleFormulas = Array.isArray(formulas) ? formulas : [];
 
   return (
     <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Biblioteca</p>
-        <h3 className="mt-2 text-2xl font-black text-slate-950">Fórmulas</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          Aquí puedes revisar las fórmulas activas, sus pasos, duración y los insumos que usa cada una.
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Biblioteca</p>
+            <h3 className="mt-2 text-2xl font-black text-slate-950">Fórmulas</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Aquí puedes revisar las fórmulas activas, sus pasos, duración y los insumos que usa cada una.
+            </p>
+          </div>
+          <button type="button" onClick={onCreate} className="rounded-full bg-slate-950 px-4 py-3 text-sm font-black text-white hover:bg-slate-800">
+            Nueva receta
+          </button>
+        </div>
 
         <div className="mt-5 space-y-3">
           {visibleFormulas.length === 0 && (
@@ -503,9 +550,18 @@ function FormulaLibraryPanel({ formulas }: { formulas: any[] }) {
                   <p className="text-sm font-black text-slate-950">{formula.name}</p>
                   <p className="text-xs text-slate-500">Tipo {formula.code}</p>
                 </div>
-                <span className="rounded-full bg-slate-950 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-white">
-                  {formula.targetLiters != null ? `${Number(formula.targetLiters).toLocaleString("es-MX")} Lt` : "Sin objetivo"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-slate-950 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-white">
+                    {formula.targetLiters != null ? `${Number(formula.targetLiters).toLocaleString("es-MX")} Lt` : "Sin objetivo"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onEdit(formula.code)}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-700 hover:border-slate-300 hover:text-slate-950"
+                  >
+                    Editar
+                  </button>
+                </div>
               </div>
               <div className="mt-3 space-y-2">
                 {(Array.isArray(formula.steps) ? formula.steps : []).map((step: any, index: number) => (
@@ -519,6 +575,25 @@ function FormulaLibraryPanel({ formulas }: { formulas: any[] }) {
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+function FormulaModal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/70 p-2 backdrop-blur-sm sm:items-center sm:p-3">
+      <div className="flex h-[calc(100dvh-1rem)] w-[min(1100px,calc(100vw-1rem))] flex-col overflow-hidden rounded-[1.25rem] bg-white shadow-2xl sm:h-[88dvh] sm:w-[min(1040px,calc(100vw-2rem))] sm:rounded-[1.6rem]">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Producción</p>
+            <h3 className="mt-1 text-lg font-black text-slate-950 sm:text-xl">Editor de recetas</h3>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800 sm:px-4 sm:text-sm">
+            Cerrar
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">{children}</div>
+      </div>
     </div>
   );
 }

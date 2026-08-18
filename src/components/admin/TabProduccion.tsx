@@ -63,10 +63,22 @@ function buildIngredientsFromFormula(
 
   const rows: IngredientInput[] = [];
   const blendItems = Array.isArray(formula.blendItems) ? formula.blendItems : [];
+  const flavorItems = Array.isArray(formula.flavorIngredients) ? formula.flavorIngredients : [];
 
   blendItems.forEach((item) => {
     if (!item.rawMaterialId) return;
     const quantity = Number(item.gramsPerLiter || 0) * targetLiters;
+    if (!(quantity > 0)) return;
+    rows.push({
+      rawMaterialId: item.rawMaterialId,
+      quantity,
+      locationId: defaultLocationId || "",
+    });
+  });
+
+  flavorItems.forEach((item) => {
+    if (!item.rawMaterialId) return;
+    const quantity = Number(item.quantity || 0) * targetLiters;
     if (!(quantity > 0)) return;
     rows.push({
       rawMaterialId: item.rawMaterialId,
@@ -228,23 +240,23 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     liters: string;
   }>>([{ sourceType: "BASE_LOT", sourceId: "", liters: "" }]);
 
-  const acidifierFormulas = useMemo(() => {
+  const productionFormulaOptions = useMemo(() => {
     return safeFormulas
-      .filter((formula: any) => formula?.isActive && formula?.recipeType !== "FLAVOR")
+      .filter((formula: any) => formula?.isActive)
       .sort((a: any, b: any) => String(a?.name || "").localeCompare(String(b?.name || ""), "es-MX", { sensitivity: "base" }));
   }, [safeFormulas]);
 
   const formulasByCode = useMemo(() => {
     const map = new Map<string, any>();
-    acidifierFormulas.forEach((formula: any) => {
+    productionFormulaOptions.forEach((formula: any) => {
       if (formula?.isActive) {
         map.set(formula.code, formula);
       }
     });
     return map;
-  }, [acidifierFormulas]);
+  }, [productionFormulaOptions]);
 
-  const formulaOptions = acidifierFormulas;
+  const formulaOptions = productionFormulaOptions;
   const flavorFormulaOptions = useMemo(() => {
     return safeFormulas
       .filter((formula: any) => formula?.isActive && formula?.recipeType === "FLAVOR")
@@ -288,10 +300,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
           : safeProductions.filter((production: any) => production.status === statusFilter);
 
     const decorated = baseList.map((production: any) => {
-      const formula =
-        production.formula?.recipeType === "FLAVOR"
-          ? null
-          : production.formula || formulasByCode.get(production.productType) || null;
+      const formula = production.formula || formulasByCode.get(production.productType) || null;
       const metrics = getFermentationMetrics(production, formula);
       return { production, formula, metrics };
     });
@@ -1165,11 +1174,21 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                             <input
                               type="number"
                               min="0"
+                              max={resolved?.availableLiters != null ? Number(resolved.availableLiters) : undefined}
                               step="0.1"
                               value={row.liters}
                               onChange={(e) =>
                                 setFinalBlendRows((prev) =>
-                                  prev.map((entry, rowIndex) => (rowIndex === index ? { ...entry, liters: e.target.value } : entry)),
+                                  prev.map((entry, rowIndex) => {
+                                    if (rowIndex !== index) return entry;
+                                    const rawValue = e.target.value;
+                                    if (resolved?.availableLiters == null) {
+                                      return { ...entry, liters: rawValue };
+                                    }
+                                    const numericValue = Number(rawValue || 0);
+                                    const limitedValue = Math.min(numericValue, Number(resolved.availableLiters));
+                                    return { ...entry, liters: rawValue === "" ? "" : String(limitedValue) };
+                                  }),
                                 )
                               }
                               className="w-full rounded-lg border p-2 text-sm text-center"

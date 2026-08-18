@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useMemo, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveProductionFormula } from "@/app/_actions/production-formulas";
 import type { ProductionFormulaView } from "@/lib/production-profiles";
@@ -27,7 +27,7 @@ type FlavorIngredientRow = {
 
 type FormulaState = {
   code: string;
-  recipeType: "ACIDIFIER" | "FLAVOR";
+  recipeType: "ACIDIFIER" | "SCOOBY" | "FLAVOR";
   name: string;
   teaType: string;
   teaGramsPerLiter: string;
@@ -107,10 +107,16 @@ function createDefaultFormula(code: string): FormulaState {
   };
 }
 
+function getRecipeTypeLabel(recipeType?: string | null) {
+  if (recipeType === "FLAVOR") return "Sabor";
+  if (recipeType === "SCOOBY") return "Scooby";
+  return "Acidificante";
+}
+
 function mapFormulaToState(formula: ProductionFormulaView): FormulaState {
   return {
     code: normalizeCode(formula.code),
-    recipeType: formula.recipeType === "FLAVOR" ? "FLAVOR" : "ACIDIFIER",
+    recipeType: formula.recipeType === "FLAVOR" ? "FLAVOR" : formula.recipeType === "SCOOBY" ? "SCOOBY" : "ACIDIFIER",
     name: formula.name || "",
     teaType: formula.teaType || "",
     teaGramsPerLiter: formula.teaGramsPerLiter != null ? String(formula.teaGramsPerLiter) : "",
@@ -183,24 +189,39 @@ function Field({ label, helper, children }: { label: string; helper?: string; ch
 export default function ProductionFormulasManager({
   formulas,
   rawMaterials,
+  initialSelectedCode,
+  hideTopAction = false,
+  autoCreateNew = false,
+  compactModal = false,
+  onDone,
 }: {
   formulas: ProductionFormulaView[];
   rawMaterials: CatalogItem[];
+  initialSelectedCode?: string | null;
+  hideTopAction?: boolean;
+  autoCreateNew?: boolean;
+  compactModal?: boolean;
+  onDone?: () => void;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
   const initialState = useMemo(() => buildInitialState(formulas), [formulas]);
+  const defaultSelectedCode =
+    initialSelectedCode && initialState.order.includes(normalizeCode(initialSelectedCode))
+      ? normalizeCode(initialSelectedCode)
+      : initialState.order[0] || "";
   const [forms, setForms] = useState<Record<string, FormulaState>>(initialState.forms);
   const [order, setOrder] = useState<string[]>(initialState.order);
-  const [selectedCode, setSelectedCode] = useState<string>(initialState.order[0] || "");
-  const [editingCode, setEditingCode] = useState<string | null>(initialState.order[0] || null);
+  const [selectedCode, setSelectedCode] = useState<string>(defaultSelectedCode);
+  const [editingCode, setEditingCode] = useState<string | null>(defaultSelectedCode || null);
   const [savingCode, setSavingCode] = useState<string | null>(null);
   const [message, setMessage] = useState<Record<string, string>>({});
   const [desiredLiters, setDesiredLiters] = useState<Record<string, string>>({});
+  const initializedCreate = useRef(false);
 
   const currentFormula = selectedCode ? forms[selectedCode] : undefined;
-  const isEditing = editingCode === selectedCode;
+  const isEditing = compactModal ? true : editingCode === selectedCode;
   const rawMaterialMap = useMemo(() => new Map(rawMaterials.map((item) => [item.id, item])), [rawMaterials]);
   const formulaCodes = order.length > 0 ? order : Object.keys(forms);
 
@@ -220,6 +241,13 @@ export default function ProductionFormulasManager({
     setMessage((prev) => ({ ...prev, [code]: "" }));
     setDesiredLiters((prev) => ({ ...prev, [code]: "20" }));
   };
+
+  useEffect(() => {
+    if (!autoCreateNew || initializedCreate.current) return;
+    initializedCreate.current = true;
+    addFormula();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoCreateNew]);
 
   const cancelEdit = () => {
     if (!selectedCode) return;
@@ -280,6 +308,7 @@ export default function ProductionFormulasManager({
     if (result.success) {
       setEditingCode(null);
       startTransition(() => router.refresh());
+      onDone?.();
     }
   };
 
@@ -292,55 +321,59 @@ export default function ProductionFormulasManager({
   const totalShare = (currentFormula?.blendItems || []).reduce((sum, item) => sum + Number(item.sharePercent || 0), 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
-        <button type="button" onClick={addFormula} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
-          Nueva receta
-        </button>
-      </div>
+    <div className={compactModal ? "space-y-4" : "space-y-6"}>
+      {!hideTopAction && !compactModal && (
+        <div className="flex justify-end">
+          <button type="button" onClick={addFormula} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
+            Nueva receta
+          </button>
+        </div>
+      )}
 
-      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
-        <aside className="rounded-[1.8rem] border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-black text-slate-950">Recetas guardadas</h3>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{formulaCodes.length}</span>
-          </div>
-          <div className="mt-4 space-y-3">
-            {formulaCodes.length === 0 ? (
-              <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Aún no hay recetas. Crea la primera.</p>
-            ) : (
-              formulaCodes.map((code) => {
-                const formula = forms[code];
-                const active = selectedCode === code;
-                return (
-                  <button
-                    key={code}
-                    type="button"
-                    onClick={() => {
-                      setSelectedCode(code);
-                      setEditingCode(null);
-                    }}
-                    className={`w-full rounded-2xl border p-4 text-left transition ${
-                      active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-white"
-                    }`}
-                  >
-                    <p className={`text-xs font-black uppercase tracking-[0.25em] ${active ? "text-white/65" : "text-slate-400"}`}>
-                      {formula.recipeType === "FLAVOR" ? "Sabor" : "Acidificante"}
-                    </p>
-                    <h4 className="mt-2 text-lg font-black">{formula.name || "Sin nombre"}</h4>
-                    <p className={`mt-2 text-xs ${active ? "text-white/75" : "text-slate-500"}`}>
-                      {formula.recipeType === "FLAVOR"
-                        ? `${formula.f2ConditionDays || "0"} días F2`
-                        : `${formula.teaType || "Sin té"} · ${formula.durationDays || "0"} días`}
-                    </p>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </aside>
+      <div className={compactModal ? "grid gap-4" : "grid gap-6 xl:grid-cols-[320px_1fr]"}>
+        {!compactModal && (
+          <aside className="rounded-[1.8rem] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-black text-slate-950">Recetas guardadas</h3>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{formulaCodes.length}</span>
+            </div>
+            <div className="mt-4 space-y-3">
+              {formulaCodes.length === 0 ? (
+                <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Aún no hay recetas. Crea la primera.</p>
+              ) : (
+                formulaCodes.map((code) => {
+                  const formula = forms[code];
+                  const active = selectedCode === code;
+                  return (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCode(code);
+                        setEditingCode(null);
+                      }}
+                      className={`w-full rounded-2xl border p-4 text-left transition ${
+                        active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-white"
+                      }`}
+                    >
+                      <p className={`text-xs font-black uppercase tracking-[0.25em] ${active ? "text-white/65" : "text-slate-400"}`}>
+                        {getRecipeTypeLabel(formula.recipeType)}
+                      </p>
+                      <h4 className="mt-2 text-lg font-black">{formula.name || "Sin nombre"}</h4>
+                      <p className={`mt-2 text-xs ${active ? "text-white/75" : "text-slate-500"}`}>
+                        {formula.recipeType === "FLAVOR"
+                          ? `${formula.f2ConditionDays || "0"} días F2`
+                          : `${formula.teaType || "Sin té"} · ${formula.durationDays || "0"} días`}
+                      </p>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </aside>
+        )}
 
-        <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
+        <section className={`rounded-[1.8rem] border border-slate-200 bg-white ${compactModal ? "p-4 sm:p-5" : "p-6"} shadow-sm`}>
           {!currentFormula ? (
             <div className="rounded-[1.4rem] border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
               <p className="text-lg font-black text-slate-900">No hay ninguna receta seleccionada</p>
@@ -350,7 +383,7 @@ export default function ProductionFormulasManager({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">
-                    {currentFormula.recipeType === "FLAVOR" ? "Receta de sabor" : "Receta acidificante"}
+                    {currentFormula.recipeType === "FLAVOR" ? "Receta de sabor" : currentFormula.recipeType === "SCOOBY" ? "Receta SCOOBY" : "Receta acidificante"}
                   </p>
                   <h3 className="mt-2 text-3xl font-black text-slate-950">{currentFormula.name || "Nueva receta"}</h3>
                   <p className="mt-2 text-sm text-slate-500">
@@ -536,12 +569,18 @@ export default function ProductionFormulasManager({
                       onChange={(event) =>
                         updateFormula(selectedCode, (current) => ({
                           ...current,
-                          recipeType: event.target.value === "FLAVOR" ? "FLAVOR" : "ACIDIFIER",
+                          recipeType:
+                            event.target.value === "FLAVOR"
+                              ? "FLAVOR"
+                              : event.target.value === "SCOOBY"
+                                ? "SCOOBY"
+                                : "ACIDIFIER",
                         }))
                       }
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900"
                     >
                       <option value="ACIDIFIER">Acidificante</option>
+                      <option value="SCOOBY">Scooby</option>
                       <option value="FLAVOR">Sabor</option>
                     </select>
                   </Field>

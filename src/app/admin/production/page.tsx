@@ -3,7 +3,13 @@ import { loadProductionFormulas } from "@/lib/production-formulas";
 import ProductionWorkspace from "@/components/admin/ProductionWorkspace";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import Link from "next/link";
+
+type ProductionTab = "bebida" | "gasificado" | "etiquetado" | "formulas";
+
+function resolveInitialTab(value: string | string[] | undefined): ProductionTab {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw === "gasificado" || raw === "etiquetado" || raw === "formulas" ? raw : "bebida";
+}
 
 function isDecimalLike(value: unknown): value is { toNumber: () => number } {
   if (!value || typeof value !== "object") return false;
@@ -90,10 +96,16 @@ async function ensureFinalBeverageBlendTables() {
   `).catch(() => null);
 }
 
-export default async function ProductionPage() {
+export default async function ProductionPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { sessionClaims } = await auth();
   const role = (sessionClaims?.metadata as any)?.role;
   const user = await currentUser();
+  const params = (await searchParams) || {};
+  const initialTab = resolveInitialTab(params.tab);
 
   if (role !== "admin" && role !== "vendedor") {
     redirect("/perfil");
@@ -270,14 +282,6 @@ export default async function ProductionPage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/admin/catalog/formulas"
-              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-950"
-            >
-              Ver recetas
-            </Link>
-          </div>
         </div>
       </section>
 
@@ -292,6 +296,7 @@ export default async function ProductionPage() {
         labelingBatches={serialize(labelingBatches)}
         baseBeverageInventory={serialize(baseBeverageInventoryRows)}
         finalBeverageBlends={serialize(finalBeverageBlends)}
+        initialTab={initialTab}
         userEmail={user?.emailAddresses[0]?.emailAddress || ""}
       />
     </div>

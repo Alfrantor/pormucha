@@ -55,7 +55,10 @@ const SIDEBAR_SECTIONS: Array<{ title: string; links: NavLink[] }> = [
   },
   {
     title: "Producción",
-    links: [{ href: "/admin/production", label: "Producción", description: "Cubetas, lotes y parámetros", icon: <FlaskConical size={16} /> }],
+    links: [
+      { href: "/admin/production", label: "Producción", description: "Cubetas, lotes y parámetros", icon: <FlaskConical size={16} /> },
+      { href: "/admin/production?tab=formulas", label: "Recetas", description: "Fórmulas y preparación", icon: <FlaskConical size={16} /> },
+    ],
   },
   {
     title: "Usuarios",
@@ -70,6 +73,7 @@ const ClientUserButton = dynamic(() => import("@clerk/nextjs").then((mod) => mod
 
 function isActive(pathname: string, href: string) {
   if (href === "/admin") return pathname === href;
+  if (href.includes("?")) return pathname === href.split("?")[0] && false;
   return pathname.startsWith(href);
 }
 
