@@ -56,6 +56,40 @@ async function ensureProductionPhaseTable() {
   `).catch(() => null);
 }
 
+async function ensureFinalBeverageBlendTables() {
+  await db.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "FinalBeverageBlend" (
+      "id" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+      "targetBrix" DECIMAL(65,30) NOT NULL,
+      "weightedBrix" DECIMAL(65,30) NOT NULL,
+      "sugarToAddKg" DECIMAL(65,30) NOT NULL,
+      "totalLiters" DECIMAL(65,30) NOT NULL,
+      "notes" TEXT,
+      "createdBy" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "FinalBeverageBlend_pkey" PRIMARY KEY ("id")
+    )
+  `).catch(() => null);
+
+  await db.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "FinalBeverageBlendComponent" (
+      "id" TEXT NOT NULL,
+      "blendId" TEXT NOT NULL,
+      "sourceType" TEXT NOT NULL,
+      "baseBeverageInventoryId" TEXT,
+      "productionFormulaId" TEXT,
+      "sourceLabel" TEXT NOT NULL,
+      "liters" DECIMAL(65,30) NOT NULL,
+      "brixSnapshot" DECIMAL(65,30) NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "FinalBeverageBlendComponent_pkey" PRIMARY KEY ("id")
+    )
+  `).catch(() => null);
+}
+
 export default async function ProductionPage() {
   const { sessionClaims } = await auth();
   const role = (sessionClaims?.metadata as any)?.role;
@@ -66,8 +100,9 @@ export default async function ProductionPage() {
   }
 
   await ensureProductionPhaseTable();
+  await ensureFinalBeverageBlendTables();
 
-  const [tanks, productions, rawMaterials, locations, flavors, gasRows, labelRows, phaseRows, formulas, productionFormulaRefs, productionInputLitersRows, baseBeverageInventory] = await Promise.all([
+  const [tanks, productions, rawMaterials, locations, flavors, gasRows, labelRows, phaseRows, formulas, productionFormulaRefs, productionInputLitersRows, baseBeverageInventory, finalBlendRows, finalBlendComponentRows] = await Promise.all([
     db.tank.findMany({ orderBy: { createdAt: "asc" } }),
     db.production.findMany({
       include: {
@@ -143,6 +178,16 @@ export default async function ProductionPage() {
       LEFT JOIN "Production" p ON p.id = bbi."productionId"
       ORDER BY bbi."createdAt" DESC
     `).catch(() => []),
+    db.$queryRawUnsafe(`
+      SELECT *
+      FROM "FinalBeverageBlend"
+      ORDER BY "createdAt" DESC
+    `).catch(() => []),
+    db.$queryRawUnsafe(`
+      SELECT *
+      FROM "FinalBeverageBlendComponent"
+      ORDER BY "createdAt" ASC
+    `).catch(() => []),
   ]);
 
   const gasificationBatches = (gasRows as any[]).map((row) => ({
@@ -201,6 +246,18 @@ export default async function ProductionPage() {
     };
   });
 
+  const finalBlendComponentsByBlendId = new Map<string, any[]>();
+  (finalBlendComponentRows as any[]).forEach((row) => {
+    const list = finalBlendComponentsByBlendId.get(row.blendId) || [];
+    list.push(row);
+    finalBlendComponentsByBlendId.set(row.blendId, list);
+  });
+
+  const finalBeverageBlends = (finalBlendRows as any[]).map((row) => ({
+    ...row,
+    components: finalBlendComponentsByBlendId.get(row.id) || [],
+  }));
+
   return (
     <div className="space-y-6">
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
@@ -234,6 +291,7 @@ export default async function ProductionPage() {
         gasificationBatches={serialize(gasificationBatches)}
         labelingBatches={serialize(labelingBatches)}
         baseBeverageInventory={serialize(baseBeverageInventoryRows)}
+        finalBeverageBlends={serialize(finalBeverageBlends)}
         userEmail={user?.emailAddresses[0]?.emailAddress || ""}
       />
     </div>

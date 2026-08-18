@@ -30,6 +30,7 @@ export default function ProductionWorkspace({
   gasificationBatches,
   labelingBatches,
   baseBeverageInventory,
+  finalBeverageBlends,
   userEmail,
 }: any) {
   const router = useRouter();
@@ -55,6 +56,7 @@ export default function ProductionWorkspace({
           locations={locations}
           formulas={formulas}
           baseBeverageInventory={baseBeverageInventory}
+          finalBeverageBlends={finalBeverageBlends}
           userEmail={userEmail}
         />
       )}
@@ -65,6 +67,7 @@ export default function ProductionWorkspace({
           locations={locations}
           flavors={flavors}
           batches={gasificationBatches}
+          finalBeverageBlends={finalBeverageBlends}
           userEmail={userEmail}
           onRefresh={() => startTransition(() => router.refresh())}
         />
@@ -109,20 +112,26 @@ function TabButton({
   );
 }
 
-function GasificationPanel({ tanks, locations, flavors, batches, userEmail, onRefresh }: any) {
+function GasificationPanel({ tanks, locations, flavors, batches, finalBeverageBlends, userEmail, onRefresh }: any) {
   const [form, setForm] = useState({
     name: "",
     flavorId: "",
     tankId: "",
     locationId: "",
+    finalBeverageBlendId: "",
     startedAt: new Date().toISOString().slice(0, 16),
     litersProcessed: "",
+    bottlesUsed: "",
     pressurePsi: "",
     carbonationVol: "",
     notes: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const activeFinalBlends = React.useMemo(
+    () => (Array.isArray(finalBeverageBlends) ? finalBeverageBlends : []).filter((blend: any) => String(blend.status) === "ACTIVE"),
+    [finalBeverageBlends],
+  );
 
   const submit = async () => {
     setSaving(true);
@@ -132,8 +141,10 @@ function GasificationPanel({ tanks, locations, flavors, batches, userEmail, onRe
       flavorId: form.flavorId || undefined,
       tankId: form.tankId || undefined,
       locationId: form.locationId || undefined,
+      finalBeverageBlendId: form.finalBeverageBlendId || undefined,
       startedAt: form.startedAt,
       litersProcessed: form.litersProcessed ? Number(form.litersProcessed) : undefined,
+      bottlesUsed: form.bottlesUsed ? Number(form.bottlesUsed) : undefined,
       pressurePsi: form.pressurePsi ? Number(form.pressurePsi) : undefined,
       carbonationVol: form.carbonationVol ? Number(form.carbonationVol) : undefined,
       notes: form.notes,
@@ -149,8 +160,10 @@ function GasificationPanel({ tanks, locations, flavors, batches, userEmail, onRe
       flavorId: "",
       tankId: "",
       locationId: "",
+      finalBeverageBlendId: "",
       startedAt: new Date().toISOString().slice(0, 16),
       litersProcessed: "",
+      bottlesUsed: "",
       pressurePsi: "",
       carbonationVol: "",
       notes: "",
@@ -185,11 +198,24 @@ function GasificationPanel({ tanks, locations, flavors, batches, userEmail, onRe
               {locations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
             </select>
           </Field>
+          <Field label="Bebida final origen">
+            <select value={form.finalBeverageBlendId} onChange={(e) => setForm({ ...form, finalBeverageBlendId: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm">
+              <option value="">Selecciona</option>
+              {activeFinalBlends.map((blend: any) => (
+                <option key={blend.id} value={blend.id}>
+                  {blend.name} · {Number(blend.totalLiters || 0).toLocaleString("es-MX")} Lt · Brix {Number(blend.weightedBrix || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="Inicio">
             <input type="datetime-local" value={form.startedAt} onChange={(e) => setForm({ ...form, startedAt: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
           </Field>
           <Field label="Litros a gasificar">
             <input type="number" value={form.litersProcessed} onChange={(e) => setForm({ ...form, litersProcessed: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
+          </Field>
+          <Field label="Botellas etiquetadas a usar">
+            <input type="number" value={form.bottlesUsed} onChange={(e) => setForm({ ...form, bottlesUsed: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
           </Field>
           <Field label="PSI objetivo">
             <input type="number" value={form.pressurePsi} onChange={(e) => setForm({ ...form, pressurePsi: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
@@ -215,11 +241,12 @@ function GasificationPanel({ tanks, locations, flavors, batches, userEmail, onRe
           `Sabor: ${batch.flavor?.name || "-"}`,
           `Cubeta: ${batch.tank?.name || "-"}`,
           `Litros: ${batch.litersProcessed ?? "-"}`,
-          `PSI: ${batch.pressurePsi ?? "-"}`,
+          `Botellas: ${batch.bottlesUsed ?? "-"}`,
         ]}
         onComplete={async (batch: any) => {
           await completeGasificationBatch(batch.id, {
             litersProcessed: batch.litersProcessed ?? undefined,
+            bottlesUsed: batch.bottlesUsed ?? undefined,
             pressurePsi: batch.pressurePsi ?? undefined,
             carbonationVol: batch.carbonationVol ?? undefined,
             notes: batch.notes || undefined,

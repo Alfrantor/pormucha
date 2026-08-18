@@ -27,6 +27,7 @@ export type ProductionFormulaItemView = {
   quantity: number;
   freeTextName?: string | null;
   sharePercent?: number | null;
+  unitOverride?: string | null;
   defaultLocationId?: string | null;
   defaultLocationName?: string | null;
   notes?: string | null;
@@ -55,6 +56,7 @@ export type ProductionFormulaView = {
   id: string;
   code: string;
   name: string;
+  recipeType?: "ACIDIFIER" | "FLAVOR" | string | null;
   description?: string | null;
   formulaSummary?: string | null;
   targetLiters?: number | null;
@@ -63,6 +65,11 @@ export type ProductionFormulaView = {
   sugarGramsPerLiter?: number | null;
   yeastPitchRatePercent?: number | null;
   brewWaterPercent?: number | null;
+  flavorJuicePercent?: number | null;
+  flavorItemName?: string | null;
+  co2GramsPerLiter?: number | null;
+  carbonationMethod?: string | null;
+  f2ConditionDays?: number | null;
   durationDays: number;
   durationHours: number;
   updatedAt?: string | null;
@@ -79,6 +86,7 @@ export type ProductionFormulaView = {
   steps: ProductionFormulaStepView[];
   items: ProductionFormulaItemView[];
   blendItems: ProductionFormulaBlendItemView[];
+  flavorIngredients: ProductionFormulaItemView[];
 };
 
 export const PRODUCTION_PROFILES: Record<ProductionType, ProductionProfile> = {

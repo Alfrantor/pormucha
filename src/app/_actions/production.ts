@@ -92,6 +92,79 @@ async function ensureBaseBeverageStorageTables(client: typeof db) {
   `).catch(() => null);
 }
 
+async function ensureFinalBeverageBlendTables(client: typeof db) {
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "FinalBeverageBlend" (
+      "id" TEXT NOT NULL,
+      "name" TEXT NOT NULL,
+      "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+      "targetBrix" DECIMAL(65,30) NOT NULL,
+      "weightedBrix" DECIMAL(65,30) NOT NULL,
+      "sugarToAddKg" DECIMAL(65,30) NOT NULL,
+      "totalLiters" DECIMAL(65,30) NOT NULL,
+      "notes" TEXT,
+      "createdBy" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "FinalBeverageBlend_pkey" PRIMARY KEY ("id")
+    )
+  `).catch(() => null);
+
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "FinalBeverageBlendComponent" (
+      "id" TEXT NOT NULL,
+      "blendId" TEXT NOT NULL,
+      "sourceType" TEXT NOT NULL,
+      "baseBeverageInventoryId" TEXT,
+      "productionFormulaId" TEXT,
+      "sourceLabel" TEXT NOT NULL,
+      "liters" DECIMAL(65,30) NOT NULL,
+      "brixSnapshot" DECIMAL(65,30) NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "FinalBeverageBlendComponent_pkey" PRIMARY KEY ("id")
+    )
+  `).catch(() => null);
+
+  await client.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "FinalBeverageBlend_status_idx"
+    ON "FinalBeverageBlend"("status")
+  `).catch(() => null);
+
+  await client.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "FinalBeverageBlendComponent_blendId_idx"
+    ON "FinalBeverageBlendComponent"("blendId")
+  `).catch(() => null);
+}
+
+async function resolveLatestBrixForBaseLot(client: typeof db, productionId: string): Promise<number | null> {
+  const parameterRows = await client.$queryRaw<{ brix: number | string | null }[]>`
+    SELECT "brix"
+    FROM "ProductionParameter"
+    WHERE "productionId" = ${productionId}
+      AND "brix" IS NOT NULL
+    ORDER BY "measuredAt" DESC
+    LIMIT 1
+  `.catch(() => []);
+
+  const parameterBrix = parameterRows[0]?.brix;
+  if (parameterBrix != null) {
+    return Number(parameterBrix);
+  }
+
+  await ensureProductionPhaseTable(client);
+  const phaseRows = await client.$queryRaw<{ brix: number | string | null }[]>`
+    SELECT "brix"
+    FROM "ProductionPhaseRecord"
+    WHERE "productionId" = ${productionId}
+      AND "brix" IS NOT NULL
+    ORDER BY "measuredAt" DESC
+    LIMIT 1
+  `.catch(() => []);
+
+  const phaseBrix = phaseRows[0]?.brix;
+  return phaseBrix != null ? Number(phaseBrix) : null;
+}
+
 export async function getProduccionPin(): Promise<string> {
   try {
     const { userId } = await auth();
@@ -779,6 +852,267 @@ export async function updateBaseBeverageInventoryDisposition(
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message || "Error al actualizar el destino del lote" };
+  }
+}
+
+export async function createFinalBeverageBlend(data: {
+  name: string;
+  targetBrix: number;
+  notes?: string;
+  createdBy?: string;
+  components: Array<{
+    sourceType: "BASE_LOT" | "FLAVOR_RECIPE";
+    baseBeverageInventoryId?: string;
+    productionFormulaId?: string;
+    liters: number;
+  }>;
+}): Promise<{
+  success: boolean;
+  error?: string;
+  blend?: {
+    id: string;
+    weightedBrix: number;
+    targetBrix: number;
+    sugarToAddKg: number;
+    totalLiters: number;
+  };
+}> {
+  try {
+    if (!data.name.trim()) {
+      return { success: false, error: "El nombre del lote final es obligatorio" };
+    }
+    if (!Number.isFinite(data.targetBrix) || data.targetBrix < 0) {
+      return { success: false, error: "El brix objetivo no es válido" };
+    }
+
+    const requestedComponents = (data.components || []).filter((component) => Number(component.liters) > 0);
+    if (requestedComponents.length === 0) {
+      return { success: false, error: "Agrega al menos un componente para la bebida final" };
+    }
+
+    const blend = await db.$transaction(async (tx) => {
+      await ensureFinalBeverageBlendTables(tx as typeof db);
+      await ensureProductionPhaseTable(tx as typeof db);
+
+      const preparedComponents: Array<{
+        sourceType: "BASE_LOT" | "FLAVOR_RECIPE";
+        baseBeverageInventoryId: string | null;
+        productionFormulaId: string | null;
+        sourceLabel: string;
+        liters: number;
+        brixSnapshot: number;
+      }> = [];
+
+      for (const component of requestedComponents) {
+        if (component.sourceType === "BASE_LOT") {
+          if (!component.baseBeverageInventoryId) {
+            throw new Error("Falta seleccionar un lote de bebida base");
+          }
+
+          const rows = await tx.$queryRaw<{
+            id: string;
+            productionId: string;
+            litersRemaining: number | string | null;
+            status: string;
+            productionName: string | null;
+            formulaName: string | null;
+            formulaCode: string | null;
+          }[]>`
+            SELECT
+              bbi."id",
+              bbi."productionId",
+              bbi."litersRemaining",
+              bbi."status",
+              p."name" AS "productionName",
+              pf."name" AS "formulaName",
+              pf."code" AS "formulaCode"
+            FROM "BaseBeverageInventory" bbi
+            INNER JOIN "Production" p ON p."id" = bbi."productionId"
+            LEFT JOIN "ProductionFormula" pf ON pf."id" = p."productionFormulaId"
+            WHERE bbi."id" = ${component.baseBeverageInventoryId}
+            LIMIT 1
+          `;
+
+          const lot = rows[0];
+          if (!lot) {
+            throw new Error("Uno de los lotes base seleccionados ya no existe");
+          }
+
+          const remaining = Number(lot.litersRemaining || 0);
+          if (!(remaining > 0)) {
+            throw new Error(`El lote ${lot.productionName || lot.id} ya no tiene litros disponibles`);
+          }
+          if (Number(component.liters) > remaining) {
+            throw new Error(`El lote ${lot.productionName || lot.id} solo tiene ${remaining} Lt disponibles`);
+          }
+
+          const currentBrix = await resolveLatestBrixForBaseLot(tx as typeof db, lot.productionId);
+          if (currentBrix == null) {
+            throw new Error(`El lote ${lot.productionName || lot.id} no tiene una medición de brix registrada`);
+          }
+
+          const newRemaining = Math.max(remaining - Number(component.liters), 0);
+          await tx.$executeRaw`
+            UPDATE "BaseBeverageInventory"
+            SET "litersRemaining" = ${newRemaining},
+                "status" = ${newRemaining === 0 ? "EMPTIED" : lot.status},
+                "updatedAt" = NOW()
+            WHERE "id" = ${lot.id}
+          `;
+
+          preparedComponents.push({
+            sourceType: "BASE_LOT",
+            baseBeverageInventoryId: lot.id,
+            productionFormulaId: null,
+            sourceLabel: `${lot.productionName || "Lote"}${lot.formulaName ? ` · ${lot.formulaName}` : lot.formulaCode ? ` · ${lot.formulaCode}` : ""}`,
+            liters: Number(component.liters),
+            brixSnapshot: currentBrix,
+          });
+        } else {
+          if (!component.productionFormulaId) {
+            throw new Error("Falta seleccionar una receta de sabor");
+          }
+
+          const rows = await tx.$queryRaw<{
+            id: string;
+            name: string;
+            code: string;
+            recipeType: string;
+            brixMin: number | string;
+            brixMax: number | string;
+          }[]>`
+            SELECT "id","name","code","recipeType","brixMin","brixMax"
+            FROM "ProductionFormula"
+            WHERE "id" = ${component.productionFormulaId}
+            LIMIT 1
+          `;
+
+          const recipe = rows[0];
+          if (!recipe || recipe.recipeType !== "FLAVOR") {
+            throw new Error("La receta de sabor seleccionada ya no existe o no es válida");
+          }
+
+          const flavorBrix = Number(recipe.brixMax ?? recipe.brixMin ?? 0);
+          preparedComponents.push({
+            sourceType: "FLAVOR_RECIPE",
+            baseBeverageInventoryId: null,
+            productionFormulaId: recipe.id,
+            sourceLabel: `${recipe.name} (${recipe.code})`,
+            liters: Number(component.liters),
+            brixSnapshot: flavorBrix,
+          });
+        }
+      }
+
+      const totalLiters = preparedComponents.reduce((sum, component) => sum + component.liters, 0);
+      if (!(totalLiters > 0)) {
+        throw new Error("La mezcla final debe tener litros mayores a cero");
+      }
+
+      const weightedBrix =
+        preparedComponents.reduce((sum, component) => sum + component.liters * component.brixSnapshot, 0) / totalLiters;
+      const sugarToAddKg = Math.max(Number(data.targetBrix) - weightedBrix, 0) * totalLiters * 0.01;
+
+      const blendId = randomUUID();
+      await tx.$executeRaw`
+        INSERT INTO "FinalBeverageBlend"
+        ("id","name","status","targetBrix","weightedBrix","sugarToAddKg","totalLiters","notes","createdBy","createdAt","updatedAt")
+        VALUES
+        (${blendId}, ${data.name.trim()}, ${"ACTIVE"}, ${Number(data.targetBrix)}, ${weightedBrix}, ${sugarToAddKg}, ${totalLiters}, ${data.notes?.trim() || null}, ${data.createdBy || null}, NOW(), NOW())
+      `;
+
+      for (const component of preparedComponents) {
+        await tx.$executeRaw`
+          INSERT INTO "FinalBeverageBlendComponent"
+          ("id","blendId","sourceType","baseBeverageInventoryId","productionFormulaId","sourceLabel","liters","brixSnapshot","createdAt")
+          VALUES
+          (${randomUUID()}, ${blendId}, ${component.sourceType}, ${component.baseBeverageInventoryId}, ${component.productionFormulaId}, ${component.sourceLabel}, ${component.liters}, ${component.brixSnapshot}, NOW())
+        `;
+      }
+
+      return {
+        id: blendId,
+        weightedBrix,
+        targetBrix: Number(data.targetBrix),
+        sugarToAddKg,
+        totalLiters,
+      };
+    });
+
+    revalidatePath("/admin/production");
+    revalidatePath("/admin/inventory/base-beverage");
+    revalidatePath("/admin/inventory");
+    return { success: true, blend };
+  } catch (e: any) {
+    return { success: false, error: e.message || "No se pudo crear la bebida final" };
+  }
+}
+
+export async function cancelFinalBeverageBlend(blendId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await db.$transaction(async (tx) => {
+      await ensureFinalBeverageBlendTables(tx as typeof db);
+
+      const blendRows = await tx.$queryRaw<{ id: string; status: string }[]>`
+        SELECT "id","status"
+        FROM "FinalBeverageBlend"
+        WHERE "id" = ${blendId}
+        LIMIT 1
+      `;
+
+      const blend = blendRows[0];
+      if (!blend) {
+        throw new Error("La bebida final ya no existe");
+      }
+      if (blend.status === "CANCELLED") {
+        throw new Error("La bebida final ya estaba cancelada");
+      }
+
+      const componentRows = await tx.$queryRaw<{
+        id: string;
+        sourceType: string;
+        baseBeverageInventoryId: string | null;
+        liters: number | string;
+      }[]>`
+        SELECT "id","sourceType","baseBeverageInventoryId","liters"
+        FROM "FinalBeverageBlendComponent"
+        WHERE "blendId" = ${blendId}
+      `;
+
+      for (const component of componentRows) {
+        if (component.sourceType !== "BASE_LOT" || !component.baseBeverageInventoryId) continue;
+
+        const inventoryRows = await tx.$queryRaw<{ litersRemaining: number | string | null }[]>`
+          SELECT "litersRemaining"
+          FROM "BaseBeverageInventory"
+          WHERE "id" = ${component.baseBeverageInventoryId}
+          LIMIT 1
+        `;
+
+        const currentRemaining = Number(inventoryRows[0]?.litersRemaining || 0);
+        await tx.$executeRaw`
+          UPDATE "BaseBeverageInventory"
+          SET "litersRemaining" = ${currentRemaining + Number(component.liters)},
+              "status" = ${"AVAILABLE"},
+              "updatedAt" = NOW()
+          WHERE "id" = ${component.baseBeverageInventoryId}
+        `;
+      }
+
+      await tx.$executeRaw`
+        UPDATE "FinalBeverageBlend"
+        SET "status" = ${"CANCELLED"},
+            "updatedAt" = NOW()
+        WHERE "id" = ${blendId}
+      `;
+    });
+
+    revalidatePath("/admin/production");
+    revalidatePath("/admin/inventory/base-beverage");
+    revalidatePath("/admin/inventory");
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message || "No se pudo cancelar la bebida final" };
   }
 }
 

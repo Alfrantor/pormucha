@@ -5,6 +5,7 @@ type FormulaRow = {
   id: string;
   code: string;
   name: string;
+  recipeType: string | null;
   description: string | null;
   formulaSummary: string | null;
   targetLiters: number | string | null;
@@ -13,6 +14,11 @@ type FormulaRow = {
   sugarGramsPerLiter: number | string | null;
   yeastPitchRatePercent: number | string | null;
   brewWaterPercent: number | string | null;
+  flavorJuicePercent: number | string | null;
+  flavorItemName: string | null;
+  co2GramsPerLiter: number | string | null;
+  carbonationMethod: string | null;
+  f2ConditionDays: number | null;
   durationDays: number;
   durationHours: number;
   updatedAt: Date | string;
@@ -37,6 +43,7 @@ type FormulaRow = {
   item_quantity: number | string | null;
   item_free_text_name: string | null;
   item_share_percent: number | string | null;
+  item_unit_override: string | null;
   item_notes: string | null;
   raw_material_id: string | null;
   raw_material_name: string | null;
@@ -51,6 +58,10 @@ function toNumber(value: number | string | null | undefined) {
 }
 
 export async function loadProductionFormulas(): Promise<ProductionFormulaView[]> {
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "recipeType" TEXT NOT NULL DEFAULT 'ACIDIFIER'
+  `).catch(() => null);
   await db.$executeRawUnsafe(`
     ALTER TABLE "ProductionFormula"
     ADD COLUMN IF NOT EXISTS "targetLiters" DECIMAL(65,30)
@@ -78,6 +89,26 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
   await db.$executeRawUnsafe(`
     ALTER TABLE "ProductionFormula"
     ADD COLUMN IF NOT EXISTS "brewWaterPercent" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "flavorJuicePercent" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "flavorItemName" TEXT
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "co2GramsPerLiter" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "carbonationMethod" TEXT
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormula"
+    ADD COLUMN IF NOT EXISTS "f2ConditionDays" INTEGER
   `).catch(() => null);
   await db.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "ProductionFormulaStep" (
@@ -120,12 +151,17 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
     ALTER TABLE "ProductionFormulaItem"
     ADD COLUMN IF NOT EXISTS "sharePercent" DECIMAL(65,30)
   `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "ProductionFormulaItem"
+    ADD COLUMN IF NOT EXISTS "unitOverride" TEXT
+  `).catch(() => null);
 
   const rows = await db.$queryRawUnsafe<FormulaRow[]>(`
     SELECT
       pf."id",
       pf."code",
       pf."name",
+      pf."recipeType",
       pf."description",
       pf."formulaSummary",
       pf."targetLiters",
@@ -134,6 +170,11 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
       pf."sugarGramsPerLiter",
       pf."yeastPitchRatePercent",
       pf."brewWaterPercent",
+      pf."flavorJuicePercent",
+      pf."flavorItemName",
+      pf."co2GramsPerLiter",
+      pf."carbonationMethod",
+      pf."f2ConditionDays",
       pf."durationDays",
       pf."durationHours",
       pf."updatedAt",
@@ -158,6 +199,7 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
       pfi."quantity" AS item_quantity,
       pfi."freeTextName" AS item_free_text_name,
       pfi."sharePercent" AS item_share_percent,
+      pfi."unitOverride" AS item_unit_override,
       pfi."notes" AS item_notes,
       rm."id" AS raw_material_id,
       rm."name" AS raw_material_name,
@@ -182,6 +224,7 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         id: row.id,
         code: row.code,
         name: row.name,
+        recipeType: row.recipeType || "ACIDIFIER",
         description: row.description,
         formulaSummary: row.formulaSummary,
         targetLiters: row.targetLiters != null ? toNumber(row.targetLiters) : null,
@@ -190,6 +233,11 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         sugarGramsPerLiter: row.sugarGramsPerLiter != null ? toNumber(row.sugarGramsPerLiter) : null,
         yeastPitchRatePercent: row.yeastPitchRatePercent != null ? toNumber(row.yeastPitchRatePercent) : null,
         brewWaterPercent: row.brewWaterPercent != null ? toNumber(row.brewWaterPercent) : null,
+        flavorJuicePercent: row.flavorJuicePercent != null ? toNumber(row.flavorJuicePercent) : null,
+        flavorItemName: row.flavorItemName,
+        co2GramsPerLiter: row.co2GramsPerLiter != null ? toNumber(row.co2GramsPerLiter) : null,
+        carbonationMethod: row.carbonationMethod,
+        f2ConditionDays: row.f2ConditionDays != null ? Number(row.f2ConditionDays) : null,
         durationDays: Number(row.durationDays),
         durationHours: Number(row.durationHours),
         updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
@@ -206,6 +254,7 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         steps: [],
         items: [],
         blendItems: [],
+        flavorIngredients: [],
       });
     }
 
@@ -238,6 +287,7 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         quantity: toNumber(row.item_quantity),
         freeTextName: row.item_free_text_name,
         sharePercent: row.item_share_percent != null ? toNumber(row.item_share_percent) : null,
+        unitOverride: row.item_unit_override,
         defaultLocationId: row.location_id,
         defaultLocationName: row.location_name,
         notes: row.item_notes,
@@ -259,6 +309,10 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
           gramsPerLiter: toNumber(row.item_quantity),
           unit: row.raw_material_unit || "g",
         });
+      }
+
+      if (currentFormula && typeof row.item_notes === "string" && row.item_notes.startsWith("FLAVOR_INGREDIENT")) {
+        currentFormula.flavorIngredients.push(itemView);
       }
     }
   });

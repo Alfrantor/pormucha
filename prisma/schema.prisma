@@ -521,6 +521,7 @@ model ProductionFormula {
   id             String                  @id @default(cuid())
   code           String                  @unique // A | B | C
   name           String
+  recipeType     String                  @default("ACIDIFIER")
   description    String?
   formulaSummary String?
   targetLiters   Decimal?
@@ -529,6 +530,11 @@ model ProductionFormula {
   sugarGramsPerLiter Decimal?
   yeastPitchRatePercent Decimal?
   brewWaterPercent Decimal?
+  flavorJuicePercent Decimal?
+  flavorItemName  String?
+  co2GramsPerLiter Decimal?
+  carbonationMethod String?
+  f2ConditionDays Int?
   durationDays   Int                     @default(0)
   durationHours  Int
   phMin          Decimal
@@ -579,6 +585,7 @@ model ProductionFormulaItem {
   quantity          Decimal
   freeTextName      String?
   sharePercent      Decimal?
+  unitOverride      String?
   defaultLocationId String?
   defaultLocation   Location?          @relation(fields: [defaultLocationId], references: [id], onDelete: SetNull)
   notes             String?

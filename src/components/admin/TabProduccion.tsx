@@ -3,9 +3,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   addProductionIngredient,
+  cancelFinalBeverageBlend,
   cancelProduction,
   completeProduction,
   createProduction,
+  createFinalBeverageBlend,
   createTank,
   recordProductionParameter,
   setProduccionPin,
@@ -115,7 +117,23 @@ function formatStepIngredient(item: any) {
   return `${sourceLabel}: ${quantity} ${unit}${location}`.trim();
 }
 
-export default function TabProduccion({ tanks, productions, rawMaterials, locations, formulas, baseBeverageInventory, userEmail }: any) {
+function resolveLatestBrixForProduction(production: any) {
+  const parameters = Array.isArray(production?.parameters) ? production.parameters : [];
+  const latestParameter = [...parameters]
+    .filter((entry: any) => entry?.brix != null)
+    .sort((a: any, b: any) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())[0];
+
+  if (latestParameter?.brix != null) return Number(latestParameter.brix);
+
+  const phaseRecords = Array.isArray(production?.secondPhaseRecords) ? production.secondPhaseRecords : [];
+  const latestPhase = [...phaseRecords]
+    .filter((entry: any) => entry?.brix != null)
+    .sort((a: any, b: any) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())[0];
+
+  return latestPhase?.brix != null ? Number(latestPhase.brix) : null;
+}
+
+export default function TabProduccion({ tanks, productions, rawMaterials, locations, formulas, baseBeverageInventory, finalBeverageBlends, userEmail }: any) {
   const TANKS_PAGE_SIZE = 20;
   const safeTanks = Array.isArray(tanks) ? tanks : [];
   const safeProductions = Array.isArray(productions) ? productions : [];
@@ -134,7 +152,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [pinSaving, setPinSaving] = useState(false);
   const [pinMsg, setPinMsg] = useState("");
 
-  const [view, setView] = useState<"producciones" | "tanques">("producciones");
+  const [view, setView] = useState<"producciones" | "tanques" | "final">("producciones");
   const [statusFilter, setStatusFilter] = useState<"IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "UPCOMING" | "ALL">("IN_PROGRESS");
   const [tankPage, setTankPage] = useState(1);
 
@@ -199,22 +217,67 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [phase3Notes, setPhase3Notes] = useState("");
   const [phase3Saving, setPhase3Saving] = useState(false);
   const [phase3Error, setPhase3Error] = useState("");
+  const [finalBlendName, setFinalBlendName] = useState("");
+  const [finalBlendTargetBrix, setFinalBlendTargetBrix] = useState("");
+  const [finalBlendNotes, setFinalBlendNotes] = useState("");
+  const [finalBlendSaving, setFinalBlendSaving] = useState(false);
+  const [finalBlendError, setFinalBlendError] = useState("");
+  const [finalBlendRows, setFinalBlendRows] = useState<Array<{
+    sourceType: "BASE_LOT" | "FLAVOR_RECIPE";
+    sourceId: string;
+    liters: string;
+  }>>([{ sourceType: "BASE_LOT", sourceId: "", liters: "" }]);
+
+  const acidifierFormulas = useMemo(() => {
+    return safeFormulas
+      .filter((formula: any) => formula?.isActive && formula?.recipeType !== "FLAVOR")
+      .sort((a: any, b: any) => String(a?.name || "").localeCompare(String(b?.name || ""), "es-MX", { sensitivity: "base" }));
+  }, [safeFormulas]);
 
   const formulasByCode = useMemo(() => {
     const map = new Map<string, any>();
-    safeFormulas.forEach((formula: any) => {
+    acidifierFormulas.forEach((formula: any) => {
       if (formula?.isActive) {
         map.set(formula.code, formula);
       }
     });
     return map;
-  }, [safeFormulas]);
+  }, [acidifierFormulas]);
 
-  const formulaOptions = useMemo(() => {
+  const formulaOptions = acidifierFormulas;
+  const flavorFormulaOptions = useMemo(() => {
     return safeFormulas
-      .filter((formula: any) => formula?.isActive)
+      .filter((formula: any) => formula?.isActive && formula?.recipeType === "FLAVOR")
       .sort((a: any, b: any) => String(a?.name || "").localeCompare(String(b?.name || ""), "es-MX", { sensitivity: "base" }));
   }, [safeFormulas]);
+
+  const productionById = useMemo(() => {
+    const map = new Map<string, any>();
+    safeProductions.forEach((production: any) => {
+      map.set(production.id, production);
+    });
+    return map;
+  }, [safeProductions]);
+
+  const baseLotOptions = useMemo(() => {
+    return safeBaseBeverageInventory
+      .filter((row: any) => Number(row?.litersRemaining || 0) > 0 && String(row?.status) !== "UNIFIED")
+      .map((row: any) => {
+        const production = productionById.get(row.productionId);
+        const brix = resolveLatestBrixForProduction(production);
+        return {
+          id: row.id,
+          productionId: row.productionId,
+          label: `${row.production?.name || "Lote"}${production?.formula?.name ? ` · ${production.formula.name}` : ""}`,
+          litersRemaining: Number(row.litersRemaining || 0),
+          brix,
+        };
+      })
+      .filter((row: any) => row.brix != null)
+      .sort((a: any, b: any) => String(a.label).localeCompare(String(b.label), "es-MX", { sensitivity: "base" }));
+  }, [safeBaseBeverageInventory, productionById]);
+
+  const finalBlendList = Array.isArray(finalBeverageBlends) ? finalBeverageBlends : [];
 
   const filteredProds = useMemo(() => {
     const baseList =
@@ -225,7 +288,10 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
           : safeProductions.filter((production: any) => production.status === statusFilter);
 
     const decorated = baseList.map((production: any) => {
-      const formula = production.formula || formulasByCode.get(production.productType) || null;
+      const formula =
+        production.formula?.recipeType === "FLAVOR"
+          ? null
+          : production.formula || formulasByCode.get(production.productType) || null;
       const metrics = getFermentationMetrics(production, formula);
       return { production, formula, metrics };
     });
@@ -314,7 +380,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const selectedProdPhase3 = selectedPhaseRecords.find((record: any) => Number(record.phase) === 3) || null;
 
   useEffect(() => {
-    if (!newProdType && formulaOptions[0]?.code) {
+    if ((!newProdType || !formulasByCode.has(newProdType)) && formulaOptions[0]?.code) {
       setNewProdType(formulaOptions[0].code);
     }
   }, [newProdType, formulaOptions]);
@@ -620,12 +686,127 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     window.location.reload();
   };
 
+  const finalBlendResolvedRows = finalBlendRows.map((row, index) => {
+    if (row.sourceType === "BASE_LOT") {
+      const selected = baseLotOptions.find((option: any) => option.id === row.sourceId);
+      return {
+        key: `final-base-${index}`,
+        sourceType: row.sourceType,
+        sourceId: row.sourceId,
+        liters: Number(row.liters || 0),
+        label: selected?.label || "Lote base",
+        availableLiters: selected?.litersRemaining ?? null,
+        brix: selected?.brix ?? null,
+      };
+    }
+
+    const selected = flavorFormulaOptions.find((formula: any) => formula.id === row.sourceId);
+    return {
+      key: `final-flavor-${index}`,
+      sourceType: row.sourceType,
+      sourceId: row.sourceId,
+      liters: Number(row.liters || 0),
+      label: selected ? `${selected.name} (${selected.code})` : "Receta sabor",
+      availableLiters: null,
+      brix: selected?.brixMax != null ? Number(selected.brixMax) : selected?.brixMin != null ? Number(selected.brixMin) : null,
+    };
+  });
+
+  const finalBlendTotalLiters = finalBlendResolvedRows.reduce((sum, row) => sum + (Number.isFinite(row.liters) ? row.liters : 0), 0);
+  const finalBlendWeightedBrix =
+    finalBlendTotalLiters > 0
+      ? finalBlendResolvedRows.reduce((sum, row) => sum + row.liters * Number(row.brix || 0), 0) / finalBlendTotalLiters
+      : 0;
+  const finalBlendTargetBrixValue = Number(finalBlendTargetBrix || 0);
+  const finalBlendSugarToAddKg = Math.max(finalBlendTargetBrixValue - finalBlendWeightedBrix, 0) * finalBlendTotalLiters * 0.01;
+
+  const addFinalBlendRow = () => {
+    setFinalBlendRows((prev) => [...prev, { sourceType: "BASE_LOT", sourceId: "", liters: "" }]);
+  };
+
+  const removeFinalBlendRow = (index: number) => {
+    setFinalBlendRows((prev) => (prev.length > 1 ? prev.filter((_, rowIndex) => rowIndex !== index) : [{ sourceType: "BASE_LOT", sourceId: "", liters: "" }]));
+  };
+
+  const resetFinalBlendForm = () => {
+    setFinalBlendName("");
+    setFinalBlendTargetBrix("");
+    setFinalBlendNotes("");
+    setFinalBlendRows([{ sourceType: "BASE_LOT", sourceId: "", liters: "" }]);
+    setFinalBlendError("");
+  };
+
+  const handleCreateFinalBlend = async () => {
+    setFinalBlendError("");
+    if (!finalBlendName.trim()) {
+      setFinalBlendError("Escribe el nombre de la bebida final");
+      return;
+    }
+    if (!Number.isFinite(finalBlendTargetBrixValue) || finalBlendTargetBrixValue < 0) {
+      setFinalBlendError("El brix objetivo no es válido");
+      return;
+    }
+
+    const preparedRows = finalBlendResolvedRows.filter((row) => row.sourceId && row.liters > 0);
+    if (preparedRows.length === 0) {
+      setFinalBlendError("Agrega al menos un componente con litros");
+      return;
+    }
+
+    const insufficientRow = preparedRows.find((row) => row.availableLiters != null && row.liters > Number(row.availableLiters));
+    if (insufficientRow) {
+      setFinalBlendError(`Uno de los lotes base excede los litros disponibles: ${insufficientRow.label}`);
+      return;
+    }
+
+    const missingBrixRow = preparedRows.find((row) => row.brix == null);
+    if (missingBrixRow) {
+      setFinalBlendError(`Falta brix en uno de los componentes: ${missingBrixRow.label}`);
+      return;
+    }
+
+    setFinalBlendSaving(true);
+    const result = await createFinalBeverageBlend({
+      name: finalBlendName.trim(),
+      targetBrix: finalBlendTargetBrixValue,
+      notes: finalBlendNotes.trim() || undefined,
+      createdBy: userEmail,
+      components: preparedRows.map((row) => ({
+        sourceType: row.sourceType,
+        baseBeverageInventoryId: row.sourceType === "BASE_LOT" ? row.sourceId : undefined,
+        productionFormulaId: row.sourceType === "FLAVOR_RECIPE" ? row.sourceId : undefined,
+        liters: row.liters,
+      })),
+    });
+    setFinalBlendSaving(false);
+
+    if (!result.success) {
+      setFinalBlendError(result.error || "No se pudo crear la bebida final");
+      return;
+    }
+
+    resetFinalBlendForm();
+    window.location.reload();
+  };
+
+  const handleCancelFinalBlend = async (blendId: string) => {
+    const confirmed = window.confirm("¿Cancelar esta bebida final y devolver los litros de bebida base?");
+    if (!confirmed) return;
+    const result = await cancelFinalBeverageBlend(blendId);
+    if (!result.success) {
+      window.alert(result.error || "No se pudo cancelar la bebida final");
+      return;
+    }
+    window.location.reload();
+  };
+
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-black text-slate-950">Produccion de bebida base</h2>
         <div className="flex gap-2">
           <button onClick={() => setView("producciones")} className={tabClass(view === "producciones")}>Lotes</button>
+          <button onClick={() => setView("final")} className={tabClass(view === "final")}>Bebida final</button>
           <button onClick={() => setView("tanques")} className={tabClass(view === "tanques")}>Cubetas</button>
           <button onClick={() => setShowPinModal(true)} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">PIN NFC</button>
         </div>
@@ -881,6 +1062,219 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {view === "final" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Mezclas finales</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{finalBlendList.length}</p>
+              <p className="text-xs text-slate-500">registros creados</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Lotes base con brix</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{baseLotOptions.length}</p>
+              <p className="text-xs text-slate-500">disponibles para combinar</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Recetas sabor</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{flavorFormulaOptions.length}</p>
+              <p className="text-xs text-slate-500">con brix objetivo</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Azúcar estimada</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{finalBlendSugarToAddKg.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</p>
+              <p className="text-xs text-slate-500">kg para esta mezcla</p>
+            </div>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[1fr_1.05fr]">
+            <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Proceso</p>
+              <h3 className="mt-2 text-2xl font-black text-slate-950">Bebida final</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Combina lotes de bebida base y recetas sabor para calcular el brix ponderado y la azúcar estimada que se necesita agregar antes del envasado.
+              </p>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <Field label="Nombre de la mezcla">
+                  <input value={finalBlendName} onChange={(e) => setFinalBlendName(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
+                </Field>
+                <Field label="Brix objetivo final">
+                  <input type="number" step="0.01" value={finalBlendTargetBrix} onChange={(e) => setFinalBlendTargetBrix(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
+                </Field>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-slate-950">Componentes de la bebida final</p>
+                    <p className="mt-1 text-xs text-slate-500">Captura cuántos litros vas a usar de cada lote base o receta sabor.</p>
+                  </div>
+                  <button onClick={addFinalBlendRow} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">
+                    Agregar componente
+                  </button>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {finalBlendRows.map((row, index) => {
+                    const resolved = finalBlendResolvedRows[index];
+                    return (
+                      <div key={`final-row-${index}`} className="rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="grid gap-3 md:grid-cols-[150px_1fr_120px_120px_auto]">
+                          <Field label="Tipo">
+                            <select
+                              value={row.sourceType}
+                              onChange={(e) =>
+                                setFinalBlendRows((prev) =>
+                                  prev.map((entry, rowIndex) =>
+                                    rowIndex === index
+                                      ? { sourceType: e.target.value as "BASE_LOT" | "FLAVOR_RECIPE", sourceId: "", liters: entry.liters }
+                                      : entry,
+                                  ),
+                                )
+                              }
+                              className="w-full rounded-lg border p-2 text-sm"
+                            >
+                              <option value="BASE_LOT">Lote base</option>
+                              <option value="FLAVOR_RECIPE">Receta sabor</option>
+                            </select>
+                          </Field>
+                          <Field label={row.sourceType === "BASE_LOT" ? "Fuente base" : "Receta sabor"}>
+                            <select
+                              value={row.sourceId}
+                              onChange={(e) =>
+                                setFinalBlendRows((prev) =>
+                                  prev.map((entry, rowIndex) => (rowIndex === index ? { ...entry, sourceId: e.target.value } : entry)),
+                                )
+                              }
+                              className="w-full rounded-lg border p-2 text-sm"
+                            >
+                              <option value="">Selecciona</option>
+                              {(row.sourceType === "BASE_LOT" ? baseLotOptions : flavorFormulaOptions).map((option: any) => (
+                                <option key={option.id} value={option.id}>
+                                  {row.sourceType === "BASE_LOT" ? `${option.label} · ${Number(option.litersRemaining || 0).toLocaleString("es-MX")} Lt` : `${option.name} (${option.code})`}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          <Field label="Litros">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value={row.liters}
+                              onChange={(e) =>
+                                setFinalBlendRows((prev) =>
+                                  prev.map((entry, rowIndex) => (rowIndex === index ? { ...entry, liters: e.target.value } : entry)),
+                                )
+                              }
+                              className="w-full rounded-lg border p-2 text-sm text-center"
+                            />
+                          </Field>
+                          <Field label="Brix">
+                            <input value={resolved?.brix != null ? Number(resolved.brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"} readOnly className="w-full rounded-lg border bg-slate-50 p-2 text-sm text-center text-slate-600" />
+                          </Field>
+                          <div className="flex items-end">
+                            <button onClick={() => removeFinalBlendRow(index)} className="rounded-lg bg-rose-100 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-200">
+                              Quitar
+                            </button>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+                          <span>Fuente: {resolved?.label || "-"}</span>
+                          {resolved?.availableLiters != null && <span>Disponible: {Number(resolved.availableLiters).toLocaleString("es-MX")} Lt</span>}
+                          <span>Aporte de brix: {resolved?.brix != null ? Number(resolved.brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                <CalcChip label="Litros totales" value={formatBatchQuantity(finalBlendTotalLiters, "L")} />
+                <CalcChip label="Brix ponderado" value={finalBlendWeightedBrix.toLocaleString("es-MX", { maximumFractionDigits: 3 })} />
+                <CalcChip label="Azúcar estimada" value={formatBatchQuantity(finalBlendSugarToAddKg, "kg")} />
+              </div>
+
+              <Field label="Notas">
+                <textarea value={finalBlendNotes} onChange={(e) => setFinalBlendNotes(e.target.value)} rows={3} className="w-full rounded-lg border p-2 text-sm" />
+              </Field>
+
+              {finalBlendError && <p className="mt-3 text-sm font-semibold text-rose-600">{finalBlendError}</p>}
+
+              <div className="mt-4 flex gap-3">
+                <button onClick={resetFinalBlendForm} className="flex-1 rounded-lg border py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">
+                  Limpiar
+                </button>
+                <button onClick={handleCreateFinalBlend} disabled={finalBlendSaving} className="flex-1 rounded-lg bg-slate-950 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:bg-slate-300">
+                  {finalBlendSaving ? "Guardando..." : "Crear bebida final"}
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Registro</p>
+              <h3 className="mt-2 text-2xl font-black text-slate-950">Mezclas creadas</h3>
+              <div className="mt-5 space-y-4">
+                {finalBlendList.length === 0 && (
+                  <p className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">
+                    Aún no hay bebidas finales registradas.
+                  </p>
+                )}
+                {finalBlendList.map((blend: any) => (
+                  <article key={blend.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-black text-slate-950">{blend.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {fmtDate(blend.createdAt)} · {blend.createdBy || "Sin usuario"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${String(blend.status) === "ACTIVE" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                          {String(blend.status) === "ACTIVE" ? "Activa" : "Cancelada"}
+                        </span>
+                        {String(blend.status) === "ACTIVE" && (
+                          <button onClick={() => handleCancelFinalBlend(blend.id)} className="rounded-lg bg-rose-100 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-200">
+                            Cancelar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-4">
+                      <CalcChip label="Litros" value={formatBatchQuantity(Number(blend.totalLiters || 0), "L")} />
+                      <CalcChip label="Brix mezcla" value={Number(blend.weightedBrix || 0).toLocaleString("es-MX", { maximumFractionDigits: 3 })} />
+                      <CalcChip label="Brix objetivo" value={Number(blend.targetBrix || 0).toLocaleString("es-MX", { maximumFractionDigits: 3 })} />
+                      <CalcChip label="Azúcar" value={formatBatchQuantity(Number(blend.sugarToAddKg || 0), "kg")} />
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {(blend.components || []).map((component: any) => (
+                        <div key={component.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-sm">
+                          <div>
+                            <p className="font-bold text-slate-900">{component.sourceLabel}</p>
+                            <p className="text-xs text-slate-500">
+                              {component.sourceType === "BASE_LOT" ? "Lote base" : "Receta sabor"} · Brix {Number(component.brixSnapshot || 0).toLocaleString("es-MX", { maximumFractionDigits: 3 })}
+                            </p>
+                          </div>
+                          <p className="font-black text-slate-950">{formatBatchQuantity(Number(component.liters || 0), "L")}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {blend.notes && (
+                      <p className="mt-4 text-sm text-slate-600">{blend.notes}</p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
           </div>
         </div>
       )}
