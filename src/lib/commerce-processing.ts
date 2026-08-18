@@ -413,7 +413,7 @@ export async function processPaidSubscriptionSession(session: Stripe.Checkout.Se
     forceDue: true,
   });
 
-  if (initialFulfillment.success && !initialFulfillment.duplicated) {
+  if (initialFulfillment.success && "duplicated" in initialFulfillment && !initialFulfillment.duplicated) {
     const subscriptionDetails = await getSubscriptionContext(subscription.id);
     if (subscriptionDetails?.client?.email) {
       try {
