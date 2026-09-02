@@ -60,6 +60,9 @@ export async function createProductionSecondPhase(data: {
 }): Promise<{ success: boolean; error?: string }> {
   try {
     if (!data.productionId) return { success: false, error: "Produccion requerida" };
+    if (data.receivedLiters == null || Number.isNaN(data.receivedLiters) || data.receivedLiters <= 0) {
+      return { success: false, error: "Indica los litros de arranque de la fase dos" };
+    }
 
     const validAdditions = (data.additions || []).filter((item) => item.rawMaterialId && item.quantity > 0);
 
@@ -84,19 +87,6 @@ export async function createProductionSecondPhase(data: {
         VALUES
         (${randomUUID()}, ${data.productionId}, 2, ${data.receivedCondition || null}, ${data.receivedBy || null}, ${data.measuredBy || null}, ${data.startedBy || null}, ${data.measuredAt ? new Date(data.measuredAt) : new Date()}, ${data.ph ?? null}, ${data.brix ?? null}, ${data.temperature ?? null}, ${data.acidity ?? null}, ${data.notes || null}, NOW(), ${data.receivedLiters ?? null})
       `;
-
-      if (data.receivedLiters != null && !Number.isNaN(data.receivedLiters) && data.receivedLiters >= 0) {
-        await tx.$executeRawUnsafe(`
-          ALTER TABLE "Production"
-          ADD COLUMN IF NOT EXISTS "inputLiters" DECIMAL(65,30)
-        `).catch(() => null);
-
-        await tx.$executeRaw`
-          UPDATE "Production"
-          SET "inputLiters" = ${data.receivedLiters}
-          WHERE "id" = ${data.productionId}
-        `;
-      }
 
       for (const addition of validAdditions) {
         if (!addition.locationId) {
@@ -169,6 +159,10 @@ export async function createProductionThirdPhase(data: {
   productionId: string;
   measuredAt?: string;
   remainingLiters?: number;
+  ph?: number;
+  brix?: number;
+  temperature?: number;
+  acidity?: number;
   notes?: string;
   startedBy?: string;
 }): Promise<{ success: boolean; error?: string }> {
@@ -176,6 +170,18 @@ export async function createProductionThirdPhase(data: {
     if (!data.productionId) return { success: false, error: "Produccion requerida" };
     if (data.remainingLiters == null || Number.isNaN(data.remainingLiters) || data.remainingLiters < 0) {
       return { success: false, error: "Indica cuantos litros quedan en el contenedor" };
+    }
+    if (
+      data.ph == null ||
+      data.brix == null ||
+      data.temperature == null ||
+      data.acidity == null ||
+      !Number.isFinite(data.ph) ||
+      !Number.isFinite(data.brix) ||
+      !Number.isFinite(data.temperature) ||
+      !Number.isFinite(data.acidity)
+    ) {
+      return { success: false, error: "Completa la medición final: pH, Brix, temperatura y acidez" };
     }
 
     await ensureProductionPhaseTable(db);
@@ -199,9 +205,9 @@ export async function createProductionThirdPhase(data: {
 
     await db.$executeRaw`
       INSERT INTO "ProductionPhaseRecord"
-      ("id","productionId","phase","startedBy","measuredAt","remainingLiters","notes","createdAt")
+      ("id","productionId","phase","startedBy","measuredAt","ph","brix","temperature","acidity","remainingLiters","notes","createdAt")
       VALUES
-      (${randomUUID()}, ${data.productionId}, 3, ${data.startedBy || null}, ${data.measuredAt ? new Date(data.measuredAt) : new Date()}, ${data.remainingLiters}, ${data.notes || null}, NOW())
+      (${randomUUID()}, ${data.productionId}, 3, ${data.startedBy || null}, ${data.measuredAt ? new Date(data.measuredAt) : new Date()}, ${data.ph}, ${data.brix}, ${data.temperature}, ${data.acidity}, ${data.remainingLiters}, ${data.notes || null}, NOW())
     `;
 
     revalidatePath("/admin/production");

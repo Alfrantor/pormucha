@@ -524,7 +524,6 @@ model ProductionFormula {
   recipeType     String                  @default("ACIDIFIER")
   description    String?
   formulaSummary String?
-  targetLiters   Decimal?
   teaType        String?
   teaGramsPerLiter Decimal?
   sugarGramsPerLiter Decimal?
@@ -656,6 +655,7 @@ model Production {
   status          String    @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED | CANCELLED
   startedAt       DateTime
   inputLiters     Decimal?
+  startedLiters   Decimal?
   completedAt     DateTime?
   litersProduced  Decimal?
   notes           String?

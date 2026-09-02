@@ -12,8 +12,10 @@ type CatalogItem = {
 };
 
 type AcidifierBlendRow = {
+  sourceKind: "RAW_MATERIAL" | "FORMULA";
   rawMaterialId: string;
   freeTextName: string;
+  sourceProductionType: "ACIDIFIER" | "SCOOBY" | "FLAVOR" | "BLEND" | null;
   sharePercent: string;
 };
 
@@ -27,7 +29,7 @@ type FlavorIngredientRow = {
 
 type FormulaState = {
   code: string;
-  recipeType: "ACIDIFIER" | "SCOOBY" | "FLAVOR";
+  recipeType: "ACIDIFIER" | "SCOOBY" | "FLAVOR" | "BLEND";
   name: string;
   teaType: string;
   teaGramsPerLiter: string;
@@ -73,17 +75,32 @@ function formatDateTime(value?: string | null) {
 }
 
 function createEmptyBlendRow(): AcidifierBlendRow {
-  return { rawMaterialId: "", freeTextName: "", sharePercent: "" };
+  return { sourceKind: "RAW_MATERIAL", rawMaterialId: "", freeTextName: "", sourceProductionType: null, sharePercent: "" };
+}
+
+function createEmptyBlendFormulaRow(sourceProductionType: AcidifierBlendRow["sourceProductionType"] = "ACIDIFIER"): AcidifierBlendRow {
+  return { sourceKind: "FORMULA", rawMaterialId: "", freeTextName: "", sourceProductionType, sharePercent: "" };
 }
 
 function createEmptyFlavorRow(): FlavorIngredientRow {
   return { rawMaterialId: "", freeTextName: "", amountPerLiter: "", unit: "g", detail: "" };
 }
 
-function createDefaultFormula(code: string): FormulaState {
+function createDefaultFormula(code: string, recipeType: FormulaState["recipeType"] = "ACIDIFIER"): FormulaState {
+  const defaultBlendItems =
+    recipeType === "BLEND"
+      ? [
+          { sourceKind: "RAW_MATERIAL" as const, rawMaterialId: "", freeTextName: "Agua", sourceProductionType: null, sharePercent: "" },
+          { sourceKind: "RAW_MATERIAL" as const, rawMaterialId: "", freeTextName: "Azúcar", sourceProductionType: null, sharePercent: "" },
+          createEmptyBlendFormulaRow("ACIDIFIER"),
+          createEmptyBlendFormulaRow("SCOOBY"),
+          createEmptyBlendFormulaRow("FLAVOR"),
+        ]
+      : [createEmptyBlendRow(), createEmptyBlendRow(), createEmptyBlendRow()];
+
   return {
     code,
-    recipeType: "ACIDIFIER",
+    recipeType,
     name: "",
     teaType: "",
     teaGramsPerLiter: "",
@@ -97,7 +114,7 @@ function createDefaultFormula(code: string): FormulaState {
     ttaTarget: "",
     temperatureMin: "",
     temperatureMax: "",
-    blendItems: [createEmptyBlendRow(), createEmptyBlendRow(), createEmptyBlendRow()],
+    blendItems: defaultBlendItems,
     flavorJuicePercent: "",
     flavorItemName: "",
     co2GramsPerLiter: "",
@@ -109,6 +126,7 @@ function createDefaultFormula(code: string): FormulaState {
 
 function getRecipeTypeLabel(recipeType?: string | null) {
   if (recipeType === "FLAVOR") return "Sabor";
+  if (recipeType === "BLEND") return "Blend";
   if (recipeType === "SCOOBY") return "Scooby";
   return "Acidificante";
 }
@@ -116,7 +134,14 @@ function getRecipeTypeLabel(recipeType?: string | null) {
 function mapFormulaToState(formula: ProductionFormulaView): FormulaState {
   return {
     code: normalizeCode(formula.code),
-    recipeType: formula.recipeType === "FLAVOR" ? "FLAVOR" : formula.recipeType === "SCOOBY" ? "SCOOBY" : "ACIDIFIER",
+    recipeType:
+      formula.recipeType === "FLAVOR"
+        ? "FLAVOR"
+        : formula.recipeType === "SCOOBY"
+          ? "SCOOBY"
+          : formula.recipeType === "BLEND"
+            ? "BLEND"
+            : "ACIDIFIER",
     name: formula.name || "",
     teaType: formula.teaType || "",
     teaGramsPerLiter: formula.teaGramsPerLiter != null ? String(formula.teaGramsPerLiter) : "",
@@ -133,8 +158,33 @@ function mapFormulaToState(formula: ProductionFormulaView): FormulaState {
     blendItems:
       formula.blendItems.length > 0
         ? formula.blendItems.map((item) => ({
+            sourceKind: (() => {
+              const freeText = item.freeTextName?.trim().toLowerCase() || "";
+              if (item.sourceKind === "RAW_MATERIAL" || item.sourceKind === "FORMULA") {
+                return item.sourceKind as AcidifierBlendRow["sourceKind"];
+              }
+              if (freeText === "agua" || freeText === "azúcar" || freeText === "azucar") {
+                return "RAW_MATERIAL";
+              }
+              return item.sourceProductionType ? "FORMULA" : "RAW_MATERIAL";
+            })(),
             rawMaterialId: item.rawMaterialId || "",
             freeTextName: item.freeTextName || "",
+            sourceProductionType:
+              (() => {
+                const freeText = item.freeTextName?.trim().toLowerCase() || "";
+                const sourceKind = item.sourceKind === "RAW_MATERIAL" || item.sourceKind === "FORMULA"
+                  ? item.sourceKind
+                  : freeText === "agua" || freeText === "azúcar" || freeText === "azucar"
+                    ? "RAW_MATERIAL"
+                    : item.sourceProductionType
+                      ? "FORMULA"
+                      : "RAW_MATERIAL";
+                if (sourceKind === "FORMULA") {
+                  return (item.sourceProductionType as AcidifierBlendRow["sourceProductionType"]) || "ACIDIFIER";
+                }
+                return null;
+              })(),
             sharePercent: item.sharePercent ? String(item.sharePercent) : "",
           }))
         : [createEmptyBlendRow(), createEmptyBlendRow(), createEmptyBlendRow()],
@@ -190,6 +240,7 @@ export default function ProductionFormulasManager({
   formulas,
   rawMaterials,
   initialSelectedCode,
+  initialRecipeType = "ACIDIFIER",
   hideTopAction = false,
   autoCreateNew = false,
   compactModal = false,
@@ -198,6 +249,7 @@ export default function ProductionFormulasManager({
   formulas: ProductionFormulaView[];
   rawMaterials: CatalogItem[];
   initialSelectedCode?: string | null;
+  initialRecipeType?: "ACIDIFIER" | "SCOOBY" | "FLAVOR" | "BLEND";
   hideTopAction?: boolean;
   autoCreateNew?: boolean;
   compactModal?: boolean;
@@ -221,6 +273,7 @@ export default function ProductionFormulasManager({
   const initializedCreate = useRef(false);
 
   const currentFormula = selectedCode ? forms[selectedCode] : undefined;
+  const isBlend = currentFormula?.recipeType === "BLEND";
   const isEditing = compactModal ? true : editingCode === selectedCode;
   const rawMaterialMap = useMemo(() => new Map(rawMaterials.map((item) => [item.id, item])), [rawMaterials]);
   const formulaCodes = order.length > 0 ? order : Object.keys(forms);
@@ -232,9 +285,9 @@ export default function ProductionFormulasManager({
     });
   };
 
-  const addFormula = () => {
+  const addFormula = (recipeType: FormulaState["recipeType"] = initialRecipeType) => {
     const code = getNextFormulaCode(Object.keys(forms));
-    setForms((prev) => ({ ...prev, [code]: createDefaultFormula(code) }));
+    setForms((prev) => ({ ...prev, [code]: createDefaultFormula(code, recipeType) }));
     setOrder((prev) => [...prev, code]);
     setSelectedCode(code);
     setEditingCode(code);
@@ -245,11 +298,15 @@ export default function ProductionFormulasManager({
   useEffect(() => {
     if (!autoCreateNew || initializedCreate.current) return;
     initializedCreate.current = true;
-    addFormula();
+    addFormula(initialRecipeType);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoCreateNew]);
+  }, [autoCreateNew, initialRecipeType]);
 
   const cancelEdit = () => {
+    if (compactModal) {
+      onDone?.();
+      return;
+    }
     if (!selectedCode) return;
     setForms(initialState.forms);
     setOrder(initialState.order);
@@ -281,8 +338,10 @@ export default function ProductionFormulasManager({
       temperatureMin: Number(currentFormula.temperatureMin || 0),
       temperatureMax: Number(currentFormula.temperatureMax || 0),
       blendItems: currentFormula.blendItems.map((item) => ({
+        sourceKind: item.sourceKind,
         rawMaterialId: item.rawMaterialId || null,
         freeTextName: item.freeTextName.trim(),
+        sourceProductionType: item.sourceProductionType,
         sharePercent: Number(item.sharePercent || 0),
       })),
       flavorJuicePercent: Number(currentFormula.flavorJuicePercent || 0),
@@ -319,12 +378,18 @@ export default function ProductionFormulasManager({
   const coldWater = Math.max(0, litersToCalculate - hotWater);
   const starterLiters = litersToCalculate * (Number(currentFormula?.yeastPitchRatePercent || 0) / 100);
   const totalShare = (currentFormula?.blendItems || []).reduce((sum, item) => sum + Number(item.sharePercent || 0), 0);
+  const blendIngredientRows = (currentFormula?.blendItems || [])
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.sourceKind !== "FORMULA");
+  const blendFormulaRows = (currentFormula?.blendItems || [])
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.sourceKind === "FORMULA");
 
   return (
     <div className={compactModal ? "space-y-4" : "space-y-6"}>
       {!hideTopAction && !compactModal && (
         <div className="flex justify-end">
-          <button type="button" onClick={addFormula} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
+          <button type="button" onClick={() => addFormula()} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
             Nueva receta
           </button>
         </div>
@@ -383,13 +448,21 @@ export default function ProductionFormulasManager({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">
-                    {currentFormula.recipeType === "FLAVOR" ? "Receta de sabor" : currentFormula.recipeType === "SCOOBY" ? "Receta SCOOBY" : "Receta acidificante"}
+                    {currentFormula.recipeType === "FLAVOR"
+                      ? "Receta de sabor"
+                      : currentFormula.recipeType === "SCOOBY"
+                        ? "Receta SCOOBY"
+                        : currentFormula.recipeType === "BLEND"
+                          ? "Receta blend"
+                          : "Receta acidificante"}
                   </p>
                   <h3 className="mt-2 text-3xl font-black text-slate-950">{currentFormula.name || "Nueva receta"}</h3>
                   <p className="mt-2 text-sm text-slate-500">
                     {currentFormula.recipeType === "FLAVOR"
                       ? currentFormula.flavorItemName || "Sabor sin item principal definido"
-                      : currentFormula.teaType || "Sin tipo de té definido"}
+                      : currentFormula.recipeType === "BLEND"
+                        ? "Mezcla final de bebida"
+                        : currentFormula.teaType || "Sin tipo de té definido"}
                   </p>
                 </div>
                 <button type="button" onClick={() => setEditingCode(selectedCode)} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
@@ -450,6 +523,180 @@ export default function ProductionFormulasManager({
                     </div>
                   </div>
                 </>
+              ) : isBlend ? (
+                <>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <InfoCard label="Brix objetivo" value={formatNumber(Number(currentFormula.brixTarget || 0))} />
+                    <InfoCard label="Componentes" value={`${currentFormula.blendItems.filter((item) => item.sourceKind || item.rawMaterialId || item.freeTextName).length}`} />
+                    <InfoCard label="Suma %" value={`${formatNumber(totalShare)}%`} />
+                  </div>
+
+                  <div className="rounded-[1.6rem] border border-slate-200 bg-slate-50 p-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Blend</p>
+                        <h4 className="mt-2 text-xl font-black text-slate-950">Insumos del blend</h4>
+                        <p className="mt-1 text-sm text-slate-500">Agrega agua, azúcar o fórmulas y reparte la participación total.</p>
+                      </div>
+                      <Field label="Brix objetivo">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={currentFormula.brixTarget}
+                          onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, brixTarget: event.target.value }))}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 lg:w-52"
+                        />
+                      </Field>
+                    </div>
+
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateFormula(selectedCode, (current) => ({
+                            ...current,
+                            blendItems: [...current.blendItems, createEmptyBlendRow()],
+                          }))
+                        }
+                        className="rounded-full bg-slate-950 px-4 py-2 text-xs font-black text-white hover:bg-slate-800"
+                      >
+                        Agregar insumo
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {currentFormula.blendItems.filter((item) => item.sourceKind || item.rawMaterialId || item.freeTextName || item.sharePercent).length === 0 ? (
+                        <p className="text-sm text-slate-400">Aún no hay insumos del blend registrados.</p>
+                      ) : (
+                        currentFormula.blendItems.map((item, index) => (
+                          <div key={`${selectedCode}-blend-view-${index}`} className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-[120px_1.2fr_1fr_140px_auto]">
+                            <Field label="Tipo">
+                              <select
+                                value={item.sourceKind}
+                                onChange={(event) =>
+                                  updateFormula(selectedCode, (current) => ({
+                                    ...current,
+                                    blendItems: current.blendItems.map((entry, entryIndex) =>
+                                      entryIndex === index
+                                        ? {
+                                            ...entry,
+                                            sourceKind: event.target.value as AcidifierBlendRow["sourceKind"],
+                                            rawMaterialId: event.target.value === "RAW_MATERIAL" ? entry.rawMaterialId : "",
+                                            sourceProductionType:
+                                              event.target.value === "FORMULA"
+                                                ? entry.sourceProductionType || "ACIDIFIER"
+                                                : null,
+                                          }
+                                        : entry,
+                                    ),
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                              >
+                                <option value="RAW_MATERIAL">Insumo</option>
+                                <option value="FORMULA">Fórmula</option>
+                              </select>
+                            </Field>
+                            <Field label={item.sourceKind === "RAW_MATERIAL" ? "Ingrediente" : "Fórmula"}>
+                              {item.sourceKind === "RAW_MATERIAL" ? (
+                                <select
+                                  value={item.rawMaterialId}
+                                  onChange={(event) =>
+                                    updateFormula(selectedCode, (current) => ({
+                                      ...current,
+                                      blendItems: current.blendItems.map((entry, entryIndex) =>
+                                        entryIndex === index ? { ...entry, rawMaterialId: event.target.value } : entry,
+                                      ),
+                                    }))
+                                  }
+                                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                                >
+                                  <option value="">Selecciona del inventario</option>
+                                  {rawMaterials.map((material) => (
+                                    <option key={material.id} value={material.id}>
+                                      {material.name}
+                                      {material.unit ? ` (${material.unit})` : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <select
+                                  value={item.sourceProductionType || "ACIDIFIER"}
+                                  onChange={(event) =>
+                                    updateFormula(selectedCode, (current) => ({
+                                      ...current,
+                                      blendItems: current.blendItems.map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? {
+                                              ...entry,
+                                              sourceProductionType: event.target.value as AcidifierBlendRow["sourceProductionType"],
+                                              rawMaterialId: "",
+                                            }
+                                          : entry,
+                                      ),
+                                    }))
+                                  }
+                                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                                >
+                                  <option value="ACIDIFIER">Acidificante</option>
+                                  <option value="SCOOBY">Scooby</option>
+                                  <option value="FLAVOR">Saborizante</option>
+                                </select>
+                              )}
+                            </Field>
+                            <Field label="Texto libre">
+                              <input
+                                value={item.freeTextName}
+                                onChange={(event) =>
+                                  updateFormula(selectedCode, (current) => ({
+                                    ...current,
+                                    blendItems: current.blendItems.map((entry, entryIndex) =>
+                                      entryIndex === index ? { ...entry, freeTextName: event.target.value } : entry,
+                                    ),
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                              />
+                            </Field>
+                            <Field label="Participación %">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.01"
+                                value={item.sharePercent}
+                                onChange={(event) =>
+                                  updateFormula(selectedCode, (current) => ({
+                                    ...current,
+                                    blendItems: current.blendItems.map((entry, entryIndex) =>
+                                      entryIndex === index ? { ...entry, sharePercent: event.target.value } : entry,
+                                    ),
+                                  }))
+                                }
+                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                              />
+                            </Field>
+                            <div className="flex items-end">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateFormula(selectedCode, (current) => ({
+                                    ...current,
+                                    blendItems: current.blendItems.length > 1 ? current.blendItems.filter((_, entryIndex) => entryIndex !== index) : [createEmptyBlendRow()],
+                                  }))
+                                }
+                                className="rounded-full bg-rose-50 px-4 py-3 text-xs font-black text-rose-700 hover:bg-rose-100"
+                              >
+                                Quitar
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
               ) : (
                 <>
                   <div className="grid gap-4 md:grid-cols-3">
@@ -495,36 +742,6 @@ export default function ProductionFormulasManager({
                       <p className="mt-1 text-sm text-slate-600">
                         {formatNumber(starterLiters)} L equivalentes al {formatNumber(Number(currentFormula.yeastPitchRatePercent || 0))}% del lote.
                       </p>
-                    </div>
-                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-black text-slate-950">Blend de té</p>
-                        <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] ${Math.abs(totalShare - 100) < 0.01 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-                          {formatNumber(totalShare)}%
-                        </span>
-                      </div>
-                      <div className="mt-3 space-y-2">
-                        {currentFormula.blendItems.filter((item) => item.rawMaterialId || item.freeTextName || item.sharePercent).length === 0 ? (
-                          <p className="text-sm text-slate-400">Aún no hay componentes de blend registrados.</p>
-                        ) : (
-                          currentFormula.blendItems
-                            .filter((item) => item.rawMaterialId || item.freeTextName || item.sharePercent)
-                            .map((item, index) => {
-                              const name = (item.rawMaterialId ? rawMaterialMap.get(item.rawMaterialId)?.name : "") || item.freeTextName || `Componente ${index + 1}`;
-                              const share = Number(item.sharePercent || 0);
-                              const grams = totalTea * (share / 100);
-                              return (
-                                <div key={`${selectedCode}-calc-${index}`} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
-                                  <div>
-                                    <p className="font-semibold text-slate-900">{name}</p>
-                                    <p className="text-xs text-slate-500">{formatNumber(share)}% del total de té</p>
-                                  </div>
-                                  <p className="font-black text-slate-950">{formatNumber(grams)} g</p>
-                                </div>
-                              );
-                            })
-                        )}
-                      </div>
                     </div>
                   </div>
                 </>
@@ -572,6 +789,8 @@ export default function ProductionFormulasManager({
                           recipeType:
                             event.target.value === "FLAVOR"
                               ? "FLAVOR"
+                              : event.target.value === "BLEND"
+                                ? "BLEND"
                               : event.target.value === "SCOOBY"
                                 ? "SCOOBY"
                                 : "ACIDIFIER",
@@ -581,6 +800,7 @@ export default function ProductionFormulasManager({
                     >
                       <option value="ACIDIFIER">Acidificante</option>
                       <option value="SCOOBY">Scooby</option>
+                      <option value="BLEND">Blend</option>
                       <option value="FLAVOR">Sabor</option>
                     </select>
                   </Field>
@@ -685,6 +905,203 @@ export default function ProductionFormulasManager({
                       </div>
                     </div>
                   </div>
+                ) : currentFormula.recipeType === "BLEND" ? (
+                  <div className="mt-6 space-y-6">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <Field label="Brix objetivo">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={currentFormula.brixTarget}
+                          onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, brixTarget: event.target.value }))}
+                          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
+                      />
+                      </Field>
+                    </div>
+
+                    <div className="border-t border-slate-200 pt-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-black text-slate-950">Ingredientes del blend</p>
+                          <p className="mt-1 text-sm text-slate-500">Agrega agua, azúcar u otros ingredientes y reparte el porcentaje total.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateFormula(selectedCode, (current) => ({
+                              ...current,
+                              blendItems: [
+                                ...current.blendItems,
+                                createEmptyBlendRow(),
+                              ],
+                            }))
+                          }
+                          className="rounded-full bg-slate-950 px-4 py-2 text-xs font-black text-white hover:bg-slate-800"
+                        >
+                          Agregar ingrediente
+                        </button>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {blendIngredientRows.length === 0 ? (
+                          <p className="text-sm text-slate-400">Aún no hay ingredientes del blend registrados.</p>
+                        ) : (
+                          blendIngredientRows.map(({ item, index }) => (
+                            <div key={`${selectedCode}-blend-ingredient-${index}`} className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1.5fr_140px_auto]">
+                              <Field label="Ingrediente">
+                                <input
+                                  value={item.freeTextName}
+                                  onChange={(event) =>
+                                    updateFormula(selectedCode, (current) => ({
+                                      ...current,
+                                      blendItems: current.blendItems.map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? { ...entry, sourceKind: "RAW_MATERIAL", sourceProductionType: null, freeTextName: event.target.value }
+                                          : entry,
+                                      ),
+                                    }))
+                                  }
+                                  placeholder="Agua, azúcar, etc."
+                                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                                />
+                              </Field>
+                              <Field label="Participación %">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  value={item.sharePercent}
+                                  onChange={(event) =>
+                                    updateFormula(selectedCode, (current) => ({
+                                      ...current,
+                                      blendItems: current.blendItems.map((entry, entryIndex) =>
+                                        entryIndex === index ? { ...entry, sourceKind: "RAW_MATERIAL", sourceProductionType: null, sharePercent: event.target.value } : entry,
+                                      ),
+                                    }))
+                                  }
+                                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                                />
+                              </Field>
+                              <div className="flex items-end">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateFormula(selectedCode, (current) => ({
+                                      ...current,
+                                      blendItems: current.blendItems.length > 1 ? current.blendItems.filter((_, entryIndex) => entryIndex !== index) : [createEmptyBlendRow()],
+                                    }))
+                                  }
+                                  className="rounded-full bg-rose-50 px-4 py-3 text-xs font-black text-rose-700 hover:bg-rose-100"
+                                >
+                                  Quitar
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-200 pt-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-black text-slate-950">Fórmulas del blend</p>
+                          <p className="mt-1 text-sm text-slate-500">Agrega acidificante, scooby o saborizante como componentes de la mezcla.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateFormula(selectedCode, (current) => ({
+                              ...current,
+                              blendItems: [...current.blendItems, createEmptyBlendFormulaRow()],
+                            }))
+                          }
+                          className="rounded-full bg-slate-950 px-4 py-2 text-xs font-black text-white hover:bg-slate-800"
+                        >
+                          Agregar fórmula
+                        </button>
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {blendFormulaRows.length === 0 ? (
+                          <p className="text-sm text-slate-400">Aún no hay fórmulas del blend registradas.</p>
+                        ) : (
+                          blendFormulaRows.map(({ item, index }) => (
+                            <div key={`${selectedCode}-blend-formula-${index}`} className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1.2fr_1fr_120px_auto]">
+                              <Field label="Fórmula">
+                                <select
+                                  value={item.sourceProductionType || "ACIDIFIER"}
+                                  onChange={(event) =>
+                                    updateFormula(selectedCode, (current) => ({
+                                      ...current,
+                                      blendItems: current.blendItems.map((entry, entryIndex) =>
+                                        entryIndex === index
+                                          ? { ...entry, sourceKind: "FORMULA", sourceProductionType: event.target.value as AcidifierBlendRow["sourceProductionType"] }
+                                          : entry,
+                                      ),
+                                    }))
+                                  }
+                                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                                >
+                                  <option value="ACIDIFIER">Acidificante</option>
+                                  <option value="SCOOBY">Scooby</option>
+                                  <option value="FLAVOR">Saborizante</option>
+                                </select>
+                              </Field>
+                              <Field label="Nombre opcional">
+                                <input
+                                  value={item.freeTextName}
+                                  onChange={(event) =>
+                                    updateFormula(selectedCode, (current) => ({
+                                      ...current,
+                                      blendItems: current.blendItems.map((entry, entryIndex) =>
+                                        entryIndex === index ? { ...entry, sourceKind: "FORMULA", freeTextName: event.target.value } : entry,
+                                      ),
+                                    }))
+                                  }
+                                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                                />
+                              </Field>
+                              <Field label="Participación %">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  value={item.sharePercent}
+                                  onChange={(event) =>
+                                    updateFormula(selectedCode, (current) => ({
+                                      ...current,
+                                      blendItems: current.blendItems.map((entry, entryIndex) =>
+                                        entryIndex === index ? { ...entry, sourceKind: "FORMULA", sharePercent: event.target.value } : entry,
+                                      ),
+                                    }))
+                                  }
+                                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                                />
+                              </Field>
+                              <div className="flex items-end">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateFormula(selectedCode, (current) => ({
+                                      ...current,
+                                      blendItems: current.blendItems.length > 1 ? current.blendItems.filter((_, entryIndex) => entryIndex !== index) : [createEmptyBlendFormulaRow()],
+                                    }))
+                                  }
+                                  className="rounded-full bg-rose-50 px-4 py-3 text-xs font-black text-rose-700 hover:bg-rose-100"
+                                >
+                                  Quitar
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <div className="mt-6 space-y-6">
                     <div className="grid gap-4 md:grid-cols-2">
@@ -726,45 +1143,6 @@ export default function ProductionFormulasManager({
                       </Field>
                     </div>
 
-                    <div className="border-t border-slate-200 pt-5">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-black text-slate-950">Blend de té</p>
-                          <p className="mt-1 text-sm text-slate-500">Selecciona del inventario o escribe el nombre libre y define el porcentaje de participación.</p>
-                        </div>
-                        <button type="button" onClick={() => updateFormula(selectedCode, (current) => ({ ...current, blendItems: [...current.blendItems, createEmptyBlendRow()] }))} className="rounded-full bg-slate-950 px-4 py-2 text-xs font-black text-white hover:bg-slate-800">
-                          Agregar ingrediente
-                        </button>
-                      </div>
-                      <div className="mt-4 space-y-3">
-                        {currentFormula.blendItems.map((item, index) => (
-                          <div key={`${selectedCode}-blend-${index}`} className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1.2fr_1fr_140px_auto]">
-                            <Field label="Ingrediente">
-                              <select value={item.rawMaterialId} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, blendItems: current.blendItems.map((entry, entryIndex) => entryIndex === index ? { ...entry, rawMaterialId: event.target.value } : entry) }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
-                                <option value="">Selecciona del inventario</option>
-                                {rawMaterials.map((material) => (
-                                  <option key={material.id} value={material.id}>
-                                    {material.name}
-                                    {material.unit ? ` (${material.unit})` : ""}
-                                  </option>
-                                ))}
-                              </select>
-                            </Field>
-                            <Field label="Texto libre">
-                              <input value={item.freeTextName} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, blendItems: current.blendItems.map((entry, entryIndex) => entryIndex === index ? { ...entry, freeTextName: event.target.value } : entry) }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" />
-                            </Field>
-                            <Field label="Participación %">
-                              <input type="number" min="0" max="100" step="0.01" value={item.sharePercent} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, blendItems: current.blendItems.map((entry, entryIndex) => entryIndex === index ? { ...entry, sharePercent: event.target.value } : entry) }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" />
-                            </Field>
-                            <div className="flex items-end">
-                              <button type="button" onClick={() => updateFormula(selectedCode, (current) => ({ ...current, blendItems: current.blendItems.length > 1 ? current.blendItems.filter((_, entryIndex) => entryIndex !== index) : [createEmptyBlendRow()] }))} className="rounded-full bg-rose-50 px-4 py-3 text-xs font-black text-rose-700 hover:bg-rose-100">
-                                Quitar
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
                   </div>
                 )}
               </div>

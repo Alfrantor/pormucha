@@ -27,6 +27,7 @@ type StorageEntry = {
   id: string;
   storageTankId: string;
   litersAdded: number;
+  litersRemaining?: number | null;
   notes?: string | null;
   createdAt: string;
   production_name?: string | null;
@@ -59,6 +60,12 @@ export function BaseBeverageInventoryManager({
   const [tankCapacity, setTankCapacity] = useState("");
   const [tankNotes, setTankNotes] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [exitRow, setExitRow] = useState<InventoryRow | null>(null);
+  const [exitBrix, setExitBrix] = useState("");
+  const [exitTemperature, setExitTemperature] = useState("");
+  const [exitPh, setExitPh] = useState("");
+  const [exitAcidity, setExitAcidity] = useState("");
+  const [exitError, setExitError] = useState("");
 
   const selectableRows = useMemo(
     () =>
@@ -134,6 +141,41 @@ export function BaseBeverageInventoryManager({
     window.location.reload();
   };
 
+  const openExitModal = (row: InventoryRow) => {
+    setExitRow(row);
+    setExitBrix("");
+    setExitTemperature("");
+    setExitPh("");
+    setExitAcidity("");
+    setExitError("");
+  };
+
+  const handleExit = async () => {
+    if (!exitRow) return;
+    const values = [exitBrix, exitTemperature, exitPh, exitAcidity];
+    if (values.some((value) => !value.trim() || !Number.isFinite(Number(value)))) {
+      setExitError("Completa Brix, temperatura, pH y acidez con valores válidos");
+      return;
+    }
+
+    setBusy("exit");
+    const result = await updateBaseBeverageInventoryDisposition(exitRow.id, "DISPATCHED", {
+      brix: Number(exitBrix),
+      temperature: Number(exitTemperature),
+      ph: Number(exitPh),
+      acidity: Number(exitAcidity),
+    });
+    setBusy(null);
+
+    if (!result.success) {
+      setExitError(result.error || "No se pudo registrar la salida");
+      return;
+    }
+
+    setExitRow(null);
+    window.location.reload();
+  };
+
   return (
     <div className="space-y-6">
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
@@ -173,7 +215,7 @@ export function BaseBeverageInventoryManager({
               onClick={() => setCreating((current) => !current)}
               className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-50"
             >
-              {creating ? "Ocultar" : "Nuevo tanque"}
+              {creating ? "Ocultar" : "Nuevo tanque de resguardo"}
             </button>
           </div>
         </div>
@@ -183,7 +225,7 @@ export function BaseBeverageInventoryManager({
             <input
               value={tankName}
               onChange={(event) => setTankName(event.target.value)}
-              placeholder="Nombre del tanque"
+              placeholder="Nombre del tanque de resguardo"
               className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm"
             />
             <input
@@ -207,7 +249,7 @@ export function BaseBeverageInventoryManager({
               disabled={busy === "create-tank"}
               className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300"
             >
-              {busy === "create-tank" ? "Guardando..." : "Crear tanque"}
+              {busy === "create-tank" ? "Guardando..." : "Crear tanque de resguardo"}
             </button>
           </div>
         )}
@@ -251,7 +293,7 @@ export function BaseBeverageInventoryManager({
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="font-black text-slate-950">{entry.litersAdded.toLocaleString("es-MX")} Lt</p>
+                            <p className="font-black text-slate-950">{Number(entry.litersRemaining ?? entry.litersAdded).toLocaleString("es-MX")} Lt</p>
                             <p className="text-xs text-slate-400">{new Date(entry.createdAt).toLocaleString("es-MX")}</p>
                           </div>
                         </div>
@@ -292,7 +334,7 @@ export function BaseBeverageInventoryManager({
                     <div>
                       <p className="text-lg font-black text-slate-950">{row.production_name || "Lote sin referencia"}</p>
                       <p className="mt-1 text-xs text-slate-400">
-                        Fórmula: {row.formula_name || row.formula_code || row.productType} · Cubeta: {row.tank_name || "-"}
+                        Fórmula: {row.formula_name || row.formula_code || row.productType} · Cubeta origen: {row.tank_name || "-"}
                       </p>
                     </div>
                   </div>
@@ -322,7 +364,7 @@ export function BaseBeverageInventoryManager({
                     {remaining != null && remaining > 0 && row.status !== "DISPATCHED" && row.status !== "EMPTIED" && row.status !== "UNIFIED" && (
                       <button
                         type="button"
-                        onClick={() => dispatchAction(() => updateBaseBeverageInventoryDisposition(row.id, "DISPATCHED"))}
+                        onClick={() => openExitModal(row)}
                         className="rounded-full bg-sky-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-sky-500"
                       >
                         Marcar con salida
@@ -351,7 +393,46 @@ export function BaseBeverageInventoryManager({
           })}
         </div>
       </section>
+
+      {exitRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-sky-600">Salida de inventario</p>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Registrar última lectura</h2>
+                <p className="mt-2 text-sm text-slate-500">{exitRow.production_name || "Lote sin referencia"}</p>
+              </div>
+              <button type="button" onClick={() => setExitRow(null)} className="rounded-full border border-slate-200 px-3 py-2 text-sm font-bold text-slate-500">Cerrar</button>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <ExitField label="Brix" value={exitBrix} onChange={setExitBrix} />
+              <ExitField label="Temperatura °C" value={exitTemperature} onChange={setExitTemperature} />
+              <ExitField label="pH" value={exitPh} onChange={setExitPh} />
+              <ExitField label="Acidez" value={exitAcidity} onChange={setExitAcidity} />
+            </div>
+            <p className="mt-4 text-xs text-slate-500">Estas lecturas quedarán asociadas al lote como su medición de salida.</p>
+            {exitError && <p className="mt-4 text-sm font-semibold text-rose-600">{exitError}</p>}
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setExitRow(null)} className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600">Cancelar</button>
+              <button type="button" onClick={handleExit} disabled={busy === "exit"} className="rounded-xl bg-sky-600 px-5 py-3 text-sm font-black text-white hover:bg-sky-500 disabled:bg-slate-300">
+                {busy === "exit" ? "Guardando..." : "Confirmar salida"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function ExitField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="text-sm font-bold text-slate-700">
+      {label}
+      <input type="number" step="0.01" value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-normal text-slate-950 outline-none focus:border-sky-500" />
+    </label>
   );
 }
 

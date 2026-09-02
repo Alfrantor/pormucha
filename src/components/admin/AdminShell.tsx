@@ -17,6 +17,7 @@ import {
   Sparkles,
   Tags,
   Truck,
+  Tag,
   Users,
 } from "lucide-react";
 
@@ -47,17 +48,18 @@ const SIDEBAR_SECTIONS: Array<{ title: string; links: NavLink[] }> = [
     links: [
       { href: "/pos", label: "POS", description: "Ir a caja", icon: <ArrowRight size={16} /> },
       { href: "/admin/orders?channel=POS", label: "Pedidos", description: "Pedidos creados desde POS", icon: <ShoppingCart size={16} /> },
-      { href: "/admin/catalog", label: "Catálogos", description: "Productos y fórmulas", icon: <Tags size={16} /> },
       { href: "/admin/clients", label: "Clientes", description: "CRM y crédito", icon: <BriefcaseBusiness size={16} /> },
-      { href: "/admin/inventory", label: "Inventarios", description: "Stock, materia prima y traspasos", icon: <Boxes size={16} /> },
-      { href: "/admin/inventory/transfers", label: "Traspasos", description: "Movimientos entre almacenes", icon: <Truck size={16} /> },
     ],
   },
   {
-    title: "Producción",
+    title: "Operaciones",
     links: [
       { href: "/admin/production", label: "Producción", description: "Cubetas, lotes y parámetros", icon: <FlaskConical size={16} /> },
+      { href: "/admin/production?tab=etiquetado", label: "Etiquetado", description: "Botellas, etiquetas y salida", icon: <Tag size={16} /> },
       { href: "/admin/production?tab=formulas", label: "Recetas", description: "Fórmulas y preparación", icon: <FlaskConical size={16} /> },
+      { href: "/admin/inventory/transfers", label: "Traspasos", description: "Movimientos entre almacenes", icon: <Truck size={16} /> },
+      { href: "/admin/inventory", label: "Inventarios", description: "Stock, materia prima y traspasos", icon: <Boxes size={16} /> },
+      { href: "/admin/catalog", label: "Catálogos", description: "Productos y fórmulas", icon: <Tags size={16} /> },
     ],
   },
   {
@@ -75,6 +77,28 @@ function isActive(pathname: string, href: string) {
   if (href === "/admin") return pathname === href;
   if (href.includes("?")) return pathname === href.split("?")[0] && false;
   return pathname.startsWith(href);
+}
+
+function humanizeAdminPath(pathname: string) {
+  const labels: Record<string, string> = {
+    production: "Producción",
+    formulas: "Fórmulas",
+    inventory: "Inventarios",
+    catalog: "Catálogos",
+    clients: "Clientes",
+    users: "Usuarios",
+    orders: "Pedidos",
+    subscriptions: "Suscriptores",
+    "web-design": "Diseño web",
+    leads: "Leads",
+  };
+
+  return pathname
+    .split("/")
+    .filter(Boolean)
+    .slice(1)
+    .map((part) => labels[part] ?? part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" / ") || "Admin";
 }
 
 function SidebarLink({ pathname, item }: { pathname: string; item: NavLink }) {
@@ -159,14 +183,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   Espacio admin
                 </p>
                 <h1 className="mt-1 text-lg font-black tracking-tight text-slate-950 sm:text-2xl">
-                  {pathname === "/admin"
-                    ? "Inicio"
-                    : pathname
-                        .split("/")
-                        .filter(Boolean)
-                        .slice(1)
-                        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-                        .join(" / ") || "Admin"}
+                  {pathname === "/admin" ? "Inicio" : humanizeAdminPath(pathname)}
                 </h1>
               </div>
 

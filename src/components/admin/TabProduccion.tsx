@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   addProductionIngredient,
   cancelFinalBeverageBlend,
@@ -8,10 +9,7 @@ import {
   completeProduction,
   createProduction,
   createFinalBeverageBlend,
-  createTank,
   recordProductionParameter,
-  setProduccionPin,
-  updateTank,
   type IngredientInput,
 } from "@/app/_actions/production";
 import { createProductionSecondPhase, createProductionThirdPhase } from "@/app/_actions/production-phase";
@@ -34,6 +32,8 @@ import {
 } from "@/lib/production-fermentation";
 
 type ProdView = "params" | "additions" | "complete";
+type RecipeBoardFilter = "ALL" | "ACIDIFIER" | "SCOOBY" | "FLAVOR";
+type FermentationStatusFilter = "ALL" | "IN_PROGRESS" | "COMPLETED";
 
 function fmtDate(d: string | Date | null | undefined) {
   if (!d) return "-";
@@ -55,11 +55,11 @@ function findRawMaterialByKeywords(rawMaterials: any[], keywords: string[]) {
 
 function buildIngredientsFromFormula(
   formula: ProductionFormulaView | null | undefined,
-  targetLiters: number,
+  batchLiters: number,
   rawMaterials: any[],
   defaultLocationId?: string,
 ): IngredientInput[] {
-  if (!formula || !(targetLiters > 0)) return [];
+  if (!formula || !(batchLiters > 0)) return [];
 
   const rows: IngredientInput[] = [];
   const blendItems = Array.isArray(formula.blendItems) ? formula.blendItems : [];
@@ -67,7 +67,7 @@ function buildIngredientsFromFormula(
 
   blendItems.forEach((item) => {
     if (!item.rawMaterialId) return;
-    const quantity = Number(item.gramsPerLiter || 0) * targetLiters;
+    const quantity = Number(item.gramsPerLiter || 0) * batchLiters;
     if (!(quantity > 0)) return;
     rows.push({
       rawMaterialId: item.rawMaterialId,
@@ -78,7 +78,7 @@ function buildIngredientsFromFormula(
 
   flavorItems.forEach((item) => {
     if (!item.rawMaterialId) return;
-    const quantity = Number(item.quantity || 0) * targetLiters;
+    const quantity = Number(item.quantity || 0) * batchLiters;
     if (!(quantity > 0)) return;
     rows.push({
       rawMaterialId: item.rawMaterialId,
@@ -88,7 +88,7 @@ function buildIngredientsFromFormula(
   });
 
   const sugarMaterial = findRawMaterialByKeywords(rawMaterials, ["azúcar", "azucar", "sugar"]);
-  const sugarQuantity = Number(formula.sugarGramsPerLiter || 0) * targetLiters;
+  const sugarQuantity = Number(formula.sugarGramsPerLiter || 0) * batchLiters;
   if (sugarMaterial?.id && sugarQuantity > 0) {
     rows.push({
       rawMaterialId: sugarMaterial.id,
@@ -98,7 +98,7 @@ function buildIngredientsFromFormula(
   }
 
   const waterMaterial = findRawMaterialByKeywords(rawMaterials, ["agua", "water"]);
-  const hotWaterQuantity = targetLiters * (Number(formula.brewWaterPercent || 0) / 100);
+  const hotWaterQuantity = batchLiters * (Number(formula.brewWaterPercent || 0) / 100);
   if (waterMaterial?.id && hotWaterQuantity > 0) {
     rows.push({
       rawMaterialId: waterMaterial.id,
@@ -118,6 +118,22 @@ function formatBatchQuantity(value: number, unit = "") {
   return `${value.toLocaleString("es-MX", { maximumFractionDigits: 2 })}${unit ? ` ${unit}` : ""}`;
 }
 
+function formatFinalBlendProductionName(dateValue: string, flavorName?: string | null) {
+  const date = dateValue ? new Date(dateValue) : null;
+  const formattedDate =
+    date && !Number.isNaN(date.getTime())
+      ? date.toLocaleString("es-MX", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
+  const flavor = flavorName?.trim() || "Sin sabor";
+  return formattedDate ? `${formattedDate} - ${flavor}` : flavor;
+}
+
 function formatStepIngredient(item: any) {
   const sourceLabel =
     item.sourceKind === "BASE_BEVERAGE"
@@ -127,6 +143,15 @@ function formatStepIngredient(item: any) {
   const unit = item.rawMaterialUnit || "";
   const location = item.defaultLocationName ? ` | ${item.defaultLocationName}` : "";
   return `${sourceLabel}: ${quantity} ${unit}${location}`.trim();
+}
+
+function resolveRawMaterialAvailableQuantity(rawMaterial: any, locationId?: string) {
+  const stocks = Array.isArray(rawMaterial?.stocks) ? rawMaterial.stocks : [];
+  if (locationId) {
+    const locationStock = stocks.find((stock: any) => String(stock.locationId || stock.location?.id || "") === String(locationId));
+    return Number(locationStock?.quantity ?? 0);
+  }
+  return stocks.reduce((sum: number, stock: any) => sum + Number(stock.quantity ?? 0), 0);
 }
 
 function resolveLatestBrixForProduction(production: any) {
@@ -145,9 +170,22 @@ function resolveLatestBrixForProduction(production: any) {
   return latestPhase?.brix != null ? Number(latestPhase.brix) : null;
 }
 
-export default function TabProduccion({ tanks, productions, rawMaterials, locations, formulas, baseBeverageInventory, finalBeverageBlends, userEmail }: any) {
-  const TANKS_PAGE_SIZE = 20;
+export default function TabProduccion({
+  tanks,
+  storageTanks,
+  productions,
+  rawMaterials,
+  locations,
+  formulas,
+  flavors,
+  baseBeverageInventory,
+  finalBeverageBlends,
+  userEmail,
+}: any) {
+  const FERMENTATION_PAGE_SIZE = 25;
+  const router = useRouter();
   const safeTanks = Array.isArray(tanks) ? tanks : [];
+  const safeStorageTanks = Array.isArray(storageTanks) ? storageTanks : [];
   const safeProductions = Array.isArray(productions) ? productions : [];
   const safeRM = Array.isArray(rawMaterials) ? rawMaterials : [];
   const safeLocations = Array.isArray(locations) ? locations : [];
@@ -159,32 +197,26 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     setNfcBaseUrl(resolvePublicAppUrl(window.location.origin));
   }, []);
 
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [newPin, setNewPin] = useState("");
-  const [pinSaving, setPinSaving] = useState(false);
-  const [pinMsg, setPinMsg] = useState("");
-
-  const [view, setView] = useState<"producciones" | "tanques" | "final">("producciones");
-  const [statusFilter, setStatusFilter] = useState<"IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "UPCOMING" | "ALL">("IN_PROGRESS");
-  const [tankPage, setTankPage] = useState(1);
-
-  const [showCreateTank, setShowCreateTank] = useState(false);
+  const [view, setView] = useState<"producciones" | "final">("producciones");
+  const [recipeFilter, setRecipeFilter] = useState<RecipeBoardFilter>("ALL");
+  const [fermentationStatusFilter, setFermentationStatusFilter] = useState<FermentationStatusFilter>("ALL");
+  const [fermentationSearch, setFermentationSearch] = useState("");
+  const [fermentationStartDate, setFermentationStartDate] = useState("");
+  const [fermentationEndDate, setFermentationEndDate] = useState("");
+  const [fermentationPage, setFermentationPage] = useState(1);
   const [showCreateProd, setShowCreateProd] = useState(false);
   const [selectedProd, setSelectedProd] = useState<any | null>(null);
+  const [selectedFormulaLotId, setSelectedFormulaLotId] = useState("");
   const [prodView, setProdView] = useState<ProdView>("params");
   const [showSecondPhaseModal, setShowSecondPhaseModal] = useState(false);
   const [secondPhaseTarget, setSecondPhaseTarget] = useState<any | null>(null);
   const [showThirdPhaseModal, setShowThirdPhaseModal] = useState(false);
   const [thirdPhaseTarget, setThirdPhaseTarget] = useState<any | null>(null);
-  const [newTankName, setNewTankName] = useState("");
-  const [newTankCapacity, setNewTankCapacity] = useState("");
-  const [tankSaving, setTankSaving] = useState(false);
-  const [tankError, setTankError] = useState("");
 
   const [newProdType, setNewProdType] = useState<string>("");
   const [newProdTank, setNewProdTank] = useState("");
   const [newProdStart, setNewProdStart] = useState(() => new Date().toISOString().slice(0, 16));
-  const [newProdInputLiters, setNewProdInputLiters] = useState("50");
+  const [newProdStartedLiters, setNewProdStartedLiters] = useState("");
   const [newProdNotes, setNewProdNotes] = useState("");
   const [ingredients, setIngredients] = useState<IngredientInput[]>([]);
   const [prodSaving, setProdSaving] = useState(false);
@@ -206,16 +238,18 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState("");
 
-  const [completeLt, setCompleteLt] = useState("");
   const [completeNotes, setCompleteNotes] = useState("");
-  const [completeAction, setCompleteAction] = useState<"MAINTAIN" | "UNIFY" | "DISPATCH">("MAINTAIN");
   const [completeSaving, setCompleteSaving] = useState(false);
+  const [completeError, setCompleteError] = useState("");
+  const [completionDestination, setCompletionDestination] = useState<"BUCKET" | "STORAGE_TANK">("BUCKET");
+  const [completeAllocations, setCompleteAllocations] = useState<Array<{ storageTankId: string; liters: string }>>([]);
 
   const [phase2Condition, setPhase2Condition] = useState("Aceptado");
   const [phase2ReceivedBy, setPhase2ReceivedBy] = useState("");
   const [phase2MeasuredBy, setPhase2MeasuredBy] = useState("");
   const [phase2StartedBy, setPhase2StartedBy] = useState(userEmail || "");
   const [phase2Date, setPhase2Date] = useState(() => new Date().toISOString().slice(0, 16));
+  const [phase2ReceivedLiters, setPhase2ReceivedLiters] = useState("");
   const [phase2Ph, setPhase2Ph] = useState("");
   const [phase2Brix, setPhase2Brix] = useState("");
   const [phase2Temp, setPhase2Temp] = useState("");
@@ -226,11 +260,24 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const [phase2Additions, setPhase2Additions] = useState<IngredientInput[]>([]);
   const [phase3Date, setPhase3Date] = useState(() => new Date().toISOString().slice(0, 16));
   const [phase3RemainingLiters, setPhase3RemainingLiters] = useState("");
+  const [phase3Ph, setPhase3Ph] = useState("");
+  const [phase3Brix, setPhase3Brix] = useState("");
+  const [phase3Temp, setPhase3Temp] = useState("");
+  const [phase3Acid, setPhase3Acid] = useState("");
   const [phase3Notes, setPhase3Notes] = useState("");
   const [phase3Saving, setPhase3Saving] = useState(false);
   const [phase3Error, setPhase3Error] = useState("");
-  const [finalBlendName, setFinalBlendName] = useState("");
+  const [finalBlendProductionDate, setFinalBlendProductionDate] = useState("");
+  const [finalBlendFlavorId, setFinalBlendFlavorId] = useState("");
+  const [finalBlendTargetLiters, setFinalBlendTargetLiters] = useState("");
   const [finalBlendTargetBrix, setFinalBlendTargetBrix] = useState("");
+  const [finalBlendSugarGramsPerLiter, setFinalBlendSugarGramsPerLiter] = useState("");
+  const [finalBlendWaterPercent, setFinalBlendWaterPercent] = useState("");
+  const [finalBlendAcidifierPercent, setFinalBlendAcidifierPercent] = useState("");
+  const [finalBlendScoobyPercent, setFinalBlendScoobyPercent] = useState("");
+  const [finalBlendFlavorPercent, setFinalBlendFlavorPercent] = useState("");
+  const [finalBlendSweetTeaBaseLiters, setFinalBlendSweetTeaBaseLiters] = useState("3.6");
+  const [finalBlendSweetTeaReferenceLiters, setFinalBlendSweetTeaReferenceLiters] = useState("19");
   const [finalBlendNotes, setFinalBlendNotes] = useState("");
   const [finalBlendSaving, setFinalBlendSaving] = useState(false);
   const [finalBlendError, setFinalBlendError] = useState("");
@@ -238,7 +285,8 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     sourceType: "BASE_LOT" | "FLAVOR_RECIPE";
     sourceId: string;
     liters: string;
-  }>>([{ sourceType: "BASE_LOT", sourceId: "", liters: "" }]);
+    brixOverride: string;
+  }>>([{ sourceType: "BASE_LOT", sourceId: "", liters: "", brixOverride: "" }]);
 
   const productionFormulaOptions = useMemo(() => {
     return safeFormulas
@@ -256,12 +304,132 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     return map;
   }, [productionFormulaOptions]);
 
+  useEffect(() => {
+    setSelectedFormulaLotId("");
+    setSelectedProd(null);
+    setProdView("params");
+    setFermentationPage(1);
+  }, [recipeFilter, fermentationStatusFilter, fermentationSearch, fermentationStartDate, fermentationEndDate]);
+
+  const recipeBoardTabs = useMemo(() => {
+    const tabs: Array<{ value: RecipeBoardFilter; label: string }> = [
+      { value: "ALL", label: "Todos" },
+      { value: "ACIDIFIER", label: "Acidificante" },
+      { value: "SCOOBY", label: "Scooby" },
+      { value: "FLAVOR", label: "Saborizante" },
+    ];
+
+    return tabs.map((tab) => ({
+      ...tab,
+      count:
+        tab.value === "ALL"
+          ? safeProductions.length
+          : safeProductions.filter((production: any) => {
+              const formula = production.formula || formulasByCode.get(production.productType) || null;
+              return formula?.recipeType === tab.value;
+            }).length,
+    }));
+  }, [safeProductions, formulasByCode]);
+
+  const fermentationRows = useMemo(() => {
+    const searchTerm = fermentationSearch.trim().toLowerCase();
+    const startDate = fermentationStartDate ? new Date(`${fermentationStartDate}T00:00:00`) : null;
+    const endDate = fermentationEndDate ? new Date(`${fermentationEndDate}T23:59:59.999`) : null;
+
+    return safeProductions
+      .map((production: any) => {
+        const formula = production.formula || formulasByCode.get(production.productType) || null;
+        const metrics = getFermentationMetrics(production, formula);
+        return { production, formula, metrics };
+      })
+      .filter(({ production, formula }) => {
+        const recipeMatches = recipeFilter === "ALL" ? true : formula?.recipeType === recipeFilter;
+        const statusMatches =
+          fermentationStatusFilter === "ALL" ? true : String(production.status) === fermentationStatusFilter;
+        const searchMatches =
+          !searchTerm ||
+          String(production.name || "").toLowerCase().includes(searchTerm) ||
+          String(production.tank?.name || "").toLowerCase().includes(searchTerm);
+        const startedAt = new Date(production.startedAt);
+        const startMatches = !startDate || startedAt >= startDate;
+        const endMatches = !endDate || startedAt <= endDate;
+        return recipeMatches && statusMatches && searchMatches && startMatches && endMatches;
+      })
+      .sort((a, b) => {
+        const aValue = a.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
+        const bValue = b.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
+        if (aValue !== bValue) return aValue - bValue;
+        return new Date(b.production.startedAt).getTime() - new Date(a.production.startedAt).getTime();
+      });
+  }, [
+    safeProductions,
+    formulasByCode,
+    recipeFilter,
+    fermentationStatusFilter,
+    fermentationSearch,
+    fermentationStartDate,
+    fermentationEndDate,
+  ]);
+
+  const fermentationTotalPages = Math.max(1, Math.ceil(fermentationRows.length / FERMENTATION_PAGE_SIZE));
+  const safeFermentationPage = Math.min(fermentationPage, fermentationTotalPages);
+  const paginatedFermentationRows = useMemo(() => {
+    const start = (safeFermentationPage - 1) * FERMENTATION_PAGE_SIZE;
+    return fermentationRows.slice(start, start + FERMENTATION_PAGE_SIZE);
+  }, [fermentationRows, safeFermentationPage]);
+
+  useEffect(() => {
+    const firstLot = fermentationRows[0];
+    if (!firstLot) {
+      setSelectedFormulaLotId("");
+      return;
+    }
+
+    if (!selectedFormulaLotId || !fermentationRows.some((lot) => lot.production.id === selectedFormulaLotId)) {
+      setSelectedFormulaLotId(firstLot.production.id);
+    }
+  }, [fermentationRows, selectedFormulaLotId]);
+
+  const selectedFormulaLot = useMemo(() => {
+    return fermentationRows.find((lot) => lot.production.id === selectedFormulaLotId) || fermentationRows[0] || null;
+  }, [fermentationRows, selectedFormulaLotId]);
+
   const formulaOptions = productionFormulaOptions;
+  const formulaStorageAvailability = useMemo(() => {
+    const map = new Map<string, { liters: number; tanks: Array<{ id: string; name: string; liters: number }> }>();
+
+    safeStorageTanks.forEach((tank: any) => {
+      const tankEntries = Array.isArray(tank.entries) ? tank.entries : [];
+      tankEntries.forEach((entry: any) => {
+        const formulaId = String(entry?.productionFormulaId || "").trim();
+        const remaining = Number((entry?.litersRemaining ?? entry?.litersAdded) || 0);
+        if (!formulaId || !(remaining > 0)) return;
+
+        const current = map.get(formulaId) || { liters: 0, tanks: [] };
+        const tankMatch = current.tanks.find((item) => item.id === tank.id);
+        if (tankMatch) {
+          tankMatch.liters += remaining;
+        } else {
+          current.tanks.push({ id: tank.id, name: tank.name, liters: remaining });
+        }
+        current.liters += remaining;
+        map.set(formulaId, current);
+      });
+    });
+
+    return map;
+  }, [safeStorageTanks]);
+
   const flavorFormulaOptions = useMemo(() => {
     return safeFormulas
       .filter((formula: any) => formula?.isActive && formula?.recipeType === "FLAVOR")
+      .map((formula: any) => ({
+        ...formula,
+        availableLiters: Number(formulaStorageAvailability.get(formula.id)?.liters || 0),
+      }))
+      .filter((formula: any) => Number(formula.availableLiters || 0) > 0)
       .sort((a: any, b: any) => String(a?.name || "").localeCompare(String(b?.name || ""), "es-MX", { sensitivity: "base" }));
-  }, [safeFormulas]);
+  }, [safeFormulas, formulaStorageAvailability]);
 
   const productionById = useMemo(() => {
     const map = new Map<string, any>();
@@ -272,59 +440,65 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   }, [safeProductions]);
 
   const baseLotOptions = useMemo(() => {
-    return safeBaseBeverageInventory
+    const isBaseFormulaType = (recipeType: string | null | undefined) =>
+      recipeType === "ACIDIFIER" || recipeType === "SCOOBY";
+
+    const bucketOptions = safeBaseBeverageInventory
       .filter((row: any) => Number(row?.litersRemaining || 0) > 0 && String(row?.status) !== "UNIFIED")
       .map((row: any) => {
         const production = productionById.get(row.productionId);
         const brix = resolveLatestBrixForProduction(production);
         return {
           id: row.id,
+          sourceType: "BASE_LOT" as const,
           productionId: row.productionId,
-          label: `${row.production?.name || "Lote"}${production?.formula?.name ? ` · ${production.formula.name}` : ""}`,
+          recipeType: production?.formula?.recipeType || null,
+          label: `${row.production?.name || "Lote"}${production?.formula?.name ? ` · ${production.formula.name}` : ""} · Cubeta ${row.tank?.name || "-"}`,
           litersRemaining: Number(row.litersRemaining || 0),
           brix,
         };
-      })
-      .filter((row: any) => row.brix != null)
-      .sort((a: any, b: any) => String(a.label).localeCompare(String(b.label), "es-MX", { sensitivity: "base" }));
-  }, [safeBaseBeverageInventory, productionById]);
+      });
 
-  const finalBlendList = Array.isArray(finalBeverageBlends) ? finalBeverageBlends : [];
-
-  const filteredProds = useMemo(() => {
-    const baseList =
-      statusFilter === "ALL"
-        ? safeProductions
-        : statusFilter === "UPCOMING"
-          ? safeProductions.filter((production: any) => production.status === "IN_PROGRESS")
-          : safeProductions.filter((production: any) => production.status === statusFilter);
-
-    const decorated = baseList.map((production: any) => {
-      const formula = production.formula || formulasByCode.get(production.productType) || null;
-      const metrics = getFermentationMetrics(production, formula);
-      return { production, formula, metrics };
+    const storageOptions = safeStorageTanks.flatMap((tank: any) => {
+      const entries = Array.isArray(tank.entries) ? tank.entries : [];
+      return entries.map((entry: any) => {
+        const production = productionById.get(entry.productionId);
+        const brix = resolveLatestBrixForProduction(production);
+        const litersRemaining = Number((entry.litersRemaining ?? entry.litersAdded) || 0);
+        return {
+          id: entry.id,
+          sourceType: "STORED_FORMULA" as const,
+          productionId: entry.productionId,
+          productionFormulaId: entry.productionFormulaId || production?.productionFormulaId || null,
+          recipeType: production?.formula?.recipeType || null,
+          storageTankId: tank.id,
+          label: `${production?.name || entry.formulaLabel || "Lote"}${production?.formula?.name ? ` · ${production.formula.name}` : entry.formulaLabel ? ` · ${entry.formulaLabel}` : ""} · Tanque ${tank.name}`,
+          litersRemaining,
+          brix,
+        };
+      });
     });
 
-    if (statusFilter === "UPCOMING") {
-      return decorated
-        .filter(({ metrics }) => metrics.phase2Date)
-        .sort((a, b) => {
-          const aValue = a.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
-          const bValue = b.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
-          return aValue - bValue;
-        })
-        .map(({ production }) => production);
-    }
+    return [...bucketOptions, ...storageOptions]
+      .filter((row: any) => Number(row.litersRemaining || 0) > 0 && isBaseFormulaType(row.recipeType))
+      .sort((a: any, b: any) => String(a.label).localeCompare(String(b.label), "es-MX", { sensitivity: "base" }));
+  }, [safeBaseBeverageInventory, safeStorageTanks, productionById]);
 
-    return decorated
-      .sort((a, b) => {
-        const aValue = a.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
-        const bValue = b.metrics.remainingDays ?? Number.POSITIVE_INFINITY;
-        if (aValue !== bValue) return aValue - bValue;
-        return new Date(b.production.startedAt).getTime() - new Date(a.production.startedAt).getTime();
-      })
-      .map(({ production }) => production);
-  }, [safeProductions, statusFilter, formulasByCode]);
+  const finalBlendList = Array.isArray(finalBeverageBlends) ? finalBeverageBlends : [];
+  const safeFlavors = Array.isArray(flavors) ? flavors : [];
+  const storageTankNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    safeStorageTanks.forEach((tank: any) => {
+      if (tank?.id) {
+        map.set(String(tank.id), String(tank.name || "Tanque"));
+      }
+    });
+    return map;
+  }, [safeStorageTanks]);
+
+  const selectedFinalBlendFlavor = safeFlavors.find((flavor: any) => flavor.id === finalBlendFlavorId) || null;
+  const finalBlendProductionName = formatFinalBlendProductionName(finalBlendProductionDate, selectedFinalBlendFlavor?.name);
+  const selectedProdFormulaCode = String(selectedProd?.formula?.code || selectedProd?.formulaCode || selectedProd?.productType || "").trim();
 
   const availableTanks = useMemo(() => {
     return safeTanks.filter((tank: any) => {
@@ -334,12 +508,31 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     }).sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "es-MX", { numeric: true, sensitivity: "base" }));
   }, [safeTanks, safeProductions, safeBaseBeverageInventory]);
 
-  const tankTotalPages = Math.max(1, Math.ceil(safeTanks.length / TANKS_PAGE_SIZE));
-  const safeTankPage = Math.min(tankPage, tankTotalPages);
-  const paginatedTanks = useMemo(() => {
-    const start = (safeTankPage - 1) * TANKS_PAGE_SIZE;
-    return safeTanks.slice(start, start + TANKS_PAGE_SIZE);
-  }, [safeTanks, safeTankPage]);
+  const availableStorageTanks = useMemo(() => {
+    return safeStorageTanks
+      .filter((tank: any) => {
+        const capacityLt = tank.capacityLt != null ? Number(tank.capacityLt) : null;
+        const currentLiters = Number(tank.currentLiters || 0);
+        const freeCapacity = capacityLt != null ? capacityLt - currentLiters : Number.POSITIVE_INFINITY;
+        const tankFormulaCode = String(tank.formulaCode || "").trim();
+        const isEmpty = currentLiters <= 0 && !tankFormulaCode;
+        const sameFormula = selectedProdFormulaCode && tankFormulaCode && tankFormulaCode === selectedProdFormulaCode;
+        return tank.isActive !== false && freeCapacity > 0 && (isEmpty || sameFormula);
+      })
+      .map((tank: any) => {
+        const capacityLt = tank.capacityLt != null ? Number(tank.capacityLt) : null;
+        const currentLiters = Number(tank.currentLiters || 0);
+        const freeCapacity = capacityLt != null ? Math.max(capacityLt - currentLiters, 0) : null;
+        return {
+          ...tank,
+          currentLiters,
+          capacityLt,
+          freeCapacity,
+          formulaLabel: tank.formulaName || tank.formulaCode || null,
+        };
+      })
+      .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "es-MX", { numeric: true, sensitivity: "base" }));
+  }, [safeStorageTanks, selectedProdFormulaCode]);
 
   const baseInventoryTotals = useMemo(() => {
     return safeBaseBeverageInventory.reduce(
@@ -354,22 +547,22 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
   const selectedFormula = (newProdType ? formulasByCode.get(newProdType) : null) || formulaOptions[0] || null;
   const profile = profileFromFormula(selectedFormula, newProdType);
-  const selectedTankForNewProd = safeTanks.find((tank: any) => tank.id === newProdTank) || null;
+  const selectedTankForNewProd = availableTanks.find((tank: any) => tank.id === newProdTank) || null;
   const generatedProdName = newProdTank
     ? formatProductionName(newProdStart, selectedTankForNewProd?.name, selectedFormula?.code || newProdType || "F1")
     : "";
-  const newProdTargetLiters = Number(newProdInputLiters || 0);
-  const projectedTeaTotal = Number(selectedFormula?.teaGramsPerLiter || 0) * newProdTargetLiters;
-  const projectedSugarTotal = Number(selectedFormula?.sugarGramsPerLiter || 0) * newProdTargetLiters;
-  const projectedStarterLiters = newProdTargetLiters * (Number(selectedFormula?.yeastPitchRatePercent || 0) / 100);
-  const projectedHotWater = newProdTargetLiters * (Number(selectedFormula?.brewWaterPercent || 0) / 100);
-  const projectedColdWater = Math.max(0, newProdTargetLiters - projectedHotWater);
+  const newProdBatchLiters = Number(newProdStartedLiters || 0);
+  const projectedTeaTotal = Number(selectedFormula?.teaGramsPerLiter || 0) * newProdBatchLiters;
+  const projectedSugarTotal = Number(selectedFormula?.sugarGramsPerLiter || 0) * newProdBatchLiters;
+  const projectedStarterLiters = newProdBatchLiters * (Number(selectedFormula?.yeastPitchRatePercent || 0) / 100);
+  const projectedHotWater = newProdBatchLiters * (Number(selectedFormula?.brewWaterPercent || 0) / 100);
+  const projectedColdWater = Math.max(0, newProdBatchLiters - projectedHotWater);
   const projectedBlendItems = Array.isArray(selectedFormula?.blendItems)
     ? selectedFormula.blendItems
         .filter((item: any) => item?.rawMaterialId || item?.freeTextName)
         .map((item: any) => ({
           ...item,
-          calculatedQuantity: Number(item.gramsPerLiter || 0) * newProdTargetLiters,
+          calculatedQuantity: Number(item.gramsPerLiter || 0) * newProdBatchLiters,
         }))
     : [];
   const currentParamCheck = evaluateProductionParametersWithFormula(selectedProd?.formula, selectedProd?.productType || "A", {
@@ -387,6 +580,46 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const selectedPhaseRecords = Array.isArray(selectedProd?.secondPhaseRecords) ? selectedProd.secondPhaseRecords : [];
   const selectedProdPhase2 = selectedPhaseRecords.find((record: any) => Number(record.phase) === 2) || null;
   const selectedProdPhase3 = selectedPhaseRecords.find((record: any) => Number(record.phase) === 3) || null;
+  const selectedProdLatestParam = Array.isArray(selectedProd?.parameters) && selectedProd.parameters.length
+    ? [...selectedProd.parameters].sort((a: any, b: any) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())[0]
+    : null;
+  const startedLiters = selectedProd?.startedLiters != null ? Number(selectedProd.startedLiters) : null;
+  const phase2StartLiters = selectedProdPhase2?.receivedLiters != null ? Number(selectedProdPhase2.receivedLiters) : null;
+  const finalLiters = selectedProdPhase3?.remainingLiters != null
+    ? Number(selectedProdPhase3.remainingLiters)
+    : selectedProd?.litersProduced != null
+      ? Number(selectedProd.litersProduced)
+      : null;
+  const startedToFinalDifference = startedLiters != null && finalLiters != null ? finalLiters - startedLiters : null;
+  const startedToFinalPercent = startedLiters != null && startedLiters > 0 && startedToFinalDifference != null ? (startedToFinalDifference / startedLiters) * 100 : null;
+  const phase2ToFinalDifference = phase2StartLiters != null && finalLiters != null ? finalLiters - phase2StartLiters : null;
+  const phase2ToFinalPercent = phase2StartLiters != null && phase2StartLiters > 0 && phase2ToFinalDifference != null ? (phase2ToFinalDifference / phase2StartLiters) * 100 : null;
+
+  const completionAllocationTotal = completeAllocations.reduce((sum, row) => sum + Number(row.liters || 0), 0);
+  const completionRemaining = Math.max(Number(phase3RemainingLiters || 0) - completionAllocationTotal, 0);
+  const stockShortages = useMemo(() => {
+    return ingredients
+      .filter((item) => item.rawMaterialId && item.quantity > 0)
+      .map((item) => {
+        const rawMaterial = safeRM.find((rm: any) => rm.id === item.rawMaterialId);
+        const available = resolveRawMaterialAvailableQuantity(rawMaterial, item.locationId || safeLocations[0]?.id);
+        const shortage = Number(item.quantity) - Number(available);
+        return {
+          rawMaterialId: item.rawMaterialId,
+          name: rawMaterial?.name || "Insumo",
+          unit: rawMaterial?.unit || "",
+          locationName:
+            safeLocations.find((loc: any) => loc.id === item.locationId)?.name ||
+            safeLocations[0]?.name ||
+            "Sin ubicación",
+          required: Number(item.quantity),
+          available: Number(available),
+          shortage,
+        };
+      })
+      .filter((item) => item.shortage > 0)
+      .sort((a, b) => b.shortage - a.shortage);
+  }, [ingredients, safeRM, safeLocations]);
 
   useEffect(() => {
     if ((!newProdType || !formulasByCode.has(newProdType)) && formulaOptions[0]?.code) {
@@ -395,8 +628,20 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   }, [newProdType, formulaOptions]);
 
   useEffect(() => {
-    setIngredients(buildIngredientsFromFormula(selectedFormula, newProdTargetLiters, safeRM, safeLocations[0]?.id || ""));
-  }, [selectedFormula, newProdTargetLiters, safeRM, safeLocations]);
+    if (newProdTank && !availableTanks.some((tank: any) => tank.id === newProdTank)) {
+      setNewProdTank("");
+    }
+  }, [availableTanks, newProdTank]);
+
+  useEffect(() => {
+    setIngredients(buildIngredientsFromFormula(selectedFormula, newProdBatchLiters, safeRM, safeLocations[0]?.id || ""));
+  }, [selectedFormula, newProdBatchLiters, safeRM, safeLocations]);
+
+  useEffect(() => {
+    if (view === "final" && !finalBlendProductionDate) {
+      setFinalBlendProductionDate(new Date().toISOString().slice(0, 16));
+    }
+  }, [view, finalBlendProductionDate]);
 
   const addIngredientRow = () => {
     setIngredients((prev) => [...prev, { rawMaterialId: "", quantity: 0, locationId: safeLocations[0]?.id || "" }]);
@@ -404,23 +649,6 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
   const removeIngredientRow = (index: number) => {
     setIngredients((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const handleSavePin = async () => {
-    setPinSaving(true);
-    setPinMsg("");
-    const res = await setProduccionPin(newPin);
-    setPinSaving(false);
-    if (res.error) {
-      setPinMsg(res.error);
-      return;
-    }
-    setPinMsg("PIN actualizado");
-    setTimeout(() => {
-      setShowPinModal(false);
-      setNewPin("");
-      setPinMsg("");
-    }, 1200);
   };
 
   const handleCreateProd = async () => {
@@ -433,12 +661,20 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       setProdError("Selecciona una cubeta");
       return;
     }
-    if (!(newProdTargetLiters > 0)) {
-      setProdError("Indica un volumen objetivo válido");
+    if (!(newProdBatchLiters > 0)) {
+      setProdError("Indica los litros iniciales del proceso");
       return;
     }
 
     const validIngredients = ingredients.filter((item) => item.rawMaterialId && item.quantity > 0);
+    if (stockShortages.length > 0) {
+      setProdError(
+        `No tienes stock suficiente para: ${stockShortages
+          .map((item) => `${item.name} (${item.locationName}) faltan ${Math.max(0, item.shortage).toLocaleString("es-MX")} ${item.unit || ""}`.trim())
+          .join(", ")}`
+      );
+      return;
+    }
 
     setProdSaving(true);
     const res = await createProduction({
@@ -447,7 +683,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       productionFormulaId: selectedFormula?.id,
       tankId: newProdTank,
       startedAt: newProdStart,
-      inputLiters: newProdInputLiters.trim() ? Number(newProdInputLiters) : undefined,
+      startedLiters: newProdStartedLiters.trim() ? Number(newProdStartedLiters) : undefined,
       notes: newProdNotes,
       createdBy: userEmail,
       ingredients: validIngredients,
@@ -463,47 +699,9 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     setNewProdType(formulaOptions[0]?.code || "");
     setNewProdTank("");
     setNewProdStart(new Date().toISOString().slice(0, 16));
-    setNewProdInputLiters("50");
+    setNewProdStartedLiters("");
     setNewProdNotes("");
     setIngredients([]);
-    window.location.reload();
-  };
-
-  const handleCreateTank = async () => {
-    setTankError("");
-    if (!newTankName.trim()) {
-      setTankError("Nombre requerido");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.set("name", newTankName.trim());
-    if (newTankCapacity.trim()) {
-      formData.set("capacityLt", newTankCapacity.trim());
-    }
-
-    setTankSaving(true);
-    const res = await createTank(formData);
-    setTankSaving(false);
-
-    if (res?.error) {
-      setTankError(res.error);
-      return;
-    }
-
-    setShowCreateTank(false);
-    setNewTankName("");
-    setNewTankCapacity("");
-    window.location.reload();
-  };
-
-  const handleToggleTankActive = async (tank: any) => {
-    const formData = new FormData();
-    formData.set("id", tank.id);
-    formData.set("name", tank.name);
-    formData.set("capacityLt", tank.capacityLt != null ? String(tank.capacityLt) : "");
-    formData.set("isActive", String(!tank.isActive));
-    await updateTank(formData);
     window.location.reload();
   };
 
@@ -569,11 +767,132 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     window.location.reload();
   };
 
+  const openCompletePanel = (prod: any) => {
+    setSelectedProd(prod);
+    setProdView("complete");
+    setCompleteError("");
+    setCompletionDestination("BUCKET");
+    setPhase3Date(new Date().toISOString().slice(0, 16));
+    setPhase3RemainingLiters("");
+    setPhase3Ph("");
+    setPhase3Brix("");
+    setPhase3Temp("");
+    setPhase3Acid("");
+    setPhase3Notes("");
+    setCompleteNotes("");
+    setCompleteAllocations([]);
+  };
+
+  const addCompletionAllocationRow = () => {
+    setCompleteAllocations((current) => [...current, { storageTankId: "", liters: "" }]);
+  };
+
+  const selectCompletionDestination = (destination: "BUCKET" | "STORAGE_TANK") => {
+    setCompletionDestination(destination);
+    if (destination === "STORAGE_TANK") {
+      setCompleteAllocations((current) => current.length > 0 ? current : [{ storageTankId: availableStorageTanks[0]?.id || "", liters: "" }]);
+    }
+  };
+
+  const updateCompletionAllocationRow = (index: number, patch: Partial<{ storageTankId: string; liters: string }>) => {
+    setCompleteAllocations((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
+  };
+
+  const removeCompletionAllocationRow = (index: number) => {
+    setCompleteAllocations((current) => current.filter((_, rowIndex) => rowIndex !== index));
+  };
+
   const handleComplete = async () => {
-    if (!selectedProd || !completeLt) return;
+    if (!selectedProd) return;
+    if (!phase3RemainingLiters.trim()) {
+      setCompleteError("Indica los litros finales para cerrar el proceso");
+      setProdView("complete");
+      return;
+    }
+    if (!phase3Ph.trim() || !phase3Brix.trim() || !phase3Temp.trim() || !phase3Acid.trim()) {
+      setCompleteError("Completa la medición final: pH, Brix, temperatura y acidez");
+      setProdView("complete");
+      return;
+    }
+
+    const finalLotLiters = Number(phase3RemainingLiters || 0);
+    const finalPh = Number(phase3Ph);
+    const finalBrix = Number(phase3Brix);
+    const finalTemperature = Number(phase3Temp);
+    const finalAcidity = Number(phase3Acid);
+    if (![finalPh, finalBrix, finalTemperature, finalAcidity].every(Number.isFinite)) {
+      setCompleteError("La medición final debe tener valores numéricos válidos");
+      setProdView("complete");
+      return;
+    }
+    const completionPayload = completeAllocations
+      .map((row) => ({ storageTankId: row.storageTankId, liters: Number(row.liters || 0) }))
+      .filter((row) => row.storageTankId && row.liters > 0);
+
+    if (completionDestination === "STORAGE_TANK" && completionPayload.length === 0) {
+      setCompleteError("Asigna el producto a uno o más tanques de resguardo");
+      setProdView("complete");
+      return;
+    }
+
+    const completionTotal = completionPayload.reduce((sum, row) => sum + row.liters, 0);
+    if (completionDestination === "STORAGE_TANK" && completionTotal !== finalLotLiters) {
+      setCompleteError("La suma de litros asignados debe ser igual a los litros finales");
+      setProdView("complete");
+      return;
+    }
+
     setCompleteSaving(true);
-    await completeProduction(selectedProd.id, Number(completeLt), completeNotes, completeAction);
-    setCompleteSaving(false);
+    try {
+      if (!selectedProdPhase3) {
+        const phase3Res = await createProductionThirdPhase({
+          productionId: selectedProd.id,
+          measuredAt: phase3Date,
+          remainingLiters: finalLotLiters,
+          ph: finalPh,
+          brix: finalBrix,
+          temperature: finalTemperature,
+          acidity: finalAcidity,
+          notes: completeNotes,
+          startedBy: userEmail,
+        });
+
+        if (!phase3Res.success) {
+          setCompleteSaving(false);
+          setPhase3Error(phase3Res.error || "No se pudo registrar la fase final");
+          setProdView("complete");
+          return;
+        }
+      }
+
+      const result = await completeProduction(
+        selectedProd.id,
+        finalLotLiters,
+        completeNotes,
+        completionDestination === "STORAGE_TANK" ? completionPayload : [],
+        completionDestination,
+      );
+      if (result.error) {
+        setCompleteSaving(false);
+        setCompleteError(result.error);
+        setProdView("complete");
+        return;
+      }
+      const allocationSummary = completionPayload
+        .map((row) => {
+          const tankName = safeStorageTanks.find((tank: any) => tank.id === row.storageTankId)?.name || row.storageTankId;
+          return `${tankName}: ${row.liters.toLocaleString("es-MX")} Lt`;
+        })
+        .join(" | ");
+
+      window.alert(
+        completionDestination === "BUCKET"
+          ? `Proceso finalizado correctamente.\n\nLote: ${selectedProd.name}\nDestino: Cubeta ${selectedProd.tank?.name || "original"}\nExistencia: ${finalLotLiters.toLocaleString("es-MX")} Lt`
+          : `Proceso finalizado y resguardado correctamente.\n\nLote: ${selectedProd.name}\nTanques: ${allocationSummary || "Sin detalle"}\nLitros finales: ${finalLotLiters.toLocaleString("es-MX")} Lt`,
+      );
+    } finally {
+      setCompleteSaving(false);
+    }
     window.location.reload();
   };
 
@@ -591,6 +910,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     setPhase2MeasuredBy("");
     setPhase2StartedBy(userEmail || "");
     setPhase2Date(new Date().toISOString().slice(0, 16));
+    setPhase2ReceivedLiters("");
     setPhase2Ph("");
     setPhase2Brix("");
     setPhase2Temp("");
@@ -604,6 +924,10 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   const handleSecondPhase = async () => {
     if (!secondPhaseTarget) return;
     setPhase2Error("");
+    if (!phase2ReceivedLiters.trim() || Number(phase2ReceivedLiters) <= 0) {
+      setPhase2Error("Indica los litros de arranque de la fase dos");
+      return;
+    }
     if (!phase2ReceivedBy.trim() || !phase2MeasuredBy.trim() || !phase2StartedBy.trim()) {
       setPhase2Error("Completa quien recibio, quien midio y quien inicio fase dos");
       return;
@@ -613,6 +937,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     const res = await createProductionSecondPhase({
       productionId: secondPhaseTarget.id,
       receivedCondition: phase2Condition,
+      receivedLiters: phase2ReceivedLiters.trim() ? Number(phase2ReceivedLiters) : undefined,
       receivedBy: phase2ReceivedBy,
       measuredBy: phase2MeasuredBy,
       startedBy: phase2StartedBy,
@@ -663,9 +988,16 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     setThirdPhaseTarget(prod);
     setPhase3Date(new Date().toISOString().slice(0, 16));
     setPhase3RemainingLiters(phase3?.remainingLiters != null ? String(Number(phase3.remainingLiters)) : "");
+    setPhase3Ph(phase3?.ph != null ? String(Number(phase3.ph)) : "");
+    setPhase3Brix(phase3?.brix != null ? String(Number(phase3.brix)) : "");
+    setPhase3Temp(phase3?.temperature != null ? String(Number(phase3.temperature)) : "");
+    setPhase3Acid(phase3?.acidity != null ? String(Number(phase3.acidity)) : "");
     setPhase3Notes("");
     setPhase3Error("");
-    setShowThirdPhaseModal(true);
+    setCompletionDestination("BUCKET");
+    setCompleteAllocations([]);
+    setCompleteError("");
+    setProdView("complete");
   };
 
   const handleThirdPhase = async () => {
@@ -675,12 +1007,20 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
       setPhase3Error("Indica cuantos litros quedan en el contenedor");
       return;
     }
+    if (!phase3Ph.trim() || !phase3Brix.trim() || !phase3Temp.trim() || !phase3Acid.trim()) {
+      setPhase3Error("Completa la medición final: pH, Brix, temperatura y acidez");
+      return;
+    }
 
     setPhase3Saving(true);
     const res = await createProductionThirdPhase({
       productionId: thirdPhaseTarget.id,
       measuredAt: phase3Date,
       remainingLiters: Number(phase3RemainingLiters),
+      ph: Number(phase3Ph),
+      brix: Number(phase3Brix),
+      temperature: Number(phase3Temp),
+      acidity: Number(phase3Acid),
       notes: phase3Notes,
       startedBy: userEmail,
     });
@@ -695,29 +1035,50 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     window.location.reload();
   };
 
+  const finalBlendTargetLitersValue = Number(finalBlendTargetLiters || 0);
+  const finalBlendTargetBrixValue = Number(finalBlendTargetBrix || 0);
+  const finalBlendScoobyLiters = finalBlendTargetLitersValue * (Number(finalBlendScoobyPercent || 0) / 100);
+  const finalBlendAcidifierLiters = finalBlendTargetLitersValue * (Number(finalBlendAcidifierPercent || 0) / 100);
+  const finalBlendSweetTeaLiters =
+    Number(finalBlendSweetTeaReferenceLiters || 0) > 0
+      ? (Number(finalBlendSweetTeaBaseLiters || 0) * finalBlendTargetLitersValue) / Number(finalBlendSweetTeaReferenceLiters || 0)
+      : 0;
+  const resolveFinalBlendLiters = (recipeType: string | null | undefined, fallbackLiters: string) => {
+    if (recipeType === "SCOOBY") return finalBlendScoobyLiters;
+    if (recipeType === "ACIDIFIER") return finalBlendAcidifierLiters;
+    if (recipeType === "FLAVOR") return finalBlendSweetTeaLiters;
+    return Number(fallbackLiters || 0);
+  };
+
   const finalBlendResolvedRows = finalBlendRows.map((row, index) => {
+    const manualBrix = row.brixOverride.trim() ? Number(row.brixOverride) : null;
     if (row.sourceType === "BASE_LOT") {
       const selected = baseLotOptions.find((option: any) => option.id === row.sourceId);
+      const recipeType = selected?.recipeType || null;
       return {
         key: `final-base-${index}`,
-        sourceType: row.sourceType,
+        sourceType: selected?.sourceType || "BASE_LOT",
         sourceId: row.sourceId,
-        liters: Number(row.liters || 0),
+        sourceStorageEntryId: selected?.sourceType === "STORED_FORMULA" ? selected.id : null,
+        liters: resolveFinalBlendLiters(recipeType, row.liters),
         label: selected?.label || "Lote base",
+        recipeType,
         availableLiters: selected?.litersRemaining ?? null,
-        brix: selected?.brix ?? null,
+        brix: manualBrix != null && Number.isFinite(manualBrix) ? manualBrix : selected?.brix ?? null,
       };
     }
 
     const selected = flavorFormulaOptions.find((formula: any) => formula.id === row.sourceId);
+    const recipeBrix = selected?.brixMax != null ? Number(selected.brixMax) : selected?.brixMin != null ? Number(selected.brixMin) : null;
     return {
       key: `final-flavor-${index}`,
       sourceType: row.sourceType,
       sourceId: row.sourceId,
-      liters: Number(row.liters || 0),
+      liters: resolveFinalBlendLiters("FLAVOR", row.liters),
       label: selected ? `${selected.name} (${selected.code})` : "Receta sabor",
-      availableLiters: null,
-      brix: selected?.brixMax != null ? Number(selected.brixMax) : selected?.brixMin != null ? Number(selected.brixMin) : null,
+      recipeType: "FLAVOR",
+      availableLiters: selected?.availableLiters ?? null,
+      brix: manualBrix != null && Number.isFinite(manualBrix) ? manualBrix : recipeBrix,
     };
   });
 
@@ -726,33 +1087,69 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
     finalBlendTotalLiters > 0
       ? finalBlendResolvedRows.reduce((sum, row) => sum + row.liters * Number(row.brix || 0), 0) / finalBlendTotalLiters
       : 0;
-  const finalBlendTargetBrixValue = Number(finalBlendTargetBrix || 0);
-  const finalBlendSugarToAddKg = Math.max(finalBlendTargetBrixValue - finalBlendWeightedBrix, 0) * finalBlendTotalLiters * 0.01;
+  const finalBlendObjectiveSugarGrams =
+    finalBlendTargetLitersValue > 0 && finalBlendTargetBrixValue > 0
+      ? finalBlendTargetLitersValue * finalBlendTargetBrixValue * 10
+      : 0;
+  const finalBlendCalculatedWaterLiters = Math.max(
+    finalBlendTargetLitersValue - finalBlendScoobyLiters - finalBlendAcidifierLiters - finalBlendSweetTeaLiters,
+    0,
+  );
+  const finalBlendCalculatedWaterPercent =
+    finalBlendTargetLitersValue > 0 ? (finalBlendCalculatedWaterLiters / finalBlendTargetLitersValue) * 100 : 0;
+  const finalBlendScoobyBrix = finalBlendResolvedRows.find((row) => row.recipeType === "SCOOBY")?.brix ?? null;
+  const finalBlendAcidifierBrix = finalBlendResolvedRows.find((row) => row.recipeType === "ACIDIFIER")?.brix ?? null;
+  const finalBlendScoobySugarGrams =
+    finalBlendScoobyBrix != null && Number.isFinite(Number(finalBlendScoobyBrix)) ? Number(finalBlendScoobyBrix) * 0.8 * 10 : 0;
+  const finalBlendAcidifierSugarGrams =
+    finalBlendAcidifierBrix != null && Number.isFinite(Number(finalBlendAcidifierBrix)) ? Number(finalBlendAcidifierBrix) * 0.8 * 10 : 0;
+  const finalBlendSweetTeaSugarGrams = Math.max(
+    finalBlendObjectiveSugarGrams - finalBlendScoobySugarGrams - finalBlendAcidifierSugarGrams,
+    0,
+  );
+  const finalBlendSugarToAddKg = finalBlendSweetTeaSugarGrams / 1000;
 
   const addFinalBlendRow = () => {
-    setFinalBlendRows((prev) => [...prev, { sourceType: "BASE_LOT", sourceId: "", liters: "" }]);
+    setFinalBlendRows((prev) => [...prev, { sourceType: "BASE_LOT", sourceId: "", liters: "", brixOverride: "" }]);
   };
 
   const removeFinalBlendRow = (index: number) => {
-    setFinalBlendRows((prev) => (prev.length > 1 ? prev.filter((_, rowIndex) => rowIndex !== index) : [{ sourceType: "BASE_LOT", sourceId: "", liters: "" }]));
+    setFinalBlendRows((prev) => (prev.length > 1 ? prev.filter((_, rowIndex) => rowIndex !== index) : [{ sourceType: "BASE_LOT", sourceId: "", liters: "", brixOverride: "" }]));
   };
 
   const resetFinalBlendForm = () => {
-    setFinalBlendName("");
+    setFinalBlendProductionDate(new Date().toISOString().slice(0, 16));
+    setFinalBlendFlavorId("");
+    setFinalBlendTargetLiters("");
     setFinalBlendTargetBrix("");
+    setFinalBlendSugarGramsPerLiter("");
+    setFinalBlendWaterPercent("");
+    setFinalBlendAcidifierPercent("");
+    setFinalBlendScoobyPercent("");
+    setFinalBlendFlavorPercent("");
+    setFinalBlendSweetTeaBaseLiters("3.6");
+    setFinalBlendSweetTeaReferenceLiters("19");
     setFinalBlendNotes("");
-    setFinalBlendRows([{ sourceType: "BASE_LOT", sourceId: "", liters: "" }]);
+    setFinalBlendRows([{ sourceType: "BASE_LOT", sourceId: "", liters: "", brixOverride: "" }]);
     setFinalBlendError("");
   };
 
   const handleCreateFinalBlend = async () => {
     setFinalBlendError("");
-    if (!finalBlendName.trim()) {
-      setFinalBlendError("Escribe el nombre de la bebida final");
+    if (!finalBlendProductionDate.trim()) {
+      setFinalBlendError("Indica la fecha de producción");
+      return;
+    }
+    if (!selectedFinalBlendFlavor) {
+      setFinalBlendError("Selecciona el sabor de la bebida");
       return;
     }
     if (!Number.isFinite(finalBlendTargetBrixValue) || finalBlendTargetBrixValue < 0) {
       setFinalBlendError("El brix objetivo no es válido");
+      return;
+    }
+    if (!Number.isFinite(finalBlendTargetLitersValue) || finalBlendTargetLitersValue <= 0) {
+      setFinalBlendError("Indica los litros objetivos de la bebida final");
       return;
     }
 
@@ -764,7 +1161,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
     const insufficientRow = preparedRows.find((row) => row.availableLiters != null && row.liters > Number(row.availableLiters));
     if (insufficientRow) {
-      setFinalBlendError(`Uno de los lotes base excede los litros disponibles: ${insufficientRow.label}`);
+      setFinalBlendError(`Uno de los componentes excede los litros disponibles: ${insufficientRow.label}`);
       return;
     }
 
@@ -776,15 +1173,24 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
     setFinalBlendSaving(true);
     const result = await createFinalBeverageBlend({
-      name: finalBlendName.trim(),
+      name: finalBlendProductionName,
+      flavorId: finalBlendFlavorId || undefined,
+      flavorName: selectedFinalBlendFlavor?.name || undefined,
       targetBrix: finalBlendTargetBrixValue,
+      sugarGramsPerLiter: finalBlendObjectiveSugarGrams,
+      waterPercent: finalBlendCalculatedWaterPercent,
+      acidifierPercent: finalBlendAcidifierPercent ? Number(finalBlendAcidifierPercent) : undefined,
+      scoobyPercent: finalBlendScoobyPercent ? Number(finalBlendScoobyPercent) : undefined,
+      flavorPercent: finalBlendFlavorPercent ? Number(finalBlendFlavorPercent) : undefined,
       notes: finalBlendNotes.trim() || undefined,
       createdBy: userEmail,
       components: preparedRows.map((row) => ({
         sourceType: row.sourceType,
         baseBeverageInventoryId: row.sourceType === "BASE_LOT" ? row.sourceId : undefined,
         productionFormulaId: row.sourceType === "FLAVOR_RECIPE" ? row.sourceId : undefined,
+        sourceStorageEntryId: row.sourceType === "STORED_FORMULA" ? row.sourceStorageEntryId || row.sourceId : undefined,
         liters: row.liters,
+        brix: row.brix != null ? Number(row.brix) : undefined,
       })),
     });
     setFinalBlendSaving(false);
@@ -812,266 +1218,218 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-black text-slate-950">Produccion de bebida base</h2>
+        <h2 className="text-2xl font-black text-slate-950">Fermentados</h2>
         <div className="flex gap-2">
-          <button onClick={() => setView("producciones")} className={tabClass(view === "producciones")}>Lotes</button>
+          <button onClick={() => setView("producciones")} className={tabClass(view === "producciones")}>Fórmulas</button>
           <button onClick={() => setView("final")} className={tabClass(view === "final")}>Bebida final</button>
-          <button onClick={() => setView("tanques")} className={tabClass(view === "tanques")}>Cubetas</button>
-          <button onClick={() => setShowPinModal(true)} className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">PIN NFC</button>
+          {view === "producciones" && (
+            <button
+              type="button"
+              onClick={() => setShowCreateProd(true)}
+              className="rounded-lg bg-slate-950 px-4 py-2 text-xs font-black text-white hover:bg-slate-800"
+            >
+              Nuevo proceso
+            </button>
+          )}
         </div>
       </div>
 
       {view === "producciones" && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            {(["IN_PROGRESS", "UPCOMING", "COMPLETED", "CANCELLED", "ALL"] as const).map((status) => (
-              <button key={status} onClick={() => setStatusFilter(status)} className={filterClass(statusFilter === status)}>
-                {status === "ALL" ? "Todos" : status === "IN_PROGRESS" ? "En proceso" : status === "UPCOMING" ? "Próximos a salir" : status === "COMPLETED" ? "Completados" : "Cancelados"}
-              </button>
-            ))}
-            <button onClick={() => setShowCreateProd(true)} className="ml-auto rounded-lg bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800">
-              Nueva produccion
-            </button>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Inventario bebida base</p>
-              <p className="mt-2 text-2xl font-black text-slate-950">{safeBaseBeverageInventory.length}</p>
-              <p className="text-xs text-slate-500">lotes listos</p>
+        <div className="space-y-6">
+          <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap gap-3">
+              {recipeBoardTabs.map((tab) => {
+                const isActive = tab.value === recipeFilter;
+                const label = tab.value === "ACIDIFIER" ? "Acidificante" : tab.value === "SCOOBY" ? "Scooby" : tab.value === "FLAVOR" ? "Saborizante" : "Todos";
+                return (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    onClick={() => setRecipeFilter(tab.value)}
+                    className={`rounded-xl border px-5 py-3 text-sm font-bold transition ${
+                      isActive ? "border-slate-950 bg-slate-950 text-white shadow-md" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Litros producidos</p>
-              <p className="mt-2 text-2xl font-black text-slate-950">{baseInventoryTotals.produced.toLocaleString("es-MX")}</p>
-              <p className="text-xs text-slate-500">litros terminados</p>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {[
+                { value: "ALL" as const, label: "Todos" },
+                { value: "IN_PROGRESS" as const, label: "En proceso" },
+                { value: "COMPLETED" as const, label: "Completados" },
+              ].map((tab) => {
+                const isActive = tab.value === fermentationStatusFilter;
+                return (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    onClick={() => setFermentationStatusFilter(tab.value)}
+                    className={`rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.18em] transition ${
+                      isActive
+                        ? "border-slate-950 bg-slate-950 text-white shadow-md"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })} 
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Litros remanentes</p>
-              <p className="mt-2 text-2xl font-black text-slate-950">{baseInventoryTotals.remaining.toLocaleString("es-MX")}</p>
-              <p className="text-xs text-slate-500">segun fase 3</p>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Buscar lote</label>
+                <input
+                  value={fermentationSearch}
+                  onChange={(e) => setFermentationSearch(e.target.value)}
+                  placeholder="Ej. lote, cubeta o nombre del proceso"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Fecha inicial</label>
+                <input
+                  type="date"
+                  value={fermentationStartDate}
+                  onChange={(e) => setFermentationStartDate(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Fecha final</label>
+                <input
+                  type="date"
+                  value={fermentationEndDate}
+                  onChange={(e) => setFermentationEndDate(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-3">
-            {filteredProds.length === 0 && <p className="py-10 text-center text-sm italic text-slate-400">Sin lotes en este estado</p>}
-            {filteredProds.map((prod: any) => {
-              const formulaForProd = prod.formula || formulasByCode.get(prod.productType) || null;
-              const profileForProdResolved = profileFromFormula(formulaForProd, prod.productType);
-              const productionAdditions = Array.isArray(prod.additions) ? prod.additions : [];
-              const phase2AdditionsForProd = productionAdditions.filter((addition: any) => isPhase2Addition(addition));
-              const lastParam = prod.parameters?.length
-                ? [...prod.parameters].sort((a: any, b: any) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime())[0]
-                : null;
-              const lastCheck = lastParam
-                ? evaluateProductionParametersWithFormula(formulaForProd, prod.productType, {
-                    ph: lastParam.ph != null ? Number(lastParam.ph) : undefined,
-                    brix: lastParam.brix != null ? Number(lastParam.brix) : undefined,
-                    temperature: lastParam.temperature != null ? Number(lastParam.temperature) : undefined,
-                    acidity: lastParam.acidity != null ? Number(lastParam.acidity) : undefined,
-                  })
-                : null;
-              const phaseRecords = Array.isArray(prod.secondPhaseRecords) ? prod.secondPhaseRecords : [];
-              const phase2 = phaseRecords.find((record: any) => Number(record.phase) === 2) || null;
-              const phase3 = phaseRecords.find((record: any) => Number(record.phase) === 3) || null;
-              const enteredLiters = prod.inputLiters != null ? Number(prod.inputLiters) : null;
-              const producedLiters = prod.litersProduced != null ? Number(prod.litersProduced) : null;
-              const remainingLiters = phase3?.remainingLiters != null ? Number(phase3.remainingLiters) : null;
-              const processLoss = enteredLiters != null && producedLiters != null ? Math.max(enteredLiters - producedLiters, 0) : null;
-              const phase2VolumeBase = enteredLiters;
-              const outputLoss = phase2VolumeBase != null && producedLiters != null ? Math.max(phase2VolumeBase - producedLiters, 0) : null;
-              const fermentationMetrics = getFermentationMetrics(prod, formulaForProd);
-              const fermentationStatus = getFermentationVisualStatus(prod, formulaForProd);
-              const fermentationBorder = getFermentationVisualClasses(fermentationStatus);
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+              <div className="grid grid-cols-[1.25fr_0.9fr_0.95fr_0.95fr_0.95fr_0.95fr_0.8fr] gap-3 bg-slate-50 px-4 py-3 text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">
+                <span>Lote</span>
+                <span>Tipo</span>
+                <span>Inicio</span>
+                <span>Fin aprox.</span>
+                <span>Restante</span>
+                <span>Litros</span>
+                <span>Estado</span>
+              </div>
 
-              return (
-                <div key={prod.id} className={`rounded-xl border bg-white p-5 shadow-sm ${fermentationBorder}`}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-lg font-black text-slate-950">{prod.name}</h3>
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-slate-700">Tipo {prod.productType}</span>
-                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.25em] ${prod.status === "IN_PROGRESS" ? "bg-blue-100 text-blue-700" : prod.status === "COMPLETED" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
-                          {prod.status === "IN_PROGRESS" ? "En proceso" : prod.status === "COMPLETED" ? "Completado" : "Cancelado"}
-                        </span>
-                        {formulaForProd && (
-                          <span className="rounded-full bg-violet-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-violet-700">
-                            {formulaForProd.name}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                        <span>Cubeta: {prod.tank?.name || "-"}</span>
-                        <span>Inicio: {fmtDate(prod.startedAt)}</span>
-                        <span>Duracion objetivo: {formatFormulaDuration(profileForProdResolved)}</span>
-                        {enteredLiters != null && <span>Entrada: {enteredLiters} Lt</span>}
-                        {producedLiters != null && <span>Salida: {producedLiters} Lt</span>}
-                      </div>
-                      <p className="max-w-3xl text-sm text-slate-600">{profileForProdResolved.formulaSummary}</p>
-                      <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <summary className="cursor-pointer list-none text-xs font-black uppercase tracking-[0.25em] text-slate-500">
-                          Ver detalle tecnico
-                        </summary>
-                        <div className="mt-4 space-y-3">
-                      <div className="flex flex-wrap gap-2">
-                        {prod.ingredients?.map((ing: any) => (
-                          <span key={ing.id} className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
-                            {ing.rawMaterial?.name} {Number(ing.quantity)} {ing.rawMaterial?.unit}
-                          </span>
-                        ))}
-                        {(!prod.ingredients || prod.ingredients.length === 0) && (
-                          <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700">Sin insumos iniciales registrados</span>
-                        )}
-                      </div>
-                      {phase2AdditionsForProd.length > 0 && (
-                        <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
-                          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-500">Adiciones de fase 2</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {phase2AdditionsForProd.map((addition: any) => (
-                              <span key={addition.id} className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-violet-700">
-                                {addition.rawMaterial?.name} {Number(addition.quantity)} {addition.rawMaterial?.unit}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                        {(Object.entries(profileForProdResolved.parameters) as [ParameterKey, any][]).map(([key, range]) => (
-                          <div key={key} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                            <p className="font-black uppercase tracking-[0.2em] text-slate-400">{range.label}</p>
-                            <p>{range.min} - {range.max}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                        <div className={`rounded-lg border px-3 py-2 text-xs ${
-                          fermentationStatus === "READY"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                            : fermentationStatus === "IN_PROGRESS"
-                              ? "border-amber-200 bg-amber-50 text-amber-700"
-                              : fermentationStatus === "AWAITING_COMPLETION"
-                                ? "border-rose-200 bg-rose-50 text-rose-700"
-                                : "border-slate-200 bg-slate-50 text-slate-600"
-                        }`}>
-                          <p className="font-black uppercase tracking-[0.2em] text-current/70">Fermentación</p>
-                          <p>
-                            {fermentationStatus === "PENDING_PHASE2"
-                              ? "Esperando fase 2"
-                              : fermentationStatus === "IN_PROGRESS"
-                                ? "En proceso"
-                                : fermentationStatus === "READY"
-                                  ? "Lista"
-                                  : fermentationStatus === "AWAITING_COMPLETION"
-                                    ? "Pendiente de completar"
-                                    : fermentationStatus === "COMPLETED"
-                                      ? "Finalizada"
-                                      : "Cancelada"}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                          <p className="font-black uppercase tracking-[0.2em] text-slate-400">Días transcurridos</p>
-                          <p>{fermentationMetrics.phase2Date ? formatDayCounter(fermentationMetrics.elapsedDays, "elapsed") : "-"}</p>
-                        </div>
-                        <div className={`rounded-lg border px-3 py-2 text-xs ${
-                          fermentationStatus === "READY"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                            : fermentationStatus === "AWAITING_COMPLETION"
-                              ? "border-rose-200 bg-rose-50 text-rose-700"
-                              : "border-slate-200 bg-slate-50 text-slate-600"
-                        }`}>
-                          <p className="font-black uppercase tracking-[0.2em] text-current/70">Días restantes</p>
-                          <p>
-                            {fermentationStatus === "AWAITING_COMPLETION"
-                              ? "Proceso listo, falta completar"
-                              : fermentationMetrics.phase2Date
-                                ? fermentationMetrics.isReady
-                                  ? "0 día(s)"
-                                  : formatDayCounter(fermentationMetrics.remainingDays, "remaining")
-                                : "-"}
-                          </p>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                          <p className="font-black uppercase tracking-[0.2em] text-slate-400">Salida estimada</p>
-                          <p>{fermentationMetrics.readyAt ? fmtDate(fermentationMetrics.readyAt) : "-"}</p>
-                        </div>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                          <p className="font-black uppercase tracking-[0.2em] text-slate-400">Fase 1</p>
-                          <p>Entrada: {enteredLiters != null ? `${enteredLiters} Lt` : "-"}</p>
-                        </div>
-                        <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
-                          <p className="font-black uppercase tracking-[0.2em] text-violet-400">Fase 2</p>
-                          <p>{phase2 ? fmtDate(phase2.measuredAt) : "Pendiente"}</p>
-                          {enteredLiters != null && <p>Objetivo: {enteredLiters} Lt</p>}
-                        </div>
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                          <p className="font-black uppercase tracking-[0.2em] text-emerald-400">Fase 3</p>
-                          <p>{remainingLiters != null ? `${remainingLiters} Lt restantes` : "Pendiente"}</p>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                          <p className="font-black uppercase tracking-[0.2em] text-slate-400">Resultado</p>
-                          <p>{producedLiters != null ? `${producedLiters} Lt` : "-"}</p>
-                          {outputLoss != null && <p>Merma: {outputLoss} Lt</p>}
-                          {processLoss != null && <p>Diferencia total: {processLoss} Lt</p>}
-                        </div>
-                      </div>
-                      {lastParam && (
-                        <div className={`rounded-lg border px-3 py-2 text-xs ${lastCheck && !lastCheck.ok ? "border-amber-200 bg-amber-50 text-amber-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
-                          Ultima medicion: {fmtDate(lastParam.measuredAt)}
-                          {lastCheck && !lastCheck.ok ? ` | Fuera de rango: ${lastCheck.failing.map((item) => item.label).join(", ")}` : " | Dentro de rango"}
-                        </div>
-                      )}
-                      {phase2 && (
-                        <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
-                          Fase dos iniciada por {phase2.startedBy || "-"} | Recibió: {phase2.receivedBy || "-"} | Midió: {phase2.measuredBy || "-"} | Estado recibido: {phase2.receivedCondition || "-"}
-                        </div>
-                      )}
-                      {phase3 && (
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                          Fase tres registrada el {fmtDate(phase3.measuredAt)} | Litros restantes en contenedor: {phase3.remainingLiters != null ? Number(phase3.remainingLiters) : "-"} Lt
-                        </div>
-                      )}
-                        </div>
-                      </details>
-                    </div>
-
-                    <div className="flex min-w-[170px] flex-col gap-2">
-                      {prod.status === "IN_PROGRESS" && (
-                        <>
-                          <button onClick={() => { setSelectedProd(prod); setProdView("params"); }} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Parametros</button>
-                          <button onClick={() => { setSelectedProd(prod); setProdView("additions"); }} className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white hover:bg-amber-600">Agregar insumo</button>
-                          {!phase2 && (
-                            <button onClick={() => openSecondPhase(prod)} className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold text-white hover:bg-violet-700">Iniciar segunda fase</button>
-                          )}
-                          {phase2 && !phase3 && (
-                            <button onClick={() => openThirdPhase(prod)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">Iniciar fase 3: extraccion</button>
-                          )}
-                          {phase3 && (
-                            <button
-                              onClick={() => {
-                                setSelectedProd(prod);
-                                setProdView("complete");
-                                setCompleteLt(phase3?.remainingLiters != null ? String(Number(phase3.remainingLiters)) : "");
-                                setCompleteAction("MAINTAIN");
-                                setCompleteNotes("");
-                              }}
-                              className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
-                            >
-                              Completar
-                            </button>
-                          )}
-                          <button onClick={() => handleCancel(prod.id)} className="rounded-lg bg-rose-100 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-200">Cancelar</button>
-                        </>
-                      )}
-                      {prod.status !== "IN_PROGRESS" && (
-                        <button onClick={() => { setSelectedProd(prod); setProdView("params"); }} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">Ver detalle</button>
-                      )}
-                    </div>
+              <div className="divide-y divide-slate-200 bg-white">
+                {paginatedFermentationRows.length === 0 ? (
+                  <div className="px-4 py-10 text-center text-sm text-slate-500">
+                    No hay procesos para los filtros seleccionados.
                   </div>
+                ) : (
+                  paginatedFermentationRows.map(({ production, formula, metrics }) => {
+                    const phase2Record = Array.isArray(production.secondPhaseRecords)
+                      ? production.secondPhaseRecords.find((record: any) => Number(record.phase) === 2)
+                      : null;
+                    const quantity = production.litersProduced != null
+                      ? Number(production.litersProduced)
+                      : phase2Record?.receivedLiters != null
+                        ? Number(phase2Record.receivedLiters)
+                        : production.startedLiters != null
+                          ? Number(production.startedLiters)
+                          : 0;
+                    const fermentationStatus = getFermentationVisualStatus(production, formula);
+                    const borderClass = getFermentationVisualClasses(fermentationStatus);
+                    const formulaDurationHours = Number(formula?.durationDays || 0) * 24 + Number(formula?.durationHours || 0);
+                    const estimatedReadyAt = formulaDurationHours > 0
+                      ? new Date(new Date(production.startedAt).getTime() + formulaDurationHours * 60 * 60 * 1000)
+                      : null;
+                    const remainingHours = estimatedReadyAt ? (estimatedReadyAt.getTime() - Date.now()) / (1000 * 60 * 60) : null;
+                    const remainingDays = remainingHours != null ? remainingHours / 24 : null;
+                    const remainingColorClass =
+                      metrics.phase3 || remainingDays == null
+                        ? "text-slate-600"
+                        : remainingDays > 20
+                          ? "text-slate-500"
+                          : remainingDays >= 7
+                            ? "text-blue-600"
+                            : remainingDays > 0
+                              ? "text-emerald-600"
+                              : "text-rose-600";
+                    const recipeLabel =
+                      formula?.recipeType === "FLAVOR"
+                        ? "Saborizante"
+                        : formula?.recipeType === "SCOOBY"
+                          ? "Scooby"
+                          : "Acidificante";
+
+                    return (
+                      <button
+                        key={production.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedFormulaLotId(production.id);
+                          setSelectedProd({ ...production, formula, metrics });
+                          setProdView("params");
+                        }}
+                        className={`grid w-full grid-cols-[1.25fr_0.9fr_0.95fr_0.95fr_0.95fr_0.95fr_0.8fr] gap-3 px-4 py-4 text-left transition hover:bg-slate-50 ${borderClass}`}
+                      >
+                        <span className="font-black text-slate-950">{production.name}</span>
+                        <span className="text-sm text-slate-600">{recipeLabel}</span>
+                        <span className="text-sm text-slate-600">{fmtDate(production.startedAt)}</span>
+                        <span className="text-sm text-slate-600">{metrics.readyAt ? fmtDate(metrics.readyAt) : "-"}</span>
+                        <span className={`text-sm font-bold ${remainingColorClass}`}>
+                          {remainingHours != null
+                            ? remainingHours > 0
+                              ? formatDayCounter(remainingHours / 24, "remaining")
+                              : "Listo"
+                            : "-"}
+                        </span>
+                        <span className="text-sm text-slate-600">{quantity ? `${quantity.toLocaleString("es-MX")} Lt` : "-"}</span>
+                        <span className="text-sm font-bold text-slate-800">
+                          {production.status === "IN_PROGRESS" ? "En proceso" : production.status === "COMPLETED" ? "Completado" : "Cancelado"}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {fermentationRows.length > FERMENTATION_PAGE_SIZE && (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-slate-500">
+                  Mostrando {Math.min((safeFermentationPage - 1) * FERMENTATION_PAGE_SIZE + 1, fermentationRows.length)}-
+                  {Math.min(safeFermentationPage * FERMENTATION_PAGE_SIZE, fermentationRows.length)} de {fermentationRows.length} procesos
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFermentationPage((prev) => Math.max(1, prev - 1))}
+                    disabled={safeFermentationPage === 1}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <p className="text-xs font-semibold text-slate-500">
+                    Página {safeFermentationPage} de {fermentationTotalPages}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setFermentationPage((prev) => Math.min(fermentationTotalPages, prev + 1))}
+                    disabled={safeFermentationPage === fermentationTotalPages}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Siguiente
+                  </button>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            )}
+
+            <p className="mt-4 text-xs text-slate-500">
+              Haz clic en cualquier fila para abrir el modal con parámetros, fases y acciones del proceso.
+            </p>
+          </section>
         </div>
       )}
 
@@ -1100,7 +1458,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
             </div>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[1fr_1.05fr]">
+          <div className="space-y-6">
             <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
               <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Proceso</p>
               <h3 className="mt-2 text-2xl font-black text-slate-950">Bebida final</h3>
@@ -1108,20 +1466,147 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 Combina lotes de bebida base y recetas sabor para calcular el brix ponderado y la azúcar estimada que se necesita agregar antes del envasado.
               </p>
 
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <Field label="Nombre de la mezcla">
-                  <input value={finalBlendName} onChange={(e) => setFinalBlendName(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
+              <div className="mt-5 grid gap-4 md:grid-cols-3">
+                <Field label="Fecha de producción">
+                  <input
+                    type="datetime-local"
+                    value={finalBlendProductionDate}
+                    onChange={(e) => setFinalBlendProductionDate(e.target.value)}
+                    className="w-full rounded-lg border p-2 text-sm"
+                  />
+                </Field>
+                <Field label="Sabor vinculado">
+                  <select
+                    value={finalBlendFlavorId}
+                    onChange={(e) => setFinalBlendFlavorId(e.target.value)}
+                    className="w-full rounded-lg border p-2 text-sm"
+                  >
+                    <option value="">Selecciona</option>
+                    {safeFlavors.map((flavor: any) => (
+                      <option key={flavor.id} value={flavor.id}>
+                        {flavor.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Nombre de producción">
+                  <input
+                    value={finalBlendProductionName}
+                    readOnly
+                    className="w-full rounded-lg border bg-slate-50 p-2 text-sm font-semibold text-slate-700"
+                  />
+                </Field>
+                <Field label="Litros objetivos">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={finalBlendTargetLiters}
+                    onChange={(e) => setFinalBlendTargetLiters(e.target.value)}
+                    className="w-full rounded-lg border p-2 text-sm text-center"
+                  />
                 </Field>
                 <Field label="Brix objetivo final">
                   <input type="number" step="0.01" value={finalBlendTargetBrix} onChange={(e) => setFinalBlendTargetBrix(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
                 </Field>
+                <Field label="Azúcar objetivo (g)">
+                  <input
+                    value={finalBlendObjectiveSugarGrams.toLocaleString("es-MX", { maximumFractionDigits: 2 })}
+                    readOnly
+                    className="w-full rounded-lg border bg-slate-50 p-2 text-sm text-center font-semibold text-slate-700"
+                  />
+                </Field>
+                <Field label="Scoby %">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={finalBlendScoobyPercent}
+                    onChange={(e) => setFinalBlendScoobyPercent(e.target.value)}
+                    className="w-full rounded-lg border p-2 text-sm text-center"
+                  />
+                </Field>
+                <Field label="Acidificante %">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={finalBlendAcidifierPercent}
+                    onChange={(e) => setFinalBlendAcidifierPercent(e.target.value)}
+                    className="w-full rounded-lg border p-2 text-sm text-center"
+                  />
+                </Field>
+                <Field label="Té azucarado base (L)">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={finalBlendSweetTeaBaseLiters}
+                    onChange={(e) => setFinalBlendSweetTeaBaseLiters(e.target.value)}
+                    className="w-full rounded-lg border p-2 text-sm text-center"
+                  />
+                </Field>
+                <Field label="Referencia té (L)">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={finalBlendSweetTeaReferenceLiters}
+                    onChange={(e) => setFinalBlendSweetTeaReferenceLiters(e.target.value)}
+                    className="w-full rounded-lg border p-2 text-sm text-center"
+                  />
+                </Field>
+              </div>
+
+              {selectedFinalBlendFlavor && (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  Blend ligado a <strong className="text-slate-950">{selectedFinalBlendFlavor.name}</strong>.
+                </div>
+              )}
+
+              <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-amber-950">Cálculo de azúcar</p>
+                    <p className="mt-1 text-xs text-amber-800">
+                      El objetivo usa litros por brix. Scoby y acidificante usan brix x 0.8 x 10. El té azucarado completa el azúcar faltante.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">
+                    Objetivo {finalBlendObjectiveSugarGrams.toLocaleString("es-MX", { maximumFractionDigits: 1 })} g
+                  </span>
+                </div>
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-left text-sm">
+                    <thead className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">
+                      <tr>
+                        <th className="px-3 py-2">Componente</th>
+                        <th className="px-3 py-2">%</th>
+                        <th className="px-3 py-2">Litros</th>
+                        <th className="px-3 py-2">Brix</th>
+                        <th className="px-3 py-2">Azúcar</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-200">
+                      <BlendCalcRow label="Scoby" percent={Number(finalBlendScoobyPercent || 0)} liters={finalBlendScoobyLiters} brix={finalBlendScoobyBrix} sugarGrams={finalBlendScoobySugarGrams} />
+                      <BlendCalcRow label="Acidificante" percent={Number(finalBlendAcidifierPercent || 0)} liters={finalBlendAcidifierLiters} brix={finalBlendAcidifierBrix} sugarGrams={finalBlendAcidifierSugarGrams} />
+                      <BlendCalcRow label="Té azucarado" percent={finalBlendTargetLitersValue > 0 ? (finalBlendSweetTeaLiters / finalBlendTargetLitersValue) * 100 : 0} liters={finalBlendSweetTeaLiters} brix={null} sugarGrams={finalBlendSweetTeaSugarGrams} />
+                      <BlendCalcRow label="Agua" percent={finalBlendCalculatedWaterPercent} liters={finalBlendCalculatedWaterLiters} brix={null} sugarGrams={0} />
+                    </tbody>
+                    <tfoot className="border-t border-amber-300 font-black text-amber-950">
+                      <tr>
+                        <td className="px-3 py-3">Total</td>
+                        <td className="px-3 py-3">100%</td>
+                        <td className="px-3 py-3">{finalBlendTargetLitersValue.toLocaleString("es-MX", { maximumFractionDigits: 2 })} L</td>
+                        <td className="px-3 py-3">Objetivo {finalBlendTargetBrixValue.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</td>
+                        <td className="px-3 py-3">{finalBlendObjectiveSugarGrams.toLocaleString("es-MX", { maximumFractionDigits: 2 })} g</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
 
               <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-black text-slate-950">Componentes de la bebida final</p>
-                    <p className="mt-1 text-xs text-slate-500">Captura cuántos litros vas a usar de cada lote base o receta sabor.</p>
+                    <p className="mt-1 text-xs text-slate-500">Selecciona de qué lote o tanque saldrá cada componente. Los litros se calculan automáticamente con los porcentajes.</p>
                   </div>
                   <button onClick={addFinalBlendRow} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">
                     Agregar componente
@@ -1141,7 +1626,7 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                                 setFinalBlendRows((prev) =>
                                   prev.map((entry, rowIndex) =>
                                     rowIndex === index
-                                      ? { sourceType: e.target.value as "BASE_LOT" | "FLAVOR_RECIPE", sourceId: "", liters: entry.liters }
+                                      ? { sourceType: e.target.value as "BASE_LOT" | "FLAVOR_RECIPE", sourceId: "", liters: "", brixOverride: entry.brixOverride }
                                       : entry,
                                   ),
                                 )
@@ -1165,37 +1650,33 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                               <option value="">Selecciona</option>
                               {(row.sourceType === "BASE_LOT" ? baseLotOptions : flavorFormulaOptions).map((option: any) => (
                                 <option key={option.id} value={option.id}>
-                                  {row.sourceType === "BASE_LOT" ? `${option.label} · ${Number(option.litersRemaining || 0).toLocaleString("es-MX")} Lt` : `${option.name} (${option.code})`}
+                                  {row.sourceType === "BASE_LOT"
+                                    ? `${option.label} · ${Number(option.litersRemaining || 0).toLocaleString("es-MX")} Lt${option.brix == null ? " · falta Brix" : ""}`
+                                    : `${option.name} (${option.code}) · ${Number(option.availableLiters || 0).toLocaleString("es-MX")} Lt`}
                                 </option>
                               ))}
                             </select>
                           </Field>
                           <Field label="Litros">
                             <input
+                              value={resolved?.liters != null ? Number(resolved.liters || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "0"}
+                              readOnly
+                              className="w-full rounded-lg border bg-slate-50 p-2 text-sm text-center font-semibold text-slate-700"
+                            />
+                          </Field>
+                          <Field label="Brix">
+                            <input
                               type="number"
-                              min="0"
-                              max={resolved?.availableLiters != null ? Number(resolved.availableLiters) : undefined}
-                              step="0.1"
-                              value={row.liters}
+                              step="0.01"
+                              value={row.brixOverride}
+                              placeholder={resolved?.brix != null ? Number(resolved.brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "Brix"}
                               onChange={(e) =>
                                 setFinalBlendRows((prev) =>
-                                  prev.map((entry, rowIndex) => {
-                                    if (rowIndex !== index) return entry;
-                                    const rawValue = e.target.value;
-                                    if (resolved?.availableLiters == null) {
-                                      return { ...entry, liters: rawValue };
-                                    }
-                                    const numericValue = Number(rawValue || 0);
-                                    const limitedValue = Math.min(numericValue, Number(resolved.availableLiters));
-                                    return { ...entry, liters: rawValue === "" ? "" : String(limitedValue) };
-                                  }),
+                                  prev.map((entry, rowIndex) => (rowIndex === index ? { ...entry, brixOverride: e.target.value } : entry)),
                                 )
                               }
                               className="w-full rounded-lg border p-2 text-sm text-center"
                             />
-                          </Field>
-                          <Field label="Brix">
-                            <input value={resolved?.brix != null ? Number(resolved.brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"} readOnly className="w-full rounded-lg border bg-slate-50 p-2 text-sm text-center text-slate-600" />
                           </Field>
                           <div className="flex items-end">
                             <button onClick={() => removeFinalBlendRow(index)} className="rounded-lg bg-rose-100 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-200">
@@ -1206,7 +1687,8 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                         <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
                           <span>Fuente: {resolved?.label || "-"}</span>
                           {resolved?.availableLiters != null && <span>Disponible: {Number(resolved.availableLiters).toLocaleString("es-MX")} Lt</span>}
-                          <span>Aporte de brix: {resolved?.brix != null ? Number(resolved.brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"}</span>
+                          <span>Litros calculados: {Number(resolved?.liters || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} Lt</span>
+                          <span>Aporte de brix: {resolved?.brix != null ? Number(resolved.brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "falta lectura"}</span>
                         </div>
                       </div>
                     );
@@ -1273,19 +1755,36 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                       <CalcChip label="Azúcar" value={formatBatchQuantity(Number(blend.sugarToAddKg || 0), "kg")} />
                     </div>
 
-                    <div className="mt-4 space-y-2">
-                      {(blend.components || []).map((component: any) => (
-                        <div key={component.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-sm">
-                          <div>
-                            <p className="font-bold text-slate-900">{component.sourceLabel}</p>
-                            <p className="text-xs text-slate-500">
-                              {component.sourceType === "BASE_LOT" ? "Lote base" : "Receta sabor"} · Brix {Number(component.brixSnapshot || 0).toLocaleString("es-MX", { maximumFractionDigits: 3 })}
-                            </p>
-                          </div>
-                          <p className="font-black text-slate-950">{formatBatchQuantity(Number(component.liters || 0), "L")}</p>
-                        </div>
-                      ))}
+                    <div className="mt-4 grid gap-2 md:grid-cols-2 lg:grid-cols-3 text-xs text-slate-500">
+                      <span>Sabor: {blend.flavorName || "-"}</span>
+                      <span>Azúcar g/L: {blend.sugarGramsPerLiter != null ? Number(blend.sugarGramsPerLiter).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"}</span>
+                      <span>Agua %: {blend.waterPercent != null ? Number(blend.waterPercent).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"}</span>
+                      <span>Acidificante %: {blend.acidifierPercent != null ? Number(blend.acidifierPercent).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"}</span>
+                      <span>Scooby %: {blend.scoobyPercent != null ? Number(blend.scoobyPercent).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"}</span>
+                      <span>Saborizante %: {blend.flavorPercent != null ? Number(blend.flavorPercent).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"}</span>
                     </div>
+
+                        <div className="mt-4 space-y-2">
+                          {(blend.components || []).map((component: any) => (
+                            <div key={component.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-sm">
+                              <div>
+                                <p className="font-bold text-slate-900">{component.sourceLabel}</p>
+                                <p className="text-xs text-slate-500">
+                                  {component.sourceType === "BASE_LOT"
+                                    ? "Lote base"
+                                    : `Tanque de resguardo · ${storageTankNameById.get(String(component.sourceStorageTankId || "")) || "Sin tanque"}`}
+                                  {" · "}Brix {Number(component.brixSnapshot || 0).toLocaleString("es-MX", { maximumFractionDigits: 3 })}
+                                </p>
+                                {component.sourceType !== "BASE_LOT" && component.sourceStorageEntryId && (
+                                  <p className="mt-1 text-[11px] text-slate-400">
+                                    Entrada: {String(component.sourceStorageEntryId).slice(0, 8)} · Consumo trazable por tanque
+                                  </p>
+                                )}
+                              </div>
+                              <p className="font-black text-slate-950">{formatBatchQuantity(Number(component.liters || 0), "L")}</p>
+                            </div>
+                          ))}
+                        </div>
 
                     {blend.notes && (
                       <p className="mt-4 text-sm text-slate-600">{blend.notes}</p>
@@ -1298,84 +1797,6 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
         </div>
       )}
 
-      {view === "tanques" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-semibold text-slate-500">
-              Mostrando {(safeTankPage - 1) * TANKS_PAGE_SIZE + 1}-{Math.min(safeTankPage * TANKS_PAGE_SIZE, safeTanks.length)} de {safeTanks.length} cubetas
-            </p>
-            <button onClick={() => setShowCreateTank(true)} className="rounded-lg bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800">Nueva cubeta</button>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {paginatedTanks.map((tank: any) => {
-              const activeProd = safeProductions.find((p: any) => p.tankId === tank.id && p.status === "IN_PROGRESS");
-              const heldInventory = safeBaseBeverageInventory.find((row: any) => row.tank?.id === tank.id && ["HELD", "AVAILABLE", "MIX_PENDING", "DISPATCHED"].includes(String(row.status)));
-              const status = getContainerStatus(tank, activeProd || heldInventory);
-              return (
-                <div key={tank.id} className={`rounded-xl border bg-white p-4 ${!tank.isActive ? "opacity-60" : ""}`}>
-                  <div className="flex items-center justify-between">
-                    <p className="font-black text-slate-950">{tank.name}</p>
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${getContainerStatusClasses(status)}`}>
-                      {getContainerStatusLabel(status)}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-500">Capacidad: {tank.capacityLt != null ? Number(tank.capacityLt) : "-"} Lt</p>
-                  {nfcBaseUrl && (
-                    <div className="mt-3 flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">QR de cubeta</p>
-                        <p className="mt-2 truncate text-[11px] text-slate-500">{nfcBaseUrl}/cubeta/{tank.id}</p>
-                      </div>
-                      <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${nfcBaseUrl}/cubeta/${tank.id}`)}`}
-                        alt={`QR de ${tank.name}`}
-                        className="h-16 w-16 rounded-lg border border-white bg-white"
-                      />
-                    </div>
-                  )}
-                  <p className="mt-2 text-xs text-slate-500">{activeProd ? `Proceso activo: ${activeProd.name}` : tank.isActive ? "Lista para usarse" : "Fuera de operación"}</p>
-                  <button
-                    onClick={() => handleToggleTankActive(tank)}
-                    className="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                  >
-                      {tank.isActive ? "Desactivar" : "Activar"}
-                  </button>
-                  <a
-                    href={`/cubeta/${tank.id}/etiqueta`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-flex rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
-                  >
-                    Imprimir QR
-                  </a>
-                </div>
-              );
-            })}
-          </div>
-          {tankTotalPages > 1 && (
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setTankPage((prev) => Math.max(1, prev - 1))}
-                disabled={safeTankPage === 1}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Anterior
-              </button>
-              <p className="text-xs font-semibold text-slate-500">
-                Página {safeTankPage} de {tankTotalPages}
-              </p>
-              <button
-                onClick={() => setTankPage((prev) => Math.min(tankTotalPages, prev + 1))}
-                disabled={safeTankPage === tankTotalPages}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Siguiente
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       {showCreateProd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
@@ -1385,247 +1806,119 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 <button onClick={() => setShowCreateProd(false)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Nombre del proceso">
-                      <input
-                        value={generatedProdName}
-                        readOnly
-                        placeholder="Selecciona fecha, cubeta y receta"
-                        className="w-full rounded-lg border bg-slate-50 p-2 text-sm text-slate-600"
-                      />
-                    </Field>
-                    <Field label="Receta">
-                      <select value={newProdType} onChange={(e) => setNewProdType(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
-                        <option value="">Selecciona</option>
-                        {formulaOptions.map((formula: any) => (
-                          <option key={formula.id} value={formula.code}>
-                            {formula.name} ({formula.code})
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Cubeta">
-                      <select value={newProdTank} onChange={(e) => setNewProdTank(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
-                        <option value="">Selecciona</option>
-                        {availableTanks.map((tank: any) => (
-                          <option key={tank.id} value={tank.id}>{tank.name}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Inicio">
-                      <input type="datetime-local" value={newProdStart} onChange={(e) => setNewProdStart(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
-                    </Field>
-                    <Field label="Volumen objetivo (L)">
-                      <input type="number" min="0" step="0.1" value={newProdInputLiters} onChange={(e) => setNewProdInputLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
-                    </Field>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    El nombre se genera automáticamente con este formato: dia-mes-año-numeroTanque-tipoProceso.
-                  </p>
-
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-black text-slate-900">Cálculo automático de receta</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Al elegir la receta y el volumen objetivo, el sistema calcula cuánto se necesitará de cada cosa.
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">
-                        {newProdTargetLiters > 0 ? `${newProdTargetLiters.toLocaleString("es-MX")} L` : "Sin volumen"}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      <CalcChip label="Té" value={formatBatchQuantity(projectedTeaTotal, "g")} />
-                      <CalcChip label="Azúcar" value={formatBatchQuantity(projectedSugarTotal, "g")} />
-                      <CalcChip label="Cultivo inicial" value={formatBatchQuantity(projectedStarterLiters, "L")} />
-                      <CalcChip label="Agua caliente" value={formatBatchQuantity(projectedHotWater, "L")} />
-                      <CalcChip label="Agua fría" value={formatBatchQuantity(projectedColdWater, "L")} />
-                      <CalcChip label="Fermentación" value={selectedFormula?.durationDays ? `${selectedFormula.durationDays} días` : "-"} />
-                    </div>
-
-                    <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-white p-4">
-                      <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Desglose del blend</p>
-                      <div className="mt-3 space-y-2">
-                        {projectedBlendItems.length > 0 ? (
-                          projectedBlendItems.map((item: any, index: number) => (
-                            <div key={`${item.id || index}-blend-preview`} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                              <div>
-                                <p className="font-bold text-slate-900">
-                                  {item.rawMaterialName || item.freeTextName || `Componente ${index + 1}`}
-                                </p>
-                                <p className="text-xs text-slate-500">{Number(item.sharePercent || 0).toLocaleString("es-MX")} % del té total</p>
-                              </div>
-                              <p className="font-black text-slate-950">{formatBatchQuantity(Number(item.calculatedQuantity || 0), item.unit || "g")}</p>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-xs italic text-slate-400">La receta no tiene ingredientes de blend ligados al inventario.</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-black text-slate-900">Formula inicial</p>
-                      <div className="flex items-center gap-3">
-                        <button onClick={() => setIngredients(buildIngredientsFromFormula(selectedFormula, newProdTargetLiters, safeRM, safeLocations[0]?.id || ""))} className="text-xs font-bold text-violet-700 hover:underline">Recargar receta</button>
-                        <button onClick={addIngredientRow} className="text-xs font-bold text-blue-700 hover:underline">Agregar insumo</button>
-                      </div>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {selectedFormula
-                        ? `Se aplicará ${selectedFormula.name} como base del lote y el volumen objetivo recalcula los insumos antes de guardar.`
-                        : "No hay una receta activa seleccionada. Puedes capturar los insumos manualmente."}
-                    </p>
-                    <details className="mt-4 rounded-xl border border-violet-200 bg-white p-4">
-                      <summary className="cursor-pointer list-none text-sm font-black text-violet-950">
-                        Ver receta y parámetros
-                      </summary>
-                      <div className="mt-4">
-                        {selectedFormula?.steps?.length ? (
-                          <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-black text-violet-950">Checklist de preparación</p>
-                                <p className="mt-1 text-xs text-violet-700">
-                                  Receta base por {selectedFormula.targetLiters != null ? Number(selectedFormula.targetLiters).toLocaleString("es-MX") : "-"} Lt
-                                </p>
-                              </div>
-                            </div>
-                            <div className="mt-4 space-y-3">
-                              {selectedFormula.steps.map((step: any, index: number) => (
-                                <div key={step.id || `${selectedFormula.id}-step-${index}`} className="rounded-2xl border border-violet-100 bg-white p-4">
-                                  <div className="flex items-start gap-3">
-                                    <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-violet-400 text-[11px] font-black text-violet-700">
-                                      {index + 1}
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-sm font-black text-violet-950">{step.title || `Paso ${index + 1}`}</p>
-                                      {step.instructions && (
-                                        <p className="mt-1 text-sm text-violet-900">{step.instructions}</p>
-                                      )}
-                                      <div className="mt-3 space-y-1">
-                                        {step.items?.length ? step.items.map((item: any, itemIndex: number) => (
-                                          <div key={`${step.id || index}-item-${itemIndex}`} className="flex items-start gap-2 text-xs text-violet-800">
-                                            <span className="mt-1 inline-block h-3 w-3 rounded-sm border border-violet-400 bg-white" />
-                                            <span>{formatStepIngredient(item)}</span>
-                                          </div>
-                                        )) : (
-                                          <p className="text-xs italic text-violet-700">Sin insumos definidos para este paso.</p>
-                                        )}
-                                      </div>
-                                      {step.resultLiters != null && (
-                                        <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-violet-700">
-                                          Resultado esperado: {Number(step.resultLiters).toLocaleString("es-MX")} Lt
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    </details>
-                    <div className="mt-4 space-y-2">
-                      {ingredients.map((ing, index) => (
-                        <div key={index} className="flex gap-2">
-                          <select
-                            value={ing.rawMaterialId}
-                            onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, rawMaterialId: e.target.value } : row))}
-                            className="flex-1 rounded-lg border p-2 text-xs"
-                          >
-                            <option value="">Insumo</option>
-                            {safeRM.filter((rm: any) => !rm.isArchived).map((rm: any) => (
-                              <option key={rm.id} value={rm.id}>{rm.name} ({rm.unit})</option>
-                            ))}
-                          </select>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={ing.quantity || ""}
-                            onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, quantity: Number(e.target.value) } : row))}
-                            className="w-24 rounded-lg border p-2 text-xs text-center"
-                            placeholder="Cant."
-                          />
-                          {safeLocations.length > 0 && (
-                            <select
-                              value={ing.locationId}
-                              onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, locationId: e.target.value } : row))}
-                              className="w-36 rounded-lg border p-2 text-xs"
-                            >
-                              {safeLocations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
-                            </select>
-                          )}
-                          <button onClick={() => removeIngredientRow(index)} className="rounded-lg px-2 text-red-500 hover:bg-red-50">x</button>
-                        </div>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Nombre del proceso">
+                    <input
+                      value={generatedProdName}
+                      readOnly
+                      placeholder="Selecciona fecha, cubeta y receta"
+                      className="w-full rounded-lg border bg-slate-50 p-2 text-sm text-slate-600"
+                    />
+                  </Field>
+                  <Field label="Receta">
+                    <select value={newProdType} onChange={(e) => setNewProdType(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
+                      <option value="">Selecciona</option>
+                      {formulaOptions.map((formula: any) => (
+                        <option key={formula.id} value={formula.code}>
+                          {formula.name} ({formula.code})
+                        </option>
                       ))}
-                      {ingredients.length === 0 && <p className="text-xs italic text-slate-400">Sin insumos cargados aun</p>}
-                    </div>
-                  </div>
-
-                  <Field label="Notas">
-                    <textarea value={newProdNotes} onChange={(e) => setNewProdNotes(e.target.value)} rows={3} className="w-full rounded-lg border p-2 text-sm" />
+                    </select>
+                  </Field>
+                  <Field label="Cubeta">
+                    <select value={newProdTank} onChange={(e) => setNewProdTank(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
+                      <option value="">Selecciona</option>
+                      {availableTanks.map((tank: any) => (
+                        <option key={tank.id} value={tank.id}>{tank.name}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Inicio">
+                    <input type="datetime-local" value={newProdStart} onChange={(e) => setNewProdStart(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
+                  </Field>
+                  <Field label="Litros iniciales (L)">
+                    <input type="number" min="0" step="0.1" value={newProdStartedLiters} onChange={(e) => setNewProdStartedLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
                   </Field>
                 </div>
+                <p className="text-xs text-slate-500">
+                  El nombre se genera automáticamente con este formato: dia-mes-año-numeroCubeta-tipoProceso.
+                </p>
+                <p className="text-xs text-slate-500">
+                  Los litros iniciales sirven para calcular insumos y comparar la merma o ganancia al cierre.
+                </p>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-950 p-5 text-white">
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60">Perfil {profile.type}</p>
-                  <h4 className="mt-2 text-2xl font-black">{profile.title}</h4>
-                  <p className="mt-3 text-sm text-slate-300">{profile.formulaSummary}</p>
-                  <div className="mt-4 rounded-xl bg-white/10 p-3 text-sm">
-                    Duracion estimada: <span className="font-black">{formatFormulaDuration(profile)}</span>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-black text-slate-900">Formula inicial</p>
+                    <button onClick={addIngredientRow} className="text-xs font-bold text-blue-700 hover:underline">Agregar insumo</button>
                   </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Puedes capturar los insumos manualmente para este proceso.
+                  </p>
                   <div className="mt-4 space-y-2">
-                    {(Object.entries(profile.parameters) as [ParameterKey, any][]).map(([key, range]) => (
-                      <div key={key} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                        <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-300">{range.label}</p>
-                        <p className="mt-1 text-sm">Objetivo: {range.min} a {range.max}</p>
+                    {ingredients.map((ing, index) => (
+                      <div key={index} className="flex gap-2">
+                        <select
+                          value={ing.rawMaterialId}
+                          onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, rawMaterialId: e.target.value } : row))}
+                          className="flex-1 rounded-lg border p-2 text-xs"
+                        >
+                          <option value="">Insumo</option>
+                          {safeRM.filter((rm: any) => !rm.isArchived).map((rm: any) => (
+                            <option key={rm.id} value={rm.id}>{rm.name} ({rm.unit})</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={ing.quantity || ""}
+                          onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, quantity: Number(e.target.value) } : row))}
+                          className="w-24 rounded-lg border p-2 text-xs text-center"
+                          placeholder="Cant."
+                        />
+                        {safeLocations.length > 0 && (
+                          <select
+                            value={ing.locationId}
+                            onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, locationId: e.target.value } : row))}
+                            className="w-36 rounded-lg border p-2 text-xs"
+                          >
+                            {safeLocations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                          </select>
+                        )}
+                        <button onClick={() => removeIngredientRow(index)} className="rounded-lg px-2 text-red-500 hover:bg-red-50">x</button>
+                      </div>
+                    ))}
+                    {ingredients.length === 0 && <p className="text-xs italic text-slate-400">Sin insumos cargados aun</p>}
+                  </div>
+                </div>
+
+                <Field label="Notas">
+                  <textarea value={newProdNotes} onChange={(e) => setNewProdNotes(e.target.value)} rows={3} className="w-full rounded-lg border p-2 text-sm" />
+                </Field>
+              </div>
+
+              {stockShortages.length > 0 && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                  <p className="text-sm font-black text-rose-800">Stock insuficiente para iniciar este proceso</p>
+                  <p className="mt-1 text-xs text-rose-700">Corrige estas cantidades o cambia la ubicación antes de guardar:</p>
+                  <div className="mt-3 space-y-2">
+                    {stockShortages.map((item) => (
+                      <div key={`${item.rawMaterialId}-${item.locationName}`} className="rounded-lg bg-white px-3 py-2 text-xs text-rose-700">
+                        <span className="font-bold">{item.name}</span> en <span className="font-bold">{item.locationName}</span>: necesitas {item.required.toLocaleString("es-MX")} {item.unit || ""}, tienes {item.available.toLocaleString("es-MX")} {item.unit || ""}, faltan {Math.max(0, item.shortage).toLocaleString("es-MX")} {item.unit || ""}.
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
+              )}
 
               {prodError && <p className="text-sm font-semibold text-rose-600">{prodError}</p>}
 
               <div className="flex gap-3">
                 <button onClick={() => setShowCreateProd(false)} className="flex-1 rounded-lg border py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
-                <button onClick={handleCreateProd} disabled={prodSaving} className="flex-1 rounded-lg bg-slate-950 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:bg-slate-300">
+                <button onClick={handleCreateProd} disabled={prodSaving || stockShortages.length > 0} className="flex-1 rounded-lg bg-slate-950 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:bg-slate-300">
                   {prodSaving ? "Guardando..." : "Iniciar produccion"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCreateTank && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
-            <div className="space-y-4 p-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-black text-slate-950">Nueva cubeta</h3>
-                <button type="button" onClick={() => setShowCreateTank(false)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
-              </div>
-              <Field label="Nombre">
-                <input value={newTankName} onChange={(e) => setNewTankName(e.target.value)} required className="w-full rounded-lg border p-2 text-sm" />
-              </Field>
-              <Field label="Capacidad en litros">
-                <input value={newTankCapacity} onChange={(e) => setNewTankCapacity(e.target.value)} type="number" min="0" step="0.1" className="w-full rounded-lg border p-2 text-sm" />
-              </Field>
-              {tankError && <p className="text-xs font-semibold text-rose-600">{tankError}</p>}
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setShowCreateTank(false)} className="flex-1 rounded-lg border py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
-                <button type="button" onClick={handleCreateTank} disabled={tankSaving} className="flex-1 rounded-lg bg-slate-950 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:bg-slate-300">
-                  {tankSaving ? "Creando..." : "Crear"}
                 </button>
               </div>
             </div>
@@ -1639,7 +1932,9 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
             <div className="space-y-4 p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-black text-slate-950">{selectedProd.name}</h3>
+                  <h3 className="text-lg font-black text-slate-950 font-sans" style={{ fontFamily: "var(--font-admin)" }}>
+                    {selectedProd.name}
+                  </h3>
                   <p className="text-xs text-slate-500">Tipo {selectedProd.productType} | Cubeta {selectedProd.tank?.name || "-"}</p>
                 </div>
                 <button onClick={() => setSelectedProd(null)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
@@ -1647,36 +1942,155 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-xl bg-slate-50 px-4 py-3">
-                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Fase 1</p>
-                  <p className="mt-2 text-sm font-bold text-slate-900">{selectedProd.inputLiters != null ? `${Number(selectedProd.inputLiters)} Lt` : "-"}</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Inicio real</p>
+                  <p className="mt-2 text-sm font-bold text-slate-900">{startedLiters != null ? `${startedLiters} Lt` : "-"}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {selectedProdLatestParam ? `pH ${selectedProdLatestParam.ph ?? "-"} · Brix ${selectedProdLatestParam.brix ?? "-"} · Temp ${selectedProdLatestParam.temperature ?? "-"}` : "Sin mediciones registradas"}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-violet-50 px-4 py-3">
-                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-400">Fase 2</p>
-                  <p className="mt-2 text-sm font-bold text-violet-900">{selectedProdPhase2 ? fmtDate(selectedProdPhase2.measuredAt) : "Pendiente"}</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-400">Inicio fase 2</p>
+                  <p className="mt-2 text-sm font-bold text-violet-900">{phase2StartLiters != null ? `${phase2StartLiters} Lt` : "-"}</p>
+                  <p className="mt-1 text-[11px] text-violet-700">
+                    {selectedProdPhase2 ? `Fase 2 ${fmtDate(selectedProdPhase2.measuredAt)}` : "Aún no hay lectura de fase 2"}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-emerald-50 px-4 py-3">
-                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">Fase 3</p>
-                  <p className="mt-2 text-sm font-bold text-emerald-900">{selectedProdPhase3?.remainingLiters != null ? `${Number(selectedProdPhase3.remainingLiters)} Lt` : "Pendiente"}</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">Cierre final</p>
+                  <p className="mt-2 text-sm font-bold text-emerald-900">{finalLiters != null ? `${finalLiters} Lt` : "Pendiente"}</p>
+                  <p className="mt-1 text-[11px] text-emerald-700">
+                    {selectedProdPhase3
+                      ? `pH ${selectedProdPhase3.ph ?? "-"} · Brix ${selectedProdPhase3.brix ?? "-"} · Temp ${selectedProdPhase3.temperature ?? "-"}`
+                      : "Aún no hay lectura de fase 3"}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-slate-950 px-4 py-3 text-white">
-                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/60">Salida final</p>
-                  <p className="mt-2 text-sm font-bold">{selectedProd.litersProduced != null ? `${Number(selectedProd.litersProduced)} Lt` : "-"}</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/60">Merma</p>
+                  <p className="mt-2 text-sm font-bold">
+                    {phase2ToFinalDifference != null ? `${phase2ToFinalDifference >= 0 ? "+" : ""}${phase2ToFinalDifference.toFixed(2)} Lt` : "-"}
+                  </p>
+                  <p className="mt-1 text-[11px] text-white/70">
+                    {phase2ToFinalPercent != null ? `${phase2ToFinalPercent >= 0 ? "+" : ""}${phase2ToFinalPercent.toFixed(2)}% vs fase 2` : "Sin cálculo"}
+                  </p>
                 </div>
               </div>
 
-              {selectedProd.formula?.steps?.length ? (
-                <FormulaStepsChecklist
-                  formula={selectedProd.formula}
-                  title="Checklist de fórmula"
-                  description="Aquí ves qué hacer en cada paso, con qué insumos y el resultado esperado."
-                />
-              ) : null}
+              {selectedProd.status === "IN_PROGRESS" && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-100 bg-violet-50 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-black text-violet-900">Segunda fase</p>
+                    <p className="text-xs text-violet-700">
+                      La segunda fase se inicia desde aquí, después de seleccionar el proceso en la lista.
+                    </p>
+                  </div>
+                  {!selectedProdPhase2 ? (
+                    <button
+                      type="button"
+                      onClick={() => openSecondPhase(selectedProd)}
+                      className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-bold text-white hover:bg-violet-700"
+                    >
+                      Iniciar segunda fase
+                    </button>
+                  ) : (
+                    <span className="rounded-full bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-700">
+                      Segunda fase ya registrada
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {selectedProd.status === "COMPLETED" && (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-black text-emerald-900">Proceso completado</p>
+                    <p className="text-xs text-emerald-700">
+                      Este lote ya pasó a inventario. Desde ahí puedes asignarle un tanque de resguardo, unificarlo o darle salida.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/admin/inventory/base-beverage")}
+                    className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                  >
+                    Ir al inventario
+                  </button>
+                </div>
+              )}
+
+              {selectedProdPhase2 && (
+                <div className="rounded-xl border border-violet-100 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                  <p className="text-sm font-black text-violet-900">Resumen de fase 2</p>
+                  <p className="text-xs text-violet-700">{fmtDate(selectedProdPhase2.measuredAt)}</p>
+                </div>
+                <span className="rounded-full bg-violet-100 px-3 py-1 text-[11px] font-bold text-violet-700">
+                  Registrada
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">Condición recibida</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.receivedCondition || "-"}</p>
+                    </div>
+                    <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">Litros iniciales</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.receivedLiters != null ? `${Number(selectedProdPhase2.receivedLiters)} Lt` : "-"}</p>
+                    </div>
+                    <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">Recibió</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.receivedBy || "-"}</p>
+                    </div>
+                    <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">Tomó parámetros</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.measuredBy || "-"}</p>
+                    </div>
+                    <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">Inició fase 2</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.startedBy || "-"}</p>
+                    </div>
+                    <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">pH</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.ph != null ? Number(selectedProdPhase2.ph) : "-"}</p>
+                    </div>
+                    <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">Brix</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.brix != null ? Number(selectedProdPhase2.brix) : "-"}</p>
+                    </div>
+                    <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">Temperatura</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.temperature != null ? Number(selectedProdPhase2.temperature) : "-"}</p>
+                    </div>
+                    <div className="rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">Acidez</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.acidity != null ? Number(selectedProdPhase2.acidity) : "-"}</p>
+                    </div>
+                  </div>
+                  {selectedProdPhase2.notes && (
+                    <div className="mt-3 rounded-lg bg-violet-50 px-3 py-2 text-xs">
+                      <p className="font-black text-violet-900">Notas</p>
+                      <p className="mt-1 text-violet-800">{selectedProdPhase2.notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {selectedProd.status === "IN_PROGRESS" && (
                 <div className="flex gap-2 border-b pb-3">
                   <button onClick={() => setProdView("params")} className={subTabClass(prodView === "params")}>Parametros</button>
                   <button onClick={() => setProdView("additions")} className={subTabClass(prodView === "additions")}>Insumos</button>
-                  {selectedProdPhase3 && <button onClick={() => { setProdView("complete"); setCompleteAction("MAINTAIN"); }} className={subTabClass(prodView === "complete")}>Completar</button>}
+                  {selectedProdPhase2 && !selectedProdPhase3 && (
+                    <button
+                      type="button"
+                      onClick={() => openThirdPhase(selectedProd)}
+                      className={subTabClass(false)}
+                    >
+                      Finalizar proceso
+                    </button>
+                  )}
+                  {selectedProdPhase3 && (
+                    <button onClick={() => openCompletePanel(selectedProd)} className={subTabClass(prodView === "complete")}>Completar</button>
+                  )}
                 </div>
               )}
 
@@ -1817,44 +2231,233 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 </div>
               )}
 
-              {prodView === "complete" && selectedProd.status === "IN_PROGRESS" && selectedProdPhase3 && (
+              {prodView === "complete" && selectedProd.status === "IN_PROGRESS" && selectedProdPhase2 && (
                 <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
-                  <p className="text-sm font-black text-emerald-800">Finalizar produccion</p>
+                  <p className="text-sm font-black text-emerald-800">Finalizar producción</p>
                   <p className="mt-2 text-xs text-emerald-700">
-                    Al finalizar puedes mantener el lote, marcarlo para unificación o darlo de salida. La cubeta seguirá ocupada hasta vaciarla.
+                    Aquí registras el cierre del proceso y eliges si la existencia queda en la cubeta o se resguarda en uno o varios tanques compatibles.
                   </p>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    <Field label="Litros producidos">
-                      <input type="number" min="0" step="0.1" value={completeLt} onChange={(e) => setCompleteLt(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
+                    <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Destino del producto terminado</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => selectCompletionDestination("BUCKET")}
+                          className={`rounded-xl border px-4 py-3 text-left text-sm font-bold transition ${completionDestination === "BUCKET" ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                        >
+                          Dejar en cubeta
+                          <span className="mt-1 block text-xs font-normal">La existencia queda vinculada a {selectedProd.tank?.name || "la cubeta original"}.</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => selectCompletionDestination("STORAGE_TANK")}
+                          className={`rounded-xl border px-4 py-3 text-left text-sm font-bold transition ${completionDestination === "STORAGE_TANK" ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                        >
+                          Resguardar en tanque
+                          <span className="mt-1 block text-xs font-normal">Reparte la existencia entre tanques compatibles.</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Comparación</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs">
+                        <p className="font-black text-emerald-900">Inicio real</p>
+                        <p className="mt-1 text-emerald-800">{startedLiters != null ? `${startedLiters} Lt` : "-"}</p>
+                      </div>
+                      <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs">
+                        <p className="font-black text-emerald-900">Inicio fase 2</p>
+                        <p className="mt-1 text-emerald-800">{phase2StartLiters != null ? `${phase2StartLiters} Lt` : "-"}</p>
+                      </div>
+                      <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs">
+                        <p className="font-black text-emerald-900">Litros finales</p>
+                        <p className="mt-1 text-emerald-800">{finalLiters != null ? `${finalLiters} Lt` : "-"}</p>
+                      </div>
+                      <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs">
+                        <p className="font-black text-emerald-900">Merma</p>
+                        <p className="mt-1 text-emerald-800">
+                          {phase2ToFinalDifference != null ? `${phase2ToFinalDifference >= 0 ? "+" : ""}${phase2ToFinalDifference.toFixed(2)} Lt` : "-"}
+                        </p>
+                        <p className="mt-1 text-[11px] text-emerald-700">
+                          {phase2ToFinalPercent != null ? `${phase2ToFinalPercent >= 0 ? "+" : ""}${phase2ToFinalPercent.toFixed(2)}% vs fase 2` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    {phase2StartLiters != null && phase2ToFinalDifference != null && (
+                      <p className="mt-2 text-xs text-emerald-700">
+                        Diferencia vs inicio fase 2: {phase2ToFinalDifference >= 0 ? "+" : ""}{phase2ToFinalDifference.toFixed(2)} Lt
+                      </p>
+                    )}
+                    {startedToFinalDifference != null && (
+                      <p className="mt-1 text-xs text-emerald-700">
+                        Diferencia vs litros iniciales: {startedToFinalDifference >= 0 ? "+" : ""}{startedToFinalDifference.toFixed(2)} Lt
+                        {startedToFinalPercent != null ? ` (${startedToFinalPercent >= 0 ? "+" : ""}${startedToFinalPercent.toFixed(2)}%)` : ""}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <Field label="Litros finales">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={phase3RemainingLiters}
+                        onChange={(e) => setPhase3RemainingLiters(e.target.value)}
+                        className="w-full rounded-lg border p-2 text-sm text-center"
+                      />
+                    </Field>
+                    <Field label="Brix final">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={phase3Brix}
+                        onChange={(e) => setPhase3Brix(e.target.value)}
+                        className="w-full rounded-lg border p-2 text-sm text-center"
+                      />
+                    </Field>
+                    <Field label="Temperatura final °C">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={phase3Temp}
+                        onChange={(e) => setPhase3Temp(e.target.value)}
+                        className="w-full rounded-lg border p-2 text-sm text-center"
+                      />
+                    </Field>
+                    <Field label="pH final">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={phase3Ph}
+                        onChange={(e) => setPhase3Ph(e.target.value)}
+                        className="w-full rounded-lg border p-2 text-sm text-center"
+                      />
+                    </Field>
+                    <Field label="Acidez final">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={phase3Acid}
+                        onChange={(e) => setPhase3Acid(e.target.value)}
+                        className="w-full rounded-lg border p-2 text-sm text-center"
+                      />
                     </Field>
                     <Field label="Notas finales">
                       <textarea value={completeNotes} onChange={(e) => setCompleteNotes(e.target.value)} rows={2} className="w-full rounded-lg border p-2 text-sm" />
                     </Field>
+                    <Field label="Fecha de cierre">
+                      <input type="datetime-local" value={phase3Date} onChange={(e) => setPhase3Date(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
+                    </Field>
                   </div>
-                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Destino del lote</p>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      {[
-                        { value: "MAINTAIN", label: "Mantener", desc: "Queda en inventario dentro de la cubeta." },
-                        { value: "UNIFY", label: "Unificar", desc: "Queda listo para unificarse con otros del mismo tipo." },
-                        { value: "DISPATCH", label: "Dar salida", desc: "Se registra como lote con salida asignada." },
-                      ].map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setCompleteAction(option.value as "MAINTAIN" | "UNIFY" | "DISPATCH")}
-                          className={`rounded-xl border px-3 py-3 text-left transition ${
-                            completeAction === option.value ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-600"
-                          }`}
-                        >
-                          <p className="text-sm font-black">{option.label}</p>
-                          <p className="mt-1 text-[11px]">{option.desc}</p>
-                        </button>
-                      ))}
+                    {completionDestination === "STORAGE_TANK" && <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Resguardo en tanques</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                          Reparte los litros finales entre uno o varios tanques. La existencia real queda en resguardo dentro de ellos.
+                          </p>
+                        </div>
+                      <button
+                        type="button"
+                        onClick={addCompletionAllocationRow}
+                        className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-emerald-800 hover:bg-emerald-100"
+                      >
+                        Agregar tanque
+                      </button>
                     </div>
-                  </div>
-                  <button onClick={handleComplete} disabled={completeSaving || !completeLt} className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:bg-slate-300">
-                    {completeSaving ? "Guardando..." : completeAction === "UNIFY" ? "Finalizar y marcar para unificación" : completeAction === "DISPATCH" ? "Finalizar y dar salida" : "Finalizar y mantener"}
+
+                    <div className="mt-4 space-y-3">
+                      {completeAllocations.map((row, index) => {
+                        const tank = availableStorageTanks.find((item: any) => item.id === row.storageTankId) || null;
+                        const litersValue = Number(row.liters || 0);
+                        const freeCapacity = tank?.freeCapacity != null ? Number(tank.freeCapacity) : null;
+                        const overCapacity = freeCapacity != null && litersValue > freeCapacity;
+
+                        return (
+                          <div key={`completion-allocation-${index}`} className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3">
+                            <div className="grid gap-3 md:grid-cols-[1.3fr_0.7fr_auto]">
+                              <div>
+                                <label className="mb-1 block text-xs font-black uppercase tracking-[0.25em] text-slate-400">Tanque</label>
+                                <select
+                                  value={row.storageTankId}
+                                  onChange={(event) => updateCompletionAllocationRow(index, { storageTankId: event.target.value })}
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                                >
+                                  <option value="">Selecciona tanque</option>
+                                  {availableStorageTanks.map((item: any) => (
+                                    <option key={item.id} value={item.id}>
+                                      {item.name}
+                                      {item.capacityLt != null
+                                        ? ` · Libre ${Number(item.freeCapacity || 0).toLocaleString("es-MX")}/${Number(item.capacityLt).toLocaleString("es-MX")} Lt`
+                                        : " · Sin límite"}
+                                      {item.formulaLabel ? ` · ${item.formulaLabel}` : " · Vacío"}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="mb-1 block text-xs font-black uppercase tracking-[0.25em] text-slate-400">Litros</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={row.liters}
+                                  onChange={(event) => updateCompletionAllocationRow(index, { liters: event.target.value })}
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-center"
+                                />
+                              </div>
+
+                              <div className="flex items-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => removeCompletionAllocationRow(index)}
+                                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-black uppercase tracking-[0.2em] text-rose-700 hover:bg-rose-100"
+                                >
+                                  Quitar
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+                              <span>
+                                {tank?.name || "Sin tanque"}
+                                {tank?.capacityLt != null ? ` · Disponible ${Number(tank.freeCapacity || 0).toLocaleString("es-MX")} Lt` : ""}
+                                {tank?.formulaLabel ? ` · ${tank.formulaLabel}` : " · Vacío"}
+                              </span>
+                              {overCapacity && <span className="font-bold text-rose-600">Excede la capacidad disponible</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-xs font-semibold text-slate-500">
+                        Restante por asignar: {completionRemaining.toLocaleString("es-MX")} Lt
+                      </p>
+                      <p className="text-xs font-semibold text-slate-500">
+                        Asignado: {completionAllocationTotal.toLocaleString("es-MX")} Lt
+                      </p>
+                    </div>
+                  </div>}
+                  {completeError && <p className="mt-3 text-sm font-semibold text-rose-600">{completeError}</p>}
+                  <button
+                    onClick={handleComplete}
+                    disabled={
+                      completeSaving ||
+                      !phase3RemainingLiters.trim() ||
+                      !phase3Ph.trim() ||
+                      !phase3Brix.trim() ||
+                      !phase3Temp.trim() ||
+                      !phase3Acid.trim() ||
+                      (completionDestination === "STORAGE_TANK" && completionRemaining !== 0)
+                    }
+                    className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:bg-slate-300"
+                  >
+                    {completeSaving ? "Guardando..." : completionDestination === "BUCKET" ? "Finalizar en cubeta" : "Finalizar y resguardar"}
                   </button>
                 </div>
               )}
@@ -1882,6 +2485,16 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                     <option value="Observado">Observado</option>
                     <option value="Requiere ajuste">Requiere ajuste</option>
                   </select>
+                </Field>
+                <Field label="Litros de arranque fase 2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={phase2ReceivedLiters}
+                    onChange={(e) => setPhase2ReceivedLiters(e.target.value)}
+                    className="w-full rounded-lg border p-2 text-sm text-center"
+                  />
                 </Field>
                 <Field label="Fecha y hora de lectura">
                   <input type="datetime-local" value={phase2Date} onChange={(e) => setPhase2Date(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
@@ -1998,6 +2611,18 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
                 <Field label="Litros que quedan en el contenedor">
                   <input type="number" min="0" step="0.1" value={phase3RemainingLiters} onChange={(e) => setPhase3RemainingLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
                 </Field>
+                <MiniField label="Brix final">
+                  <input type="number" step="0.01" value={phase3Brix} onChange={(e) => setPhase3Brix(e.target.value)} className="w-full rounded-lg border p-2 text-xs text-center" />
+                </MiniField>
+                <MiniField label="Temperatura final">
+                  <input type="number" step="0.01" value={phase3Temp} onChange={(e) => setPhase3Temp(e.target.value)} className="w-full rounded-lg border p-2 text-xs text-center" />
+                </MiniField>
+                <MiniField label="pH final">
+                  <input type="number" step="0.01" value={phase3Ph} onChange={(e) => setPhase3Ph(e.target.value)} className="w-full rounded-lg border p-2 text-xs text-center" />
+                </MiniField>
+                <MiniField label="Acidez final">
+                  <input type="number" step="0.01" value={phase3Acid} onChange={(e) => setPhase3Acid(e.target.value)} className="w-full rounded-lg border p-2 text-xs text-center" />
+                </MiniField>
               </div>
 
               <Field label="Notas">
@@ -2008,7 +2633,11 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
 
               <div className="flex gap-3">
                 <button onClick={() => setShowThirdPhaseModal(false)} className="flex-1 rounded-lg border py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
-                <button onClick={handleThirdPhase} disabled={phase3Saving} className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:bg-slate-300">
+                <button
+                  onClick={handleThirdPhase}
+                  disabled={phase3Saving || !phase3RemainingLiters.trim() || !phase3Ph.trim() || !phase3Brix.trim() || !phase3Temp.trim() || !phase3Acid.trim()}
+                  className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:bg-slate-300"
+                >
                   {phase3Saving ? "Guardando..." : "Guardar fase 3"}
                 </button>
               </div>
@@ -2017,26 +2646,6 @@ export default function TabProduccion({ tanks, productions, rawMaterials, locati
         </div>
       )}
 
-      {showPinModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-slate-950">PIN de registro NFC</h3>
-              <button onClick={() => setShowPinModal(false)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
-            </div>
-            <Field label="Nuevo PIN">
-              <input type="password" value={newPin} onChange={(e) => setNewPin(e.target.value)} className="w-full rounded-lg border p-3 text-center text-lg font-bold tracking-[0.4em]" />
-            </Field>
-            {pinMsg && <p className={`text-sm font-semibold ${pinMsg.toLowerCase().includes("actualizado") ? "text-emerald-600" : "text-rose-600"}`}>{pinMsg}</p>}
-            <div className="mt-4 flex gap-3">
-              <button onClick={() => setShowPinModal(false)} className="flex-1 rounded-lg border py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
-              <button onClick={handleSavePin} disabled={pinSaving || newPin.length < 4} className="flex-1 rounded-lg bg-slate-950 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:bg-slate-300">
-                {pinSaving ? "Guardando..." : "Guardar"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }
@@ -2061,9 +2670,6 @@ function FormulaStepsChecklist({
           <p className="text-sm font-black text-violet-950">{title}</p>
           <p className="mt-1 text-xs text-violet-700">{description}</p>
         </div>
-        <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-violet-700">
-          {formula?.targetLiters != null ? `${Number(formula.targetLiters).toLocaleString("es-MX")} Lt` : "Sin litros objetivo"}
-        </span>
       </div>
       <div className="mt-4 space-y-3">
         {formula.steps.map((step: any, index: number) => (
@@ -2085,11 +2691,6 @@ function FormulaStepsChecklist({
                     <p className="text-xs italic text-violet-700">Sin insumos definidos para este paso.</p>
                   )}
                 </div>
-                {step.resultLiters != null && (
-                  <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-violet-700">
-                    Resultado esperado: {Number(step.resultLiters).toLocaleString("es-MX")} Lt
-                  </p>
-                )}
               </div>
             </div>
           </div>
@@ -2123,6 +2724,30 @@ function CalcChip({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</p>
       <p className="mt-2 text-sm font-black text-slate-950">{value}</p>
     </div>
+  );
+}
+
+function BlendCalcRow({
+  label,
+  percent,
+  liters,
+  brix,
+  sugarGrams,
+}: {
+  label: string;
+  percent: number;
+  liters: number;
+  brix: number | null;
+  sugarGrams: number;
+}) {
+  return (
+    <tr className="text-slate-700">
+      <td className="px-3 py-2 font-bold text-slate-950">{label}</td>
+      <td className="px-3 py-2">{Number(percent || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}%</td>
+      <td className="px-3 py-2">{Number(liters || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} L</td>
+      <td className="px-3 py-2">{brix != null ? Number(brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"}</td>
+      <td className="px-3 py-2">{Number(sugarGrams || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} g</td>
+    </tr>
   );
 }
 

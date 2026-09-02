@@ -16,6 +16,11 @@
   --font-sans: var(--font-sans);
 }
 
+.admin-roboto {
+  --font-serif: var(--font-admin);
+  --font-sans: var(--font-admin);
+}
+
 /* Estilos base para una tipografía consistente */
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-serif);

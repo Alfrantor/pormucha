@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClerkClient } from "@clerk/backend";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import ProductionPinCard from "@/components/admin/ProductionPinCard";
 import StaffUserManagement from "@/components/admin/StaffUserManagement";
 
 type AdminSessionClaims = {
@@ -110,6 +111,8 @@ export default async function UsersPage() {
           Aquí se muestran los usuarios con rol administrador de Clerk y los usuarios dados de alta manualmente en el ERP.
         </p>
       </section>
+
+      <ProductionPinCard />
 
       <StaffUserManagement users={visibleStaffUsers} />
     </div>

@@ -4,9 +4,9 @@ import { Boxes, FlaskConical, Package2, Truck, ArrowRight } from "lucide-react";
 
 const SECTIONS = [
   { href: "/admin/inventory/products", title: "Inventario de productos", desc: "Botellas etiquetadas y packs", icon: <Package2 size={18} /> },
-  { href: "/admin/inventory/base-beverage", title: "Bebida base", desc: "Litros terminados por lote y tanque", icon: <FlaskConical size={18} /> },
+  { href: "/admin/inventory/base-beverage", title: "Lotes de bebida base", desc: "Litros terminados por lote y resguardo", icon: <FlaskConical size={18} /> },
   { href: "/admin/inventory/raw-materials", title: "Materia prima", desc: "Stock por almacén", icon: <Boxes size={18} /> },
-  { href: "/admin/production", title: "Producción", desc: "Tanques, lotes y parámetros", icon: <FlaskConical size={18} /> },
+  { href: "/admin/production", title: "Producción", desc: "Cubetas, lotes y parámetros", icon: <FlaskConical size={18} /> },
   { href: "/admin/inventory/transfers", title: "Traspasos", desc: "Entre ubicaciones y almacenes", icon: <Truck size={18} /> },
 ];
 
@@ -25,7 +25,7 @@ export default async function InventoryPage() {
         <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Operación</p>
         <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Inventarios</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-          Aquí vive todo lo que mueve stock: botellas, materia prima, productos en proceso y traspasos.
+          Aquí vive todo lo que mueve stock: botellas, materia prima, lotes de bebida base y traspasos.
         </p>
       </section>
 

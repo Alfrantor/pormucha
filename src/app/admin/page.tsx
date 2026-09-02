@@ -67,15 +67,19 @@ const COPY: Record<Locale, {
         items: [
           { href: "/pos", title: "POS", desc: "Ir a caja", icon: <ArrowRight size={18} /> },
           { href: "/admin/orders?channel=POS", title: "Pedidos", desc: "Pedidos creados desde POS", icon: <ShoppingCart size={18} /> },
-          { href: "/admin/catalog", title: "Catálogos", desc: "Productos, materia prima y más", icon: <Tags size={18} /> },
           { href: "/admin/clients", title: "Clientes", desc: "CRM y crédito", icon: <BriefcaseBusiness size={18} /> },
-          { href: "/admin/inventory", title: "Inventarios", desc: "Stock, materia prima y traspasos", icon: <Boxes size={18} /> },
-          { href: "/admin/inventory/transfers", title: "Traspasos", desc: "Movimientos entre almacenes", icon: <Truck size={18} /> },
         ],
       },
       {
-        title: "Producción",
-        items: [{ href: "/admin/production", title: "Producción", desc: "Cubetas, lotes y parámetros", icon: <FlaskConical size={18} /> }],
+        title: "Operaciones",
+        items: [
+          { href: "/admin/production", title: "Producción", desc: "Cubetas, lotes y parámetros", icon: <FlaskConical size={18} /> },
+          { href: "/admin/production?tab=etiquetado", title: "Etiquetado", desc: "Botellas, etiquetas y salida", icon: <Tags size={18} /> },
+          { href: "/admin/production?tab=formulas", title: "Recetas", desc: "Fórmulas y preparación", icon: <FlaskConical size={18} /> },
+          { href: "/admin/inventory/transfers", title: "Traspasos", desc: "Movimientos entre almacenes", icon: <Truck size={18} /> },
+          { href: "/admin/inventory", title: "Inventarios", desc: "Stock, materia prima y traspasos", icon: <Boxes size={18} /> },
+          { href: "/admin/catalog", title: "Catálogos", desc: "Productos, materia prima y más", icon: <Tags size={18} /> },
+        ],
       },
       {
         title: "Usuarios",
@@ -115,15 +119,19 @@ const COPY: Record<Locale, {
         items: [
           { href: "/pos", title: "Orders", desc: "Open checkout", icon: <ArrowRight size={18} /> },
           { href: "/admin/catalog/products", title: "Products", desc: "Products for checkout", icon: <ShoppingCart size={18} /> },
-          { href: "/admin/catalog", title: "Catalogs", desc: "Products, raw materials, and more", icon: <Tags size={18} /> },
           { href: "/admin/clients", title: "Clients", desc: "CRM and credit", icon: <BriefcaseBusiness size={18} /> },
-          { href: "/admin/inventory", title: "Inventory", desc: "Stock, raw materials, and transfers", icon: <Boxes size={18} /> },
-          { href: "/admin/inventory/transfers", title: "Transfers", desc: "Warehouse movements", icon: <Truck size={18} /> },
         ],
       },
       {
-        title: "Production",
-        items: [{ href: "/admin/production", title: "Production", desc: "Buckets, lots, and parameters", icon: <FlaskConical size={18} /> }],
+        title: "Operations",
+        items: [
+          { href: "/admin/production", title: "Production", desc: "Buckets, lots, and parameters", icon: <FlaskConical size={18} /> },
+          { href: "/admin/production?tab=etiquetado", title: "Labeling", desc: "Bottles, labels, and release", icon: <Tags size={18} /> },
+          { href: "/admin/production?tab=formulas", title: "Recipes", desc: "Formulas and preparation", icon: <FlaskConical size={18} /> },
+          { href: "/admin/inventory/transfers", title: "Transfers", desc: "Warehouse movements", icon: <Truck size={18} /> },
+          { href: "/admin/inventory", title: "Inventory", desc: "Stock, raw materials, and transfers", icon: <Boxes size={18} /> },
+          { href: "/admin/catalog", title: "Catalogs", desc: "Products, raw materials, and more", icon: <Tags size={18} /> },
+        ],
       },
       {
         title: "Users",

@@ -19,13 +19,14 @@ export type ProductionProfile = {
 
 export type ProductionFormulaItemView = {
   id: string;
-  sourceKind: "RAW_MATERIAL" | "BASE_BEVERAGE";
+  sourceKind: "RAW_MATERIAL" | "BASE_BEVERAGE" | "FORMULA";
   sourceProductionType?: string | null;
   rawMaterialId?: string | null;
   rawMaterialName: string;
   rawMaterialUnit: string;
   quantity: number;
   freeTextName?: string | null;
+  detail?: string | null;
   sharePercent?: number | null;
   unitOverride?: string | null;
   defaultLocationId?: string | null;
@@ -35,10 +36,13 @@ export type ProductionFormulaItemView = {
 
 export type ProductionFormulaBlendItemView = {
   id: string;
+  sourceKind?: "RAW_MATERIAL" | "FORMULA" | string | null;
   rawMaterialId?: string | null;
   rawMaterialName?: string | null;
   freeTextName?: string | null;
+  sourceProductionType?: string | null;
   sharePercent: number;
+  quantity?: number | null;
   gramsPerLiter: number;
   unit?: string | null;
 };
@@ -56,10 +60,9 @@ export type ProductionFormulaView = {
   id: string;
   code: string;
   name: string;
-  recipeType?: "ACIDIFIER" | "SCOOBY" | "FLAVOR" | string | null;
+  recipeType?: "ACIDIFIER" | "SCOOBY" | "FLAVOR" | "BLEND" | string | null;
   description?: string | null;
   formulaSummary?: string | null;
-  targetLiters?: number | null;
   teaType?: string | null;
   teaGramsPerLiter?: number | null;
   sugarGramsPerLiter?: number | null;

@@ -23,6 +23,7 @@ function fmtDate(value: string | Date | null | undefined) {
 
 export default function ProductionWorkspace({
   tanks,
+  storageTanks,
   productions,
   rawMaterials,
   locations,
@@ -52,9 +53,8 @@ export default function ProductionWorkspace({
     <div className="space-y-6">
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap gap-2">
-          <TabButton active={tab === "bebida"} onClick={() => setTab("bebida")} title="Bebida base" desc="Cubetas, lotes e insumos" />
+          <TabButton active={tab === "bebida"} onClick={() => setTab("bebida")} title="Fermentados" desc="Lotes e insumos" />
           <TabButton active={tab === "gasificado"} onClick={() => setTab("gasificado")} title="Gasificado" desc="Carbonatacion y cierre" />
-          <TabButton active={tab === "etiquetado"} onClick={() => setTab("etiquetado")} title="Etiquetado" desc="Botellas, etiquetas y salida" />
           <TabButton active={tab === "formulas"} onClick={() => setTab("formulas")} title="Fórmulas" desc="Revisar recetas y pasos" />
         </div>
       </section>
@@ -62,10 +62,12 @@ export default function ProductionWorkspace({
       {tab === "bebida" && (
         <TabProduccion
           tanks={tanks}
+          storageTanks={storageTanks}
           productions={productions}
           rawMaterials={rawMaterials}
           locations={locations}
           formulas={formulas}
+          flavors={flavors}
           baseBeverageInventory={baseBeverageInventory}
           finalBeverageBlends={finalBeverageBlends}
           userEmail={userEmail}
@@ -79,16 +81,6 @@ export default function ProductionWorkspace({
           flavors={flavors}
           batches={gasificationBatches}
           finalBeverageBlends={finalBeverageBlends}
-          userEmail={userEmail}
-          onRefresh={() => startTransition(() => router.refresh())}
-        />
-      )}
-
-      {tab === "etiquetado" && (
-        <LabelingPanel
-          locations={locations}
-          flavors={flavors}
-          batches={labelingBatches}
           userEmail={userEmail}
           onRefresh={() => startTransition(() => router.refresh())}
         />
@@ -358,7 +350,7 @@ function LabelingPanel({ locations, flavors, batches, userEmail, onRefresh }: an
       <div className="space-y-6">
         <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Nuevo proceso</p>
-          <h3 className="mt-2 text-2xl font-black text-slate-950">Etiquetado</h3>
+        <h3 className="mt-2 text-2xl font-black text-slate-950">Etiquetado</h3>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <Field label="Nombre del lote">
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
@@ -551,9 +543,6 @@ function FormulaLibraryPanel({
                   <p className="text-xs text-slate-500">Tipo {formula.code}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-slate-950 px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-white">
-                    {formula.targetLiters != null ? `${Number(formula.targetLiters).toLocaleString("es-MX")} Lt` : "Sin objetivo"}
-                  </span>
                   <button
                     type="button"
                     onClick={() => onEdit(formula.code)}

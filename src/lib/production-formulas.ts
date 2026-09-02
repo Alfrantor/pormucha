@@ -8,7 +8,6 @@ type FormulaRow = {
   recipeType: string | null;
   description: string | null;
   formulaSummary: string | null;
-  targetLiters: number | string | null;
   teaType: string | null;
   teaGramsPerLiter: number | string | null;
   sugarGramsPerLiter: number | string | null;
@@ -61,10 +60,6 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
   await db.$executeRawUnsafe(`
     ALTER TABLE "ProductionFormula"
     ADD COLUMN IF NOT EXISTS "recipeType" TEXT NOT NULL DEFAULT 'ACIDIFIER'
-  `).catch(() => null);
-  await db.$executeRawUnsafe(`
-    ALTER TABLE "ProductionFormula"
-    ADD COLUMN IF NOT EXISTS "targetLiters" DECIMAL(65,30)
   `).catch(() => null);
   await db.$executeRawUnsafe(`
     ALTER TABLE "ProductionFormula"
@@ -164,7 +159,6 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
       pf."recipeType",
       pf."description",
       pf."formulaSummary",
-      pf."targetLiters",
       pf."teaType",
       pf."teaGramsPerLiter",
       pf."sugarGramsPerLiter",
@@ -227,7 +221,6 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         recipeType: row.recipeType || "ACIDIFIER",
         description: row.description,
         formulaSummary: row.formulaSummary,
-        targetLiters: row.targetLiters != null ? toNumber(row.targetLiters) : null,
         teaType: row.teaType,
         teaGramsPerLiter: row.teaGramsPerLiter != null ? toNumber(row.teaGramsPerLiter) : null,
         sugarGramsPerLiter: row.sugarGramsPerLiter != null ? toNumber(row.sugarGramsPerLiter) : null,
@@ -276,14 +269,37 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
       const baseType = row.item_source_production_type;
       const rawName = row.raw_material_name;
       const rawUnit = row.raw_material_unit;
+      const formulaLabel =
+        baseType === "ACIDIFIER"
+          ? "Acidificante"
+          : baseType === "SCOOBY"
+            ? "Scooby"
+            : baseType === "FLAVOR"
+              ? "Saborizante"
+              : baseType === "BLEND"
+                ? "Blend"
+                : baseType || "Fórmula";
+
+      const normalizedFreeText = (row.item_free_text_name || "").trim().toLowerCase();
+      const inferredSourceKind =
+        row.item_source_kind ||
+        (normalizedFreeText === "agua" || normalizedFreeText === "azúcar" || normalizedFreeText === "azucar"
+          ? "RAW_MATERIAL"
+          : row.item_source_production_type
+            ? "FORMULA"
+            : "RAW_MATERIAL");
 
       const itemView = {
         id: row.item_id,
-        sourceKind: (isBaseBeverage ? "BASE_BEVERAGE" : "RAW_MATERIAL") as "BASE_BEVERAGE" | "RAW_MATERIAL",
+        sourceKind: (isBaseBeverage ? "BASE_BEVERAGE" : inferredSourceKind === "FORMULA" ? "FORMULA" : "RAW_MATERIAL") as "BASE_BEVERAGE" | "FORMULA" | "RAW_MATERIAL",
         sourceProductionType: baseType,
         rawMaterialId: row.raw_material_id,
-        rawMaterialName: isBaseBeverage ? `Bebida base tipo ${baseType || "-"}` : rawName || "Materia prima",
-        rawMaterialUnit: isBaseBeverage ? "Lt" : rawUnit || "-",
+        rawMaterialName: isBaseBeverage
+          ? `Bebida base tipo ${baseType || "-"}`
+          : inferredSourceKind === "FORMULA"
+            ? formulaLabel
+            : rawName || "Materia prima",
+        rawMaterialUnit: isBaseBeverage ? "Lt" : inferredSourceKind === "FORMULA" ? "%" : rawUnit || "-",
         quantity: toNumber(row.item_quantity),
         freeTextName: row.item_free_text_name,
         sharePercent: row.item_share_percent != null ? toNumber(row.item_share_percent) : null,
@@ -305,9 +321,10 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
           rawMaterialId: row.raw_material_id,
           rawMaterialName: row.raw_material_name,
           freeTextName: row.item_free_text_name,
+          sourceProductionType: inferredSourceKind === "FORMULA" ? row.item_source_production_type : null,
           sharePercent: toNumber(row.item_share_percent),
           gramsPerLiter: toNumber(row.item_quantity),
-          unit: row.raw_material_unit || "g",
+          unit: inferredSourceKind === "FORMULA" ? "%" : row.raw_material_unit || "g",
         });
       }
 
@@ -325,7 +342,7 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
           stepNumber: 1,
           title: "Paso 1",
           instructions: formula.formulaSummary || formula.description || "Paso migrado desde la fórmula anterior.",
-          resultLiters: formula.targetLiters ?? null,
+          resultLiters: null,
           items: formula.items,
         },
       ];

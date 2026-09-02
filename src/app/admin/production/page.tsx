@@ -62,16 +62,30 @@ async function ensureProductionPhaseTable() {
   `).catch(() => null);
 }
 
+async function ensureProductionColumns() {
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "Production"
+    ADD COLUMN IF NOT EXISTS "startedLiters" DECIMAL(65,30)
+  `).catch(() => null);
+}
+
 async function ensureFinalBeverageBlendTables() {
   await db.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "FinalBeverageBlend" (
       "id" TEXT NOT NULL,
       "name" TEXT NOT NULL,
       "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+      "flavorId" TEXT,
+      "flavorName" TEXT,
       "targetBrix" DECIMAL(65,30) NOT NULL,
       "weightedBrix" DECIMAL(65,30) NOT NULL,
       "sugarToAddKg" DECIMAL(65,30) NOT NULL,
       "totalLiters" DECIMAL(65,30) NOT NULL,
+      "sugarGramsPerLiter" DECIMAL(65,30),
+      "waterPercent" DECIMAL(65,30),
+      "acidifierPercent" DECIMAL(65,30),
+      "scoobyPercent" DECIMAL(65,30),
+      "flavorPercent" DECIMAL(65,30),
       "notes" TEXT,
       "createdBy" TEXT,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -81,18 +95,58 @@ async function ensureFinalBeverageBlendTables() {
   `).catch(() => null);
 
   await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlend"
+    ADD COLUMN IF NOT EXISTS "flavorId" TEXT
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlend"
+    ADD COLUMN IF NOT EXISTS "flavorName" TEXT
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlend"
+    ADD COLUMN IF NOT EXISTS "sugarGramsPerLiter" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlend"
+    ADD COLUMN IF NOT EXISTS "waterPercent" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlend"
+    ADD COLUMN IF NOT EXISTS "acidifierPercent" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlend"
+    ADD COLUMN IF NOT EXISTS "scoobyPercent" DECIMAL(65,30)
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlend"
+    ADD COLUMN IF NOT EXISTS "flavorPercent" DECIMAL(65,30)
+  `).catch(() => null);
+
+  await db.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "FinalBeverageBlendComponent" (
       "id" TEXT NOT NULL,
       "blendId" TEXT NOT NULL,
       "sourceType" TEXT NOT NULL,
       "baseBeverageInventoryId" TEXT,
       "productionFormulaId" TEXT,
+      "sourceStorageTankId" TEXT,
+      "sourceStorageEntryId" TEXT,
       "sourceLabel" TEXT NOT NULL,
       "liters" DECIMAL(65,30) NOT NULL,
       "brixSnapshot" DECIMAL(65,30) NOT NULL,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "FinalBeverageBlendComponent_pkey" PRIMARY KEY ("id")
     )
+  `).catch(() => null);
+
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlendComponent"
+    ADD COLUMN IF NOT EXISTS "sourceStorageTankId" TEXT
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlendComponent"
+    ADD COLUMN IF NOT EXISTS "sourceStorageEntryId" TEXT
   `).catch(() => null);
 }
 
@@ -105,7 +159,8 @@ export default async function ProductionPage({
   const role = (sessionClaims?.metadata as any)?.role;
   const user = await currentUser();
   const params = (await searchParams) || {};
-  const initialTab = resolveInitialTab(params.tab);
+  const rawTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+  const initialTab = rawTab === "gasificado" || rawTab === "etiquetado" || rawTab === "formulas" ? rawTab : "bebida";
 
   if (role !== "admin" && role !== "vendedor") {
     redirect("/perfil");
@@ -113,9 +168,29 @@ export default async function ProductionPage({
 
   await ensureProductionPhaseTable();
   await ensureFinalBeverageBlendTables();
+  await ensureProductionColumns();
 
-  const [tanks, productions, rawMaterials, locations, flavors, gasRows, labelRows, phaseRows, formulas, productionFormulaRefs, productionInputLitersRows, baseBeverageInventory, finalBlendRows, finalBlendComponentRows] = await Promise.all([
+  const [tanks, storageTanks, storageEntries, productions, rawMaterials, locations, flavors, gasRows, labelRows, phaseRows, formulas, productionFormulaRefs, productionInputLitersRows, baseBeverageInventory, finalBlendRows, finalBlendComponentRows] = await Promise.all([
     db.tank.findMany({ orderBy: { createdAt: "asc" } }),
+    db.$queryRawUnsafe(`
+      SELECT
+        st.*,
+        COALESCE(SUM(se."litersRemaining"), 0) AS "currentLiters",
+        COUNT(se."id") AS "sourceCount"
+      FROM "BaseBeverageStorageTank" st
+      LEFT JOIN "BaseBeverageStorageEntry" se ON se."storageTankId" = st."id"
+      GROUP BY st."id"
+      ORDER BY st."createdAt" DESC
+    `).catch(() => []),
+    db.$queryRawUnsafe(`
+      SELECT
+        se.*,
+        st."id" AS storage_tank_id_ref,
+        st."name" AS storage_tank_name
+      FROM "BaseBeverageStorageEntry" se
+      LEFT JOIN "BaseBeverageStorageTank" st ON st."id" = se."storageTankId"
+      ORDER BY se."createdAt" ASC
+    `).catch(() => []),
     db.production.findMany({
       include: {
         tank: true,
@@ -174,20 +249,20 @@ export default async function ProductionPage({
       WHERE "productionFormulaId" IS NOT NULL
     `).catch(() => []),
     db.$queryRawUnsafe(`
-      SELECT "id", "inputLiters"
+      SELECT "id", "inputLiters", "startedLiters"
       FROM "Production"
-      WHERE "inputLiters" IS NOT NULL
+      WHERE "inputLiters" IS NOT NULL OR "startedLiters" IS NOT NULL
     `).catch(() => []),
     db.$queryRawUnsafe(`
       SELECT
         bbi.*,
-        t.id AS tank_id_ref,
+        p."tankId" AS tank_id_ref,
         t.name AS tank_name,
         p.id AS production_id_ref,
         p.name AS production_name
       FROM "BaseBeverageInventory" bbi
-      LEFT JOIN "Tank" t ON t.id = bbi."tankId"
       LEFT JOIN "Production" p ON p.id = bbi."productionId"
+      LEFT JOIN "Tank" t ON t.id = p."tankId"
       ORDER BY bbi."createdAt" DESC
     `).catch(() => []),
     db.$queryRawUnsafe(`
@@ -221,6 +296,18 @@ export default async function ProductionPage({
     production: row.production_id_ref ? { id: row.production_id_ref, name: row.production_name } : null,
   }));
 
+  const storageEntriesByTank = new Map<string, any[]>();
+  (storageEntries as any[]).forEach((entry) => {
+    const list = storageEntriesByTank.get(entry.storageTankId) || [];
+    list.push({
+      ...entry,
+      litersAdded: Number(entry.litersAdded || 0),
+      litersRemaining: Number((entry.litersRemaining ?? entry.litersAdded) || 0),
+      createdAt: entry.createdAt instanceof Date ? entry.createdAt.toISOString() : String(entry.createdAt),
+    });
+    storageEntriesByTank.set(entry.storageTankId, list);
+  });
+
   const phasesByProductionId = new Map<string, any[]>();
   (phaseRows as any[]).forEach((row) => {
     const list = phasesByProductionId.get(row.productionId) || [];
@@ -246,6 +333,12 @@ export default async function ProductionPage({
       inputLitersByProductionId.set(row.id, Number(row.inputLiters));
     }
   });
+  const startedLitersByProductionId = new Map<string, number>();
+  (productionInputLitersRows as any[]).forEach((row) => {
+    if (row.startedLiters != null) {
+      startedLitersByProductionId.set(row.id, Number(row.startedLiters));
+    }
+  });
 
   const productionsWithPhases = productions.map((production: any) => {
     const productionFormulaId = formulaRefByProductionId.get(production.id);
@@ -253,6 +346,7 @@ export default async function ProductionPage({
       ...production,
       productionFormulaId: productionFormulaId || null,
       inputLiters: inputLitersByProductionId.get(production.id) ?? null,
+      startedLiters: startedLitersByProductionId.get(production.id) ?? null,
       formula: productionFormulaId ? formulaById.get(productionFormulaId) || null : null,
       secondPhaseRecords: phasesByProductionId.get(production.id) || [],
     };
@@ -270,24 +364,19 @@ export default async function ProductionPage({
     components: finalBlendComponentsByBlendId.get(row.id) || [],
   }));
 
+  const storageTanksWithEntries = (storageTanks as any[]).map((tank) => ({
+    ...tank,
+    currentLiters: Number(tank.currentLiters || 0),
+    sourceCount: Number(tank.sourceCount || 0),
+    entries: storageEntriesByTank.get(tank.id) || [],
+  }));
+
   return (
     <div className="space-y-6">
-      <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Operacion</p>
-            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Produccion</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-              Aqui administramos la bebida base, el gasificado y el etiquetado como flujos separados dentro de la misma operacion.
-            </p>
-          </div>
-
-        </div>
-      </section>
-
       <ProductionWorkspace
-        tanks={serialize(tanks)}
-        productions={serialize(productionsWithPhases)}
+      tanks={serialize(tanks)}
+      storageTanks={serialize(storageTanksWithEntries)}
+      productions={serialize(productionsWithPhases)}
         rawMaterials={serialize(rawMaterials)}
         locations={serialize(locations)}
         formulas={serialize(formulas)}
