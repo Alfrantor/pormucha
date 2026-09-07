@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import PackCard from "@/components/PackCard";
 import FlavorMixer from "@/components/FlavorMixer";
+import { isWebCmsProxyUrl, resolveWebCmsAssetUrl } from "@/lib/web-cms";
 
 type StoreFlavor = {
   id: string;
@@ -19,6 +20,7 @@ type StorePack = {
   clubDiscountPercent: number;
   subscriptionPlanId?: string | null;
   image?: string | null;
+  imageEuro?: string | null;
 };
 
 type CatalogPlan = {
@@ -56,7 +58,8 @@ export default function StoreGrid({ packs, flavors }: { packs: StorePack[]; flav
   }, [packs, plans]);
 
   const getImage = (pack: StorePack) => {
-    if (pack.image) return pack.image;
+    if (pack.image) return resolveWebCmsAssetUrl(pack.image);
+    if (pack.imageEuro) return resolveWebCmsAssetUrl(pack.imageEuro);
     if (pack.quantity === 6) return "/pack-6.PNG";
     if (pack.quantity === 8) return "/pack-8.JPG";
     if (pack.quantity === 12) return "/pack-12.PNG";
@@ -72,6 +75,9 @@ export default function StoreGrid({ packs, flavors }: { packs: StorePack[]; flav
         <div className="flex flex-wrap justify-center gap-6">
           {packsWithPlan.map((pack) => (
             <div key={pack.id} className="w-full md:w-[calc(50%-12px)] lg:w-[calc(25%-18px)]">
+              {(() => {
+                const imageUrl = getImage(pack);
+                return (
               <PackCard
                 id={pack.id}
                 nombre={pack.name}
@@ -80,9 +86,12 @@ export default function StoreGrid({ packs, flavors }: { packs: StorePack[]; flav
                 clubDiscountPercent={pack.clubDiscountPercent}
                 isSubscriptionMode={isSubscription}
                 flavors={flavors}
-                imagenUrl={getImage(pack)}
+                imagenUrl={imageUrl}
+                imagenUnoptimized={isWebCmsProxyUrl(imageUrl)}
                 onSelect={() => setActivePack(pack)}
               />
+                );
+              })()}
             </div>
           ))}
         </div>

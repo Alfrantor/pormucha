@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { createShippingLabel } from "@/lib/shipping-service";
+import { ensureProductImageEuroSchema } from "@/lib/product-schema";
 import { revalidatePath } from "next/cache";
 import { Decimal } from "@prisma/client/runtime/library";
 
@@ -233,6 +234,84 @@ export async function updatePackSubscriptionCopy(formData: FormData) {
   revalidatePath("/suscripciones");
 }
 
+export async function updateWebPackSettings(formData: FormData) {
+  await ensureProductImageEuroSchema();
+
+  const productId = formData.get("productId") as string;
+  const adminEmail = (formData.get("adminEmail") as string) || "system";
+  const newPrice = parseFloat((formData.get("newPrice") as string) || "0");
+  const discountPercent = parseFloat((formData.get("clubDiscountPercent") as string) || "0");
+  const image = ((formData.get("image") as string) || "").trim();
+  const imageEuro = ((formData.get("imageEuro") as string) || "").trim();
+  const subscriptionNote = ((formData.get("subscriptionNote") as string) || "").trim();
+  const subscriptionBenefit1 = ((formData.get("subscriptionBenefit1") as string) || "").trim();
+  const subscriptionBenefit2 = ((formData.get("subscriptionBenefit2") as string) || "").trim();
+  const subscriptionBenefit3 = ((formData.get("subscriptionBenefit3") as string) || "").trim();
+
+  const currentProduct = await db.product.findUnique({
+    where: { id: productId },
+    include: { plans: true },
+  });
+
+  if (!currentProduct) return;
+
+  const safePrice = Number.isFinite(newPrice) ? Math.max(0, newPrice) : Number(currentProduct.price || 0);
+  const safeDiscount = Number.isFinite(discountPercent) ? Math.min(100, Math.max(0, discountPercent)) : Number(currentProduct.clubDiscountPercent || 0);
+  const priceChanged = Number(currentProduct.price || 0) !== safePrice;
+  const discountChanged = Number(currentProduct.clubDiscountPercent || 0) !== safeDiscount;
+
+  if (priceChanged) {
+    await db.productPriceHistory.create({
+      data: {
+        productId,
+        oldPrice: currentProduct.price,
+        newPrice: safePrice,
+        userId: adminEmail,
+      },
+    });
+  }
+
+  await db.product.update({
+    where: { id: productId },
+    data: {
+      price: safePrice,
+      clubDiscountPercent: safeDiscount,
+      image: image || null,
+      subscriptionNote: subscriptionNote || null,
+      subscriptionBenefit1: subscriptionBenefit1 || null,
+      subscriptionBenefit2: subscriptionBenefit2 || null,
+      subscriptionBenefit3: subscriptionBenefit3 || null,
+    },
+  });
+
+  await db.$executeRaw`
+    UPDATE "Product"
+    SET "imageEuro" = ${imageEuro || null}
+    WHERE "id" = ${productId}
+  `;
+
+  if (priceChanged || discountChanged) {
+    const subscriptionPrice = Math.max(0, safePrice * (1 - safeDiscount / 100));
+
+    await Promise.all(
+      currentProduct.plans.map((plan) =>
+        db.plan.update({
+          where: { id: plan.id },
+          data: {
+            price: subscriptionPrice,
+            stripePriceId: null,
+          },
+        })
+      )
+    );
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/catalog/products");
+  revalidatePath("/tienda");
+  revalidatePath("/suscripciones");
+}
+
 export async function updateFlavorImages(formData: FormData) {
   const flavorId = formData.get("flavorId") as string;
   const image = ((formData.get("image") as string) || "").trim();
@@ -402,14 +481,46 @@ export async function deleteLead(formData: FormData) {
 // ==========================================
 // LOGÍSTICA (SKYDROPX)
 // ==========================================
-export async function generateShippingLabel(orderId: string): Promise<{ success: true; labelUrl: string } | { success: false; error: string }> {
+export async function generateShippingLabel(orderId: string): Promise<{ success: true; labelUrl: string; trackingNumber?: string } | { success: false; error: string }> {
   try {
     const result = await createShippingLabel(orderId);
     revalidatePath("/admin");
+    revalidatePath("/admin/orders");
+    revalidatePath("/admin/subscriptions");
     return result;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Error desconocido al generar guía";
     console.error("Error en guía:", message);
+    return { success: false, error: message };
+  }
+}
+
+export async function markOrderAsShipped(orderId: string): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, trackingNumber: true, trackingUrl: true, shippingId: true },
+    });
+
+    if (!order) {
+      return { success: false, error: "Pedido no encontrado" };
+    }
+
+    if (!order.trackingNumber && !order.trackingUrl && !order.shippingId) {
+      return { success: false, error: "Primero genera o registra una guía para este pedido." };
+    }
+
+    await db.order.update({
+      where: { id: orderId },
+      data: { status: "SHIPPED" },
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/orders");
+    revalidatePath("/admin/subscriptions");
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo marcar el pedido como enviado";
     return { success: false, error: message };
   }
 }

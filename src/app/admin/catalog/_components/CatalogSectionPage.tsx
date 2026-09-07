@@ -17,28 +17,32 @@ export function CatalogSectionPage({
   stats,
   cards,
 }: {
-  eyebrow: string;
-  title: string;
-  description: string;
-  stats: Array<{ label: string; value: string | number }>;
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+  stats?: Array<{ label: string; value: string | number }>;
   cards: CatalogCard[];
 }) {
   return (
     <div className="space-y-6">
-      <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">{eyebrow}</p>
-        <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{title}</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{description}</p>
-      </section>
+      {title ? (
+        <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          {eyebrow ? <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">{eyebrow}</p> : null}
+          <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">{title}</h1>
+          {description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{description}</p> : null}
+        </section>
+      ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {stats.map((item) => (
-          <div key={item.label} className="rounded-[1.4rem] border border-slate-200 bg-slate-950 p-5 text-white shadow-lg">
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/65">{item.label}</p>
-            <p className="mt-3 text-3xl font-black">{item.value}</p>
-          </div>
-        ))}
-      </section>
+      {stats && stats.length > 0 ? (
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {stats.map((item) => (
+            <div key={item.label} className="rounded-[1.4rem] border border-slate-200 bg-slate-950 p-5 text-white shadow-lg">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/65">{item.label}</p>
+              <p className="mt-3 text-3xl font-black">{item.value}</p>
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (

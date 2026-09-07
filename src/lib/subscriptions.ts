@@ -20,6 +20,16 @@ export async function ensureSubscriptionScheduleSchema() {
       `).catch(() => undefined);
 
       await db.$executeRawUnsafe(`
+        ALTER TABLE "Subscription"
+        ADD COLUMN IF NOT EXISTS "canceledAt" TIMESTAMP(3)
+      `).catch(() => undefined);
+
+      await db.$executeRawUnsafe(`
+        ALTER TABLE "Subscription"
+        ADD COLUMN IF NOT EXISTS "cancellationReason" TEXT
+      `).catch(() => undefined);
+
+      await db.$executeRawUnsafe(`
         ALTER TABLE "Address"
         ADD COLUMN IF NOT EXISTS "neighborhood" TEXT
       `).catch(() => undefined);
@@ -28,6 +38,12 @@ export async function ensureSubscriptionScheduleSchema() {
         UPDATE "Subscription"
         SET "nextShipmentDate" = "currentPeriodEnd"
         WHERE "nextShipmentDate" IS NULL
+      `).catch(() => undefined);
+
+      await db.$executeRawUnsafe(`
+        UPDATE "Subscription"
+        SET "canceledAt" = "updatedAt"
+        WHERE "status" = 'canceled' AND "canceledAt" IS NULL
       `).catch(() => undefined);
     })();
   }

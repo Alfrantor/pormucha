@@ -1,8 +1,11 @@
 import TiendaPageClient from "@/components/tienda/TiendaPageClient";
 import { db } from "@/lib/db";
+import { ensureProductImageEuroSchema } from "@/lib/product-schema";
 import { getWebCmsConfig } from "@/lib/web-cms";
 
 export default async function TiendaPage() {
+  await ensureProductImageEuroSchema();
+
   const [config, packs, rawFlavors] = await Promise.all([
     getWebCmsConfig(),
     db.product.findMany({
@@ -14,6 +17,11 @@ export default async function TiendaPage() {
       include: { locationStocks: true },
     }),
   ]);
+  const productImageEuroRows = await db.$queryRaw<Array<{ id: string; imageEuro: string | null }>>`
+    SELECT "id", "imageEuro"
+    FROM "Product"
+  `;
+  const productImageEuroById = new Map(productImageEuroRows.map((row) => [row.id, row.imageEuro]));
 
   const page = config.pages.find((entry) => entry.key === "tienda") ?? config.pages[0];
 
@@ -45,6 +53,7 @@ export default async function TiendaPage() {
         price: Number(pack.price),
         clubDiscountPercent: pack.clubDiscountPercent,
         image: pack.image || null,
+        imageEuro: productImageEuroById.get(pack.id) || null,
       }))}
       flavors={flavors}
     />

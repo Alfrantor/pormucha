@@ -437,6 +437,18 @@ export async function syncStripeSubscriptionState(subscription: Stripe.Subscript
   await ensureSubscriptionScheduleSchema();
 
   const stripeSubscriptionId = subscription.id;
+  const isCanceled = subscription.status === "canceled";
+  const canceledAtSeconds =
+    typeof subscription.canceled_at === "number"
+      ? subscription.canceled_at
+      : typeof subscription.ended_at === "number"
+        ? subscription.ended_at
+        : null;
+  const cancellationReason =
+    subscription.cancellation_details?.comment ||
+    subscription.cancellation_details?.feedback ||
+    subscription.cancellation_details?.reason ||
+    null;
   const periodEndSeconds = getStripeCurrentPeriodEnd(subscription);
   const currentPeriodEnd = periodEndSeconds
     ? new Date(Number(periodEndSeconds) * 1000)
@@ -457,6 +469,15 @@ export async function syncStripeSubscriptionState(subscription: Stripe.Subscript
       status: subscription.status,
       ...(currentPeriodEnd ? { currentPeriodEnd } : {}),
       ...(existing.nextShipmentDate ? {} : { nextShipmentDate: new Date() }),
+      ...(isCanceled
+        ? {
+            canceledAt: canceledAtSeconds ? new Date(Number(canceledAtSeconds) * 1000) : new Date(),
+            cancellationReason: cancellationReason || existing.cancellationReason,
+          }
+        : {
+            canceledAt: null,
+            cancellationReason: null,
+          }),
     },
   });
 

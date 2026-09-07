@@ -6,6 +6,7 @@ import { useCart } from "@/context/CartContext";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import Image from "next/image";
+import { isWebCmsProxyUrl, resolveWebCmsAssetUrl } from "@/lib/web-cms";
 
 const EURO_PACK_IDS = new Set([
   "cmndgsukm0002ra6onjg8fpn7",
@@ -36,9 +37,11 @@ export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: a
   const canToggleStyle = pack.id === MIXED_PACK_ID;
 
   const getFlavorImage = (flavor: any) => {
-    if (usesEuroOnly) return getEuroImage(flavor);
-    if (canToggleStyle && packStyle === "euro") return getEuroImage(flavor);
-    return flavor.image || FALLBACK_FLAVOR_IMAGE;
+    const imageUrl = usesEuroOnly || (canToggleStyle && packStyle === "euro")
+      ? getEuroImage(flavor)
+      : flavor.image || FALLBACK_FLAVOR_IMAGE;
+
+    return resolveWebCmsAssetUrl(imageUrl);
   };
 
   const handleAddToCart = async () => {
@@ -143,36 +146,41 @@ export default function FlavorMixer({ pack, flavors, isSubscription, onBack }: a
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
-        {flavors.map((flavor: any) => (
-          <div key={flavor.id} className="bg-white p-6 rounded-2xl border border-[#8B3A18]/5 shadow-sm flex flex-col items-center">
-            <div className="h-64 w-full relative mb-6">
-              <Image
-                src={getFlavorImage(flavor)}
-                alt={flavor.name}
-                fill
-                sizes="(max-width: 768px) 50vw, (max-width: 1200px) 25vw, 280px"
-                className="object-contain"
-              />
-            </div>
-            <h3 className="font-serif text-xl mb-4">{flavor.name}</h3>
+        {flavors.map((flavor: any) => {
+          const flavorImageUrl = getFlavorImage(flavor);
 
-            <div className="flex items-center gap-4 bg-[#F5F2EB] rounded-full p-1 border border-[#8B3A18]/10">
-              <button
-                onClick={() => updateQuantity(flavor.id, -1)}
-                className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-[#8B3A18] shadow-sm hover:bg-[#8B3A18] hover:text-white transition"
-              >
-                <Minus size={14} />
-              </button>
-              <span className="font-mono font-bold w-6 text-center">{selections[flavor.id]}</span>
-              <button
-                onClick={() => updateQuantity(flavor.id, 1)}
-                className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-[#8B3A18] shadow-sm hover:bg-[#8B3A18] hover:text-white transition"
-              >
-                <Plus size={14} />
-              </button>
+          return (
+            <div key={flavor.id} className="bg-white p-6 rounded-2xl border border-[#8B3A18]/5 shadow-sm flex flex-col items-center">
+              <div className="h-64 w-full relative mb-6">
+                <Image
+                  src={flavorImageUrl}
+                  alt={flavor.name}
+                  fill
+                  sizes="(max-width: 768px) 50vw, (max-width: 1200px) 25vw, 280px"
+                  unoptimized={isWebCmsProxyUrl(flavorImageUrl)}
+                  className="object-contain"
+                />
+              </div>
+              <h3 className="font-serif text-xl mb-4">{flavor.name}</h3>
+
+              <div className="flex items-center gap-4 bg-[#F5F2EB] rounded-full p-1 border border-[#8B3A18]/10">
+                <button
+                  onClick={() => updateQuantity(flavor.id, -1)}
+                  className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-[#8B3A18] shadow-sm hover:bg-[#8B3A18] hover:text-white transition"
+                >
+                  <Minus size={14} />
+                </button>
+                <span className="font-mono font-bold w-6 text-center">{selections[flavor.id]}</span>
+                <button
+                  onClick={() => updateQuantity(flavor.id, 1)}
+                  className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-[#8B3A18] shadow-sm hover:bg-[#8B3A18] hover:text-white transition"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="flex justify-center">

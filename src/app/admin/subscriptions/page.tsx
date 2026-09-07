@@ -1,13 +1,15 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Box, CalendarClock, CircleAlert, CreditCard, MapPin, Repeat, Search, Sparkles } from "lucide-react";
+import { CircleAlert, CreditCard, MapPin, Repeat, Search, Sparkles } from "lucide-react";
 import { db } from "@/lib/db";
 import { ensureSubscriptionScheduleSchema, getSubscriptionStatusSummary } from "@/lib/subscriptions";
+import { SubscriptionShipmentActions } from "@/components/admin/SubscriptionShipmentActions";
 
 type PageProps = {
   searchParams?: Promise<{
     q?: string;
     status?: string;
+    shipment?: string;
   }>;
 };
 
@@ -28,14 +30,16 @@ function formatDate(value: Date) {
   });
 }
 
-function normalizeFlavorSelection(rawSelection: unknown): FlavorSelectionItem[] {
+function normalizeFlavorSelection(rawSelection: unknown, flavors: { id: string; name: string }[]): FlavorSelectionItem[] {
   if (!rawSelection || typeof rawSelection !== "object" || Array.isArray(rawSelection)) {
     return [];
   }
 
+  const flavorNameById = new Map(flavors.map((flavor) => [flavor.id, flavor.name]));
+
   return Object.entries(rawSelection as Record<string, unknown>)
-    .map(([name, quantity]) => ({
-      name,
+    .map(([key, quantity]) => ({
+      name: flavorNameById.get(key) || key,
       quantity: Number(quantity),
     }))
     .filter((item) => Number.isFinite(item.quantity) && item.quantity > 0);
@@ -108,12 +112,55 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
+function hasShippingLabel(order: { trackingNumber?: string | null; trackingUrl?: string | null; shippingId?: string | null } | null) {
+  return Boolean(order?.trackingNumber || order?.trackingUrl || order?.shippingId);
+}
+
+function isOrderShipped(order: { status?: string | null } | null) {
+  return ["SHIPPED", "COMPLETED", "DELIVERED"].includes(String(order?.status || "").toUpperCase());
+}
+
+function getShipmentStatus(order: { status?: string | null; trackingNumber?: string | null; trackingUrl?: string | null; shippingId?: string | null } | null) {
+  if (!order) return "NO_ORDER";
+  if (isOrderShipped(order)) return "SHIPPED";
+  if (hasShippingLabel(order)) return "READY_TO_SHIP";
+  return "NO_LABEL";
+}
+
+function getShipmentLabel(order: { status?: string | null; trackingNumber?: string | null; trackingUrl?: string | null; shippingId?: string | null } | null) {
+  const status = getShipmentStatus(order);
+  if (status === "SHIPPED") return "Enviado";
+  if (status === "READY_TO_SHIP") return "Con guía";
+  if (status === "NO_LABEL") return "Pendiente sin guía";
+  return "Sin surtido";
+}
+
+function getShipmentTone(order: { status?: string | null; trackingNumber?: string | null; trackingUrl?: string | null; shippingId?: string | null } | null) {
+  const status = getShipmentStatus(order);
+  if (status === "SHIPPED") return "bg-blue-50 text-blue-700 border-blue-100";
+  if (status === "READY_TO_SHIP") return "bg-cyan-50 text-cyan-700 border-cyan-100";
+  if (status === "NO_LABEL") return "bg-amber-50 text-amber-700 border-amber-100";
+  return "bg-slate-50 text-slate-500 border-slate-100";
+}
+
+function getCycleType(order: { payments?: { note: string | null }[]; notes?: string | null } | null) {
+  const notes = [
+    order?.notes || "",
+    ...(order?.payments || []).map((payment) => payment.note || ""),
+  ].join(" ");
+
+  if (notes.includes("Cobro recurrente")) return "Renovación";
+  if (notes.includes("Alta inicial")) return "Nueva";
+  return "Surtido";
+}
+
 export default async function AdminSubscriptionsPage({ searchParams }: PageProps) {
   await ensureSubscriptionScheduleSchema();
 
   const resolvedSearchParams = (await searchParams) ?? {};
   const query = resolvedSearchParams.q?.trim() ?? "";
   const status = (resolvedSearchParams.status?.trim() || "active").toLowerCase();
+  const shipment = (resolvedSearchParams.shipment?.trim() || "all").toLowerCase();
   const now = getNow();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -130,7 +177,15 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
       : {}),
   };
 
-  const [subscriptions, totalSubscriptions, activeSubscriptions, monthlyRecurringOrders] = await Promise.all([
+  const [
+    subscriptions,
+    totalSubscriptions,
+    activeSubscriptions,
+    newSubscriptionsThisMonth,
+    canceledSubscriptions,
+    monthlyRecurringOrders,
+    flavors,
+  ] = await Promise.all([
     db.subscription.findMany({
       where,
       include: {
@@ -146,25 +201,44 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
         plan: true,
         orders: {
           orderBy: { createdAt: "desc" },
-          take: 1,
+          take: 8,
+          include: {
+            payments: {
+              select: {
+                note: true,
+              },
+            },
+          },
         },
       },
       orderBy: [{ nextShipmentDate: "asc" }, { createdAt: "desc" }],
     }),
     db.subscription.count(),
     db.subscription.count({ where: { status: "active" } }),
+    db.subscription.count({ where: { createdAt: { gte: monthStart } } }),
+    db.subscription.count({ where: { status: "canceled" } }),
     db.order.count({
       where: {
         subscriptionId: { not: null },
         createdAt: { gte: monthStart },
+        payments: {
+          some: {
+            note: { contains: "Cobro recurrente" },
+          },
+        },
       },
+    }),
+    db.flavor.findMany({
+      where: { isArchived: false },
+      select: { id: true, name: true },
+      orderBy: { sortOrder: "asc" },
     }),
   ]);
 
   const enrichedSubscriptions = subscriptions.map((subscription) => {
     const summary = getSubscriptionStatusSummary(subscription, now);
     const shippingAddress = subscription.client.addresses[0] ?? null;
-    const selectedFlavors = normalizeFlavorSelection(subscription.selectedFlavors);
+    const selectedFlavors = normalizeFlavorSelection(subscription.selectedFlavors, flavors);
 
     return {
       ...subscription,
@@ -175,16 +249,32 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
     };
   });
 
-  const nextSevenDaysCount = enrichedSubscriptions.filter(
-    (subscription) =>
-      subscription.status === "active" &&
-      subscription.summary.daysUntilShipment >= 0 &&
-      subscription.summary.daysUntilShipment <= 7,
-  ).length;
+  const visibleSubscriptions = enrichedSubscriptions.filter((subscription) => {
+    if (shipment === "all") return true;
+    return getShipmentStatus(subscription.latestOrder).toLowerCase() === shipment;
+  });
 
-  const lockedCount = enrichedSubscriptions.filter(
-    (subscription) => subscription.status === "active" && !subscription.summary.editable,
-  ).length;
+  const shipmentCounts = {
+    all: enrichedSubscriptions.length,
+    no_label: enrichedSubscriptions.filter((subscription) => getShipmentStatus(subscription.latestOrder) === "NO_LABEL").length,
+    ready_to_ship: enrichedSubscriptions.filter((subscription) => getShipmentStatus(subscription.latestOrder) === "READY_TO_SHIP").length,
+    shipped: enrichedSubscriptions.filter((subscription) => getShipmentStatus(subscription.latestOrder) === "SHIPPED").length,
+  };
+
+  const filterParams = new URLSearchParams();
+  if (query) filterParams.set("q", query);
+  if (status) filterParams.set("status", status);
+
+  const buildShipmentHref = (nextShipment: string) => {
+    const params = new URLSearchParams(filterParams);
+    if (nextShipment !== "all") {
+      params.set("shipment", nextShipment);
+    } else {
+      params.delete("shipment");
+    }
+    const queryString = params.toString();
+    return queryString ? `/admin/subscriptions?${queryString}` : "/admin/subscriptions";
+  };
 
   return (
     <div className="space-y-6">
@@ -194,7 +284,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
             <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Club Pormucha</p>
             <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Suscriptores</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-              Aqui ves quien esta suscrito, cuando toca surtir, cuando se cierra la edicion de sabores y que plan tiene cada miembro.
+              Aqui ves quien esta suscrito, cuando toca surtir, que guia tiene cada envio y el historial completo de surtidos por cliente.
             </p>
           </div>
 
@@ -206,13 +296,6 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
               <Repeat size={16} />
               Ver planes
             </Link>
-            <Link
-              href="/admin/orders"
-              className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800"
-            >
-              <Box size={16} />
-              Ver surtidos
-            </Link>
           </div>
         </div>
       </section>
@@ -220,9 +303,9 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Suscripciones totales" value={totalSubscriptions} icon={<Repeat size={16} />} tone="bg-slate-950 text-white" />
         <MetricCard label="Activas" value={activeSubscriptions} icon={<Sparkles size={16} />} tone="bg-emerald-600 text-white" />
-        <MetricCard label="Salen en 7 dias" value={nextSevenDaysCount} icon={<CalendarClock size={16} />} tone="bg-amber-500 text-white" />
-        <MetricCard label="Edicion cerrada" value={lockedCount} icon={<CircleAlert size={16} />} tone="bg-rose-500 text-white" />
-        <MetricCard label="Surtidos del mes" value={monthlyRecurringOrders} icon={<CreditCard size={16} />} tone="bg-sky-600 text-white" />
+        <MetricCard label="Nuevas del mes" value={newSubscriptionsThisMonth} icon={<Sparkles size={16} />} tone="bg-lime-600 text-white" />
+        <MetricCard label="Renovaciones" value={monthlyRecurringOrders} icon={<CreditCard size={16} />} tone="bg-sky-600 text-white" />
+        <MetricCard label="Canceladas" value={canceledSubscriptions} icon={<CircleAlert size={16} />} tone="bg-rose-500 text-white" />
       </section>
 
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-5 shadow-sm">
@@ -258,9 +341,33 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
         </form>
       </section>
 
+      <section className="flex flex-wrap gap-2 rounded-[1.8rem] border border-slate-200 bg-white p-3 shadow-sm">
+        {[
+          { id: "all", label: "Todos", count: shipmentCounts.all },
+          { id: "no_label", label: "Pendientes sin guia", count: shipmentCounts.no_label },
+          { id: "ready_to_ship", label: "Con guia", count: shipmentCounts.ready_to_ship },
+          { id: "shipped", label: "Enviados", count: shipmentCounts.shipped },
+        ].map((item) => (
+          <Link
+            key={item.id}
+            href={buildShipmentHref(item.id)}
+            className={`rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.18em] transition ${
+              shipment === item.id
+                ? "bg-slate-950 text-white shadow-sm"
+                : "bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            }`}
+          >
+            {item.label} ({item.count})
+          </Link>
+        ))}
+      </section>
+
       <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-        {enrichedSubscriptions.map((subscription) => {
+        {visibleSubscriptions.map((subscription) => {
           const statusTone = getStatusTone(subscription.status, subscription.summary.daysUntilShipment, subscription.summary.editable);
+          const latestOrder = subscription.latestOrder;
+          const latestShipmentTone = getShipmentTone(latestOrder);
+          const latestCycleType = getCycleType(latestOrder);
 
           return (
             <article key={subscription.id} className="overflow-hidden rounded-[1.8rem] border border-slate-200 bg-white shadow-sm">
@@ -274,6 +381,13 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
                     {getStatusLabel(subscription.status)}
                   </span>
                 </div>
+                <p className="mt-2 text-xs font-bold opacity-75">
+                  {subscription.status === "canceled"
+                    ? `Cancelada ${subscription.canceledAt ? `el ${formatDate(subscription.canceledAt)}` : "sin fecha formal"}`
+                    : subscription.createdAt >= monthStart
+                      ? "Suscripcion nueva del mes"
+                      : "Suscripcion recurrente"}
+                </p>
               </div>
 
               <div className="space-y-5 p-6">
@@ -283,6 +397,7 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
                   <InfoBlock label="Proximo envio" value={formatDate(subscription.summary.shipmentDate)} />
                   <InfoBlock label="Corte sabores" value={formatDate(subscription.summary.lockDate)} />
                   <InfoBlock label="Proximo cobro" value={formatDate(subscription.currentPeriodEnd)} />
+                  <InfoBlock label="Ultimo surtido" value={latestCycleType} />
                   <InfoBlock
                     label="Estado del ciclo"
                     value={
@@ -292,6 +407,18 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
                     }
                   />
                 </div>
+
+                {subscription.status === "canceled" ? (
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-rose-500">Cancelacion</p>
+                    <p className="mt-2 text-sm font-black text-rose-950">
+                      {subscription.canceledAt ? formatDate(subscription.canceledAt) : "Sin fecha formal"}
+                    </p>
+                    <p className="mt-1 text-sm text-rose-700">
+                      {subscription.cancellationReason || "Sin motivo registrado."}
+                    </p>
+                  </div>
+                ) : null}
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Sabores configurados</p>
@@ -335,12 +462,28 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Ultimo surtido</p>
-                    {subscription.latestOrder ? (
+                    {latestOrder ? (
                       <>
                         <p className="mt-2 text-sm font-black text-slate-950">
-                          {subscription.latestOrder.folio || `#${subscription.latestOrder.id.slice(-6).toUpperCase()}`}
+                          {latestOrder.folio || `#${latestOrder.id.slice(-6).toUpperCase()}`}
                         </p>
-                        <p className="text-sm text-slate-600">{formatDate(subscription.latestOrder.createdAt)}</p>
+                        <p className="text-sm text-slate-600">{formatDate(latestOrder.createdAt)}</p>
+                        <span className={`mt-3 inline-flex rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${latestShipmentTone}`}>
+                          {getShipmentLabel(latestOrder)}
+                        </span>
+                        {latestOrder.trackingNumber ? (
+                          <p className="mt-2 text-xs font-bold text-slate-600">Rastreo: {latestOrder.trackingNumber}</p>
+                        ) : null}
+                        {latestOrder.trackingUrl ? (
+                          <a
+                            href={latestOrder.trackingUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 inline-flex text-xs font-black text-blue-700 underline"
+                          >
+                            Abrir guia/rastreo
+                          </a>
+                        ) : null}
                       </>
                     ) : (
                       <p className="mt-2 text-sm text-slate-500">Aun no tiene surtidos registrados.</p>
@@ -359,13 +502,77 @@ export default async function AdminSubscriptionsPage({ searchParams }: PageProps
                     </p>
                   </div>
                 </div>
+
+                {latestOrder ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Acciones del ultimo surtido</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Genera guia o marca como enviado sin salir de suscriptores.
+                        </p>
+                      </div>
+                      <SubscriptionShipmentActions
+                        orderId={latestOrder.id}
+                        trackingUrl={latestOrder.trackingUrl}
+                        hasLabel={hasShippingLabel(latestOrder)}
+                        isShipped={isOrderShipped(latestOrder)}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <summary className="cursor-pointer text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
+                    Historial de surtidos ({subscription.orders.length})
+                  </summary>
+                  <div className="mt-4 space-y-2">
+                    {subscription.orders.length > 0 ? (
+                      subscription.orders.map((order) => (
+                        <div key={order.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-black text-slate-950">
+                                {order.folio || `#${order.id.slice(-6).toUpperCase()}`}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {formatDate(order.createdAt)} · {getCycleType(order)}
+                              </p>
+                            </div>
+                            <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${getShipmentTone(order)}`}>
+                              {getShipmentLabel(order)}
+                            </span>
+                          </div>
+                          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="text-xs text-slate-500">
+                              {order.trackingNumber ? <p>Rastreo: {order.trackingNumber}</p> : <p>Sin rastreo registrado</p>}
+                              {order.trackingUrl ? (
+                                <a href={order.trackingUrl} target="_blank" rel="noreferrer" className="font-black text-blue-700 underline">
+                                  Abrir guia/rastreo
+                                </a>
+                              ) : null}
+                            </div>
+                            <SubscriptionShipmentActions
+                              orderId={order.id}
+                              trackingUrl={order.trackingUrl}
+                              hasLabel={hasShippingLabel(order)}
+                              isShipped={isOrderShipped(order)}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-slate-500">Todavia no hay surtidos generados para esta suscripcion.</p>
+                    )}
+                  </div>
+                </details>
               </div>
             </article>
           );
         })}
       </section>
 
-      {enrichedSubscriptions.length === 0 ? (
+      {visibleSubscriptions.length === 0 ? (
         <section className="rounded-[1.8rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center shadow-sm">
           <p className="text-lg font-black text-slate-950">No encontramos suscripciones con ese filtro.</p>
           <p className="mt-2 text-sm text-slate-500">

@@ -8,7 +8,7 @@ import {
 } from "@/lib/shipping-config";
 
 type ShippingLabelResult =
-  | { success: true; labelUrl: string }
+  | { success: true; labelUrl: string; trackingNumber?: string }
   | { success: false; error: string };
 
 type QuoteInput = {
@@ -570,11 +570,11 @@ async function createSkydropxLabel(orderId: string, origin: ShippingOrigin): Pro
     data: {
       trackingNumber: String(tracking),
       trackingUrl: labelUrl,
-      status: "SHIPPED",
+      status: "READY_TO_SHIP",
     },
   });
 
-  return { success: true, labelUrl };
+  return { success: true, labelUrl, trackingNumber: String(tracking || "") };
 }
 
 export async function createShippingLabel(orderId: string): Promise<ShippingLabelResult> {
@@ -714,9 +714,9 @@ async function createEnviosperrosLabel(orderId: string, origin: ShippingOrigin, 
     data: {
       trackingNumber: tracking,
       trackingUrl: labelUrl,
-      status: "SHIPPED",
+      status: "READY_TO_SHIP",
     },
   });
 
-  return { success: true, labelUrl };
+  return { success: true, labelUrl, trackingNumber: tracking };
 }

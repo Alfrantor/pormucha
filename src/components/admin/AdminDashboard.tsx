@@ -28,7 +28,7 @@ import {
   createPlan, updatePlanPrice, updatePlanProduct, deleteLead, updateLocation,
   createTransfer, receiveTransfer, updateProductsSortOrder, updateFlavorsSortOrder
 } from "@/actions/admin-actions";
-import { generateShippingLabel } from "@/actions/admin-actions";
+import { generateShippingLabel, markOrderAsShipped } from "@/actions/admin-actions";
 import { setInventoryPin } from "@/app/_actions/settings";
 import { createAdjustmentRequest, approveAdjustmentRequest, rejectAdjustmentRequest } from "@/app/_actions/inventory";
 import { cancelOrder } from "@/app/_actions/orders";
@@ -341,6 +341,7 @@ export default function AdminDashboard({ data }: { data: any }) {
 
 // ── tipos del modal de cancelación ───────────────────────────────────────────
 type CancelStep = "confirm" | "stock" | "replacement" | "note" | "done";
+type WebShippingFilter = "NO_LABEL" | "READY_TO_SHIP" | "SHIPPED";
 
 const PAGE_SIZE = 30;
 
@@ -353,6 +354,7 @@ export function TabPedidos({
 }) {
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
   const [channelFilter, setChannelFilter] = useState<"all" | "POS" | "WEB" | "CANCELLED" | "UNPAID">(initialChannelFilter);
+  const [webShippingFilter, setWebShippingFilter] = useState<WebShippingFilter>("NO_LABEL");
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -373,6 +375,7 @@ export function TabPedidos({
 
   // Resetear página al cambiar filtros
   React.useEffect(() => { setPage(1); }, [channelFilter, search, dateFrom, dateTo]);
+  React.useEffect(() => { setPage(1); }, [webShippingFilter]);
 
   // ── Modal de gestión de pagos POS ──
   const [paymentsModal, setPaymentsModal] = useState<{ orderId: string; orderLabel: string } | null>(null);
@@ -656,21 +659,51 @@ export function TabPedidos({
     setCancelStep("done");
   };
 
+  const isWebOrdersPage = initialChannelFilter === "WEB";
+  const hasShippingLabel = (order: any) => Boolean(order.trackingNumber || order.trackingUrl || order.shippingId);
+  const isOrderShipped = (order: any) => ["SHIPPED", "COMPLETED", "DELIVERED"].includes(String(order.status || "").toUpperCase());
+
   const handleAction = async (order: any) => {
     if (order.trackingUrl) { window.open(order.trackingUrl, "_blank"); return; }
     setIsGenerating(order.id);
     try {
       const res = await generateShippingLabel(order.id);
-      if (res.success && res.labelUrl) window.open(res.labelUrl, "_blank");
+      if (res.success && res.labelUrl) {
+        setLocalOrders(prev => prev.map((o: any) =>
+          o.id !== order.id
+            ? o
+            : { ...o, trackingUrl: res.labelUrl, trackingNumber: res.trackingNumber || o.trackingNumber, status: "READY_TO_SHIP" }
+        ));
+        window.open(res.labelUrl, "_blank");
+        toast.success("Guía generada. El pedido quedó pendiente de envío.");
+      }
       else alert("Error: " + ("error" in res ? res.error : "No se pudo generar la guía"));
     } catch { alert("Error crítico al conectar con la paquetería"); }
     finally { setIsGenerating(null); }
+  };
+
+  const handleMarkShipped = async (order: any) => {
+    const confirmed = window.confirm("¿Marcar este pedido como enviado?");
+    if (!confirmed) return;
+
+    const res = await markOrderAsShipped(order.id);
+    if (!res.success) {
+      toast.error(res.error || "No se pudo marcar como enviado");
+      return;
+    }
+
+    setLocalOrders(prev => prev.map((o: any) => o.id === order.id ? { ...o, status: "SHIPPED" } : o));
+    toast.success("Pedido marcado como enviado.");
   };
 
   const cancelledCount = localOrders.filter(o => o.status === "CANCELLED").length;
   const posCount       = localOrders.filter(o => o.channel === "POS" && o.status !== "CANCELLED").length;
   const webCount       = localOrders.filter(o => o.channel !== "POS" && o.status !== "CANCELLED").length;
   const unpaidCount    = localOrders.filter(o => !o.isPaid && o.status !== "CANCELLED").length;
+  const webOrders = localOrders.filter(o => o.channel !== "POS" && o.status !== "CANCELLED");
+  const webNoLabelCount = webOrders.filter(o => !hasShippingLabel(o)).length;
+  const webReadyCount = webOrders.filter(o => hasShippingLabel(o) && !isOrderShipped(o)).length;
+  const webShippedCount = webOrders.filter(o => isOrderShipped(o)).length;
 
   const filteredOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -679,6 +712,14 @@ export function TabPedidos({
 
     return localOrders
       .filter(order => {
+        if (isWebOrdersPage) {
+          if (order.channel === "POS" || order.status === "CANCELLED") return false;
+          if (webShippingFilter === "NO_LABEL") return !hasShippingLabel(order);
+          if (webShippingFilter === "READY_TO_SHIP") return hasShippingLabel(order) && !isOrderShipped(order);
+          if (webShippingFilter === "SHIPPED") return isOrderShipped(order);
+          return true;
+        }
+
         // Canal
         if (channelFilter === "CANCELLED") return order.status === "CANCELLED";
         if (channelFilter === "UNPAID") return !order.isPaid && order.status !== "CANCELLED";
@@ -700,7 +741,7 @@ export function TabPedidos({
         return true;
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [localOrders, channelFilter, search, dateFrom, dateTo]);
+  }, [localOrders, channelFilter, search, dateFrom, dateTo, isWebOrdersPage, webShippingFilter]);
 
   const totalPages     = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -708,12 +749,25 @@ export function TabPedidos({
   const statusBadge = (status: string) => {
     const map: Record<string, string> = {
       SHIPPED:    "bg-blue-50 text-blue-600 border-blue-100",
+      READY_TO_SHIP: "bg-cyan-50 text-cyan-700 border-cyan-100",
       PAID:       "bg-green-50 text-green-700 border-green-100",
       COMPLETED:  "bg-green-50 text-green-700 border-green-100",
       CANCELLED:  "bg-red-50 text-red-600 border-red-100",
       PENDING:    "bg-amber-50 text-amber-600 border-amber-100",
     };
     return map[status] ?? "bg-gray-50 text-gray-600 border-gray-100";
+  };
+
+  const statusLabel = (status: string) => {
+    const map: Record<string, string> = {
+      SHIPPED: "Enviado",
+      READY_TO_SHIP: "Con guía",
+      PAID: "Pagado",
+      COMPLETED: "Completado",
+      CANCELLED: "Cancelado",
+      PENDING: "Pendiente",
+    };
+    return map[status] ?? status;
   };
 
   return (
@@ -726,26 +780,46 @@ export function TabPedidos({
             {filteredOrders.length} pedidos · mostrando {paginatedOrders.length}
           </p>
         </div>
-        <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
-          {(["all","POS","WEB","CANCELLED","UNPAID"] as const).map(f => (
-            <button key={f}
-              onClick={() => setChannelFilter(f)}
-              className={`px-3 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === f
-                ? f === "CANCELLED" ? "bg-white text-red-600 shadow-sm"
-                  : f === "UNPAID" ? "bg-white text-orange-600 shadow-sm"
-                  : f === "POS" ? "bg-white text-purple-700 shadow-sm"
-                  : f === "WEB" ? "bg-white text-blue-600 shadow-sm"
-                  : "bg-white text-black shadow-sm"
-                : "text-gray-500 hover:text-gray-700"}`}
-            >
-              {f === "all" ? `Todos (${localOrders.length})`
-                : f === "POS" ? `POS (${posCount})`
-                : f === "WEB" ? `Web (${webCount})`
-                : f === "CANCELLED" ? `Cancelados (${cancelledCount})`
-                : `Cuentas por pagar (${unpaidCount})`}
-            </button>
-          ))}
-        </div>
+        {isWebOrdersPage ? (
+          <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
+            {([
+              { id: "NO_LABEL" as const, label: "Nuevos sin guía", count: webNoLabelCount },
+              { id: "READY_TO_SHIP" as const, label: "Con guía", count: webReadyCount },
+              { id: "SHIPPED" as const, label: "Enviados", count: webShippedCount },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setWebShippingFilter(tab.id)}
+                className={`px-3 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${
+                  webShippingFilter === tab.id ? "bg-white text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1 bg-gray-100 p-1 rounded-xl shrink-0">
+            {(["all","POS","WEB","CANCELLED","UNPAID"] as const).map(f => (
+              <button key={f}
+                onClick={() => setChannelFilter(f)}
+                className={`px-3 py-2 text-[10px] font-bold uppercase rounded-lg transition-all ${channelFilter === f
+                  ? f === "CANCELLED" ? "bg-white text-red-600 shadow-sm"
+                    : f === "UNPAID" ? "bg-white text-orange-600 shadow-sm"
+                    : f === "POS" ? "bg-white text-purple-700 shadow-sm"
+                    : f === "WEB" ? "bg-white text-blue-600 shadow-sm"
+                    : "bg-white text-black shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"}`}
+              >
+                {f === "all" ? `Todos (${localOrders.length})`
+                  : f === "POS" ? `POS (${posCount})`
+                  : f === "WEB" ? `Web (${webCount})`
+                  : f === "CANCELLED" ? `Cancelados (${cancelledCount})`
+                  : `Cuentas por pagar (${unpaidCount})`}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── BARRA DE BÚSQUEDA Y FECHAS ── */}
@@ -803,7 +877,7 @@ export function TabPedidos({
             <tr className="bg-gray-50 text-[10px] uppercase font-black text-gray-500 border-b">
               <th className="px-6 py-4">Folio / ID</th>
               <th className="px-6 py-4">Fecha</th>
-              <th className="px-6 py-4">Canal</th>
+              {!isWebOrdersPage && <th className="px-6 py-4">Canal</th>}
               <th className="px-6 py-4">Cliente</th>
               <th className="px-6 py-4">Total</th>
               <th className="px-6 py-4">Estatus</th>
@@ -846,11 +920,13 @@ export function TabPedidos({
                       <p className="text-[10px] text-gray-400">{new Date(order.createdAt).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</p>
                     </td>
 
-                    <td className="px-6 py-4">
-                      <span className={`text-[10px] px-2 py-1 rounded-full font-black border ${isPOS ? "bg-purple-50 text-purple-700 border-purple-100" : "bg-sky-50 text-sky-700 border-sky-100"}`}>
-                        {isPOS ? "POS" : "Web"}
-                      </span>
-                    </td>
+                    {!isWebOrdersPage && (
+                      <td className="px-6 py-4">
+                        <span className={`text-[10px] px-2 py-1 rounded-full font-black border ${isPOS ? "bg-purple-50 text-purple-700 border-purple-100" : "bg-sky-50 text-sky-700 border-sky-100"}`}>
+                          {isPOS ? "POS" : "Web"}
+                        </span>
+                      </td>
+                    )}
 
                     <td className="px-6 py-4">
                       <p className="font-bold text-gray-900">{order.fullName || "Sin nombre"}</p>
@@ -868,7 +944,7 @@ export function TabPedidos({
 
                     <td className="px-6 py-4">
                       <span className={`text-[10px] px-3 py-1 rounded-full font-black tracking-tighter border ${statusBadge(order.status)}`}>
-                        ● {order.status}
+                        ● {statusLabel(order.status)}
                       </span>
                     </td>
 
@@ -885,6 +961,15 @@ export function TabPedidos({
                             }`}
                           >
                             {isGenerating === order.id ? "..." : order.trackingUrl ? "Ver Guía" : "Generar Guía"}
+                          </button>
+                        )}
+
+                        {!isPOS && !isCancelled && hasShippingLabel(order) && !isOrderShipped(order) && (
+                          <button
+                            onClick={() => handleMarkShipped(order)}
+                            className="text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest border border-blue-200 text-blue-700 hover:bg-blue-50 transition-all"
+                          >
+                            Marcar enviado
                           </button>
                         )}
 
@@ -955,7 +1040,7 @@ export function TabPedidos({
               })
             ) : (
               <tr>
-                <td colSpan={7} className="p-20 text-center">
+                <td colSpan={isWebOrdersPage ? 6 : 7} className="p-20 text-center">
                   <p className="text-gray-400 italic font-medium">
                     {search || dateFrom || dateTo ? "No se encontraron pedidos con ese filtro." : "No hay pedidos con este filtro."}
                   </p>

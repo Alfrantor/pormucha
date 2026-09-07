@@ -152,7 +152,7 @@ function createBlock(type: WebCmsBlockType, index: number, overrides: Partial<We
   return { ...base, ...overrides };
 }
 
-function defaultBlocksForPage(pageKey: string): WebCmsBlock[] {
+export function defaultBlocksForPage(pageKey: string): WebCmsBlock[] {
   switch (pageKey) {
     case "home":
       return [

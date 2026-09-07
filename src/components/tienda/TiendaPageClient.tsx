@@ -14,12 +14,15 @@ type PackItem = {
   quantity: number;
   price: number;
   clubDiscountPercent: number | null;
+  image?: string | null;
+  imageEuro?: string | null;
 };
 
 type FlavorItem = {
   id: string;
   name: string;
   image: string;
+  imageEuro?: string | null;
   stock: number;
 };
 

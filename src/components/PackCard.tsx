@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 export default function PackCard({
-    nombre, capacidad, precio, clubDiscountPercent, isSubscriptionMode, onSelect, imagenUrl
+    nombre, capacidad, precio, clubDiscountPercent, isSubscriptionMode, onSelect, imagenUrl, imagenUnoptimized
 }: any) {
 
     return (
@@ -28,6 +28,7 @@ export default function PackCard({
                     alt={`Caja de ${nombre}`}
                     width={350} // Ajusta el tamaño para que se vea grande
                     height={350}
+                    unoptimized={imagenUnoptimized}
                     className="w-full h-auto object-cover object-center drop-shadow-[0_15px_15px_rgba(139,58,24,0.1)] group-hover:scale-105 transition-transform duration-500"
                 />
             </div>

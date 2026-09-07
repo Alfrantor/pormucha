@@ -1,9 +1,10 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import React, { useMemo, useState, useTransition } from "react";
 import { getWebCmsUploadUrl, saveWebCmsConfig } from "@/app/_actions/web-cms";
-import { resolveWebCmsAssetUrl, type WebCmsBlock, type WebCmsBlockType, type WebCmsConfig, type WebCmsPage } from "@/lib/web-cms";
+import { defaultBlocksForPage, resolveWebCmsAssetUrl, type WebCmsBlock, type WebCmsBlockType, type WebCmsConfig, type WebCmsPage } from "@/lib/web-cms";
 import { LoaderCircle, Save, Upload } from "lucide-react";
 
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -60,6 +61,10 @@ function supportsMediaFields(type: WebCmsBlockType) {
 
 function hasValue(value: string) {
   return value.trim().length > 0;
+}
+
+function shouldShowField(block: WebCmsBlock, schemaBlock: WebCmsBlock | undefined, field: keyof Pick<WebCmsBlock, "title" | "subtitle" | "body" | "imageUrl" | "videoUrl" | "buttonLabel" | "buttonHref">) {
+  return hasValue(String(block[field] || "")) || hasValue(String(schemaBlock?.[field] || ""));
 }
 
 function replaceFileExtension(filename: string, nextExtension: string) {
@@ -321,6 +326,10 @@ function BlockEditorCard({ pageKey, block, onUpdate }: BlockEditorCardProps) {
   const [uploadingField, setUploadingField] = useState<"image" | "video" | null>(null);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+  const schemaBlock = useMemo(
+    () => defaultBlocksForPage(pageKey).find((entry) => entry.label === block.label),
+    [block.label, pageKey]
+  );
   const resolvedImageUrl = previewImageUrl || resolveWebCmsAssetUrl(block.imageUrl);
   const resolvedVideoUrl = previewVideoUrl || resolveWebCmsAssetUrl(block.videoUrl);
 
@@ -386,7 +395,7 @@ function BlockEditorCard({ pageKey, block, onUpdate }: BlockEditorCardProps) {
       </div>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        {hasValue(block.title) ? (
+        {shouldShowField(block, schemaBlock, "title") ? (
           <Field label="Titulo">
             <input
               value={block.title}
@@ -396,7 +405,7 @@ function BlockEditorCard({ pageKey, block, onUpdate }: BlockEditorCardProps) {
           </Field>
         ) : null}
 
-        {hasValue(block.subtitle) ? (
+        {shouldShowField(block, schemaBlock, "subtitle") ? (
           <Field label="Subtitulo">
             <input
               value={block.subtitle}
@@ -406,7 +415,7 @@ function BlockEditorCard({ pageKey, block, onUpdate }: BlockEditorCardProps) {
           </Field>
         ) : null}
 
-        {hasValue(block.body) ? (
+        {shouldShowField(block, schemaBlock, "body") ? (
           <Field label="Contenido">
             <textarea
               value={block.body}
@@ -417,9 +426,9 @@ function BlockEditorCard({ pageKey, block, onUpdate }: BlockEditorCardProps) {
           </Field>
         ) : null}
 
-        {supportsMediaFields(block.type) && (hasValue(block.imageUrl) || hasValue(block.videoUrl)) ? (
+        {supportsMediaFields(block.type) && (shouldShowField(block, schemaBlock, "imageUrl") || shouldShowField(block, schemaBlock, "videoUrl")) ? (
           <>
-            {hasValue(block.imageUrl) ? (
+            {shouldShowField(block, schemaBlock, "imageUrl") ? (
               <Field label="Imagen">
                 <div className="space-y-3">
                   <input
@@ -473,7 +482,7 @@ function BlockEditorCard({ pageKey, block, onUpdate }: BlockEditorCardProps) {
               </Field>
             ) : null}
 
-            {hasValue(block.videoUrl) ? (
+            {shouldShowField(block, schemaBlock, "videoUrl") ? (
               <Field label="Video">
                 <div className="space-y-3">
                   <input
@@ -529,9 +538,9 @@ function BlockEditorCard({ pageKey, block, onUpdate }: BlockEditorCardProps) {
           </>
         ) : null}
 
-        {hasValue(block.buttonLabel) || hasValue(block.buttonHref) ? (
+        {shouldShowField(block, schemaBlock, "buttonLabel") || shouldShowField(block, schemaBlock, "buttonHref") ? (
           <>
-            {hasValue(block.buttonLabel) ? (
+            {shouldShowField(block, schemaBlock, "buttonLabel") ? (
               <Field label="Texto boton">
                 <input
                   value={block.buttonLabel}
@@ -541,7 +550,7 @@ function BlockEditorCard({ pageKey, block, onUpdate }: BlockEditorCardProps) {
               </Field>
             ) : null}
 
-            {hasValue(block.buttonHref) ? (
+            {shouldShowField(block, schemaBlock, "buttonHref") ? (
               <Field label="Destino boton">
                 <input
                   value={block.buttonHref}
@@ -677,6 +686,20 @@ export function WebCmsManager({ initialConfig }: { initialConfig: WebCmsConfig }
                 </button>
               );
             })}
+          </div>
+
+          <div className="mt-6 border-t border-slate-100 pt-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">Extensiones</p>
+            <Link
+              href="/admin/catalog/products?scope=web"
+              className="mt-3 block rounded-2xl border border-cyan-100 bg-cyan-50 p-4 text-left transition hover:border-cyan-200 hover:bg-cyan-100"
+            >
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-cyan-600">/tienda</p>
+              <h3 className="mt-1 text-base font-black text-slate-950">Packs y botellas</h3>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                Sube imagen normal y euro para packs, y administra las botellas que se ven en la tienda.
+              </p>
+            </Link>
           </div>
         </aside>
 

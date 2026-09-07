@@ -4,6 +4,8 @@ import { Eye, EyeOff, Package2, Percent, ShoppingCart } from "lucide-react";
 import { toggleStatus } from "@/actions/toggle-status";
 import { updateClubDiscountPercent, updateFlavorImages, updateFlavorPrice, updatePackImage, updatePackPrice, updatePackSubscriptionCopy } from "@/actions/admin-actions";
 import { NoScrollNumberInput } from "@/components/NoScrollNumberInput";
+import { WebPacksManager } from "@/components/admin/WebPacksManager";
+import { ensureProductImageEuroSchema } from "@/lib/product-schema";
 
 function getResolvedPrice(priceLike: unknown, fallbackLike: unknown = 0) {
   const price = Number(priceLike ?? 0);
@@ -24,6 +26,8 @@ export default async function CatalogProductsPage({
   const user = await currentUser();
   const adminEmail = user?.emailAddresses[0]?.emailAddress || "system";
 
+  await ensureProductImageEuroSchema();
+
   const [products, flavors] = await Promise.all([
     db.product.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -32,6 +36,11 @@ export default async function CatalogProductsPage({
       orderBy: { name: "asc" },
     }),
   ]);
+  const productImageEuroRows = await db.$queryRaw<Array<{ id: string; imageEuro: string | null }>>`
+    SELECT "id", "imageEuro"
+    FROM "Product"
+  `;
+  const productImageEuroById = new Map(productImageEuroRows.map((row) => [row.id, row.imageEuro]));
 
   const visibleProducts = showArchived ? products : products.filter((product) => !product.isArchived);
   const visibleFlavors = showArchived ? flavors : flavors.filter((flavor) => !flavor.isArchived);
@@ -41,6 +50,29 @@ export default async function CatalogProductsPage({
   const toggleHref = showArchived
     ? `/admin/catalog/products${webScope ? "?scope=web" : ""}`
     : `/admin/catalog/products?showArchived=1${webScope ? "&scope=web" : ""}`;
+  const webProducts = products.map((product) => ({
+    id: product.id,
+    name: product.name,
+    quantity: product.quantity,
+    price: Number(product.price || 0),
+    clubDiscountPercent: product.clubDiscountPercent,
+    image: product.image,
+    imageEuro: productImageEuroById.get(product.id) || null,
+    description: product.description,
+    subscriptionNote: product.subscriptionNote,
+    subscriptionBenefit1: product.subscriptionBenefit1,
+    subscriptionBenefit2: product.subscriptionBenefit2,
+    subscriptionBenefit3: product.subscriptionBenefit3,
+    isArchived: product.isArchived,
+  }));
+  const webFlavors = flavors.map((flavor) => ({
+    id: flavor.id,
+    name: flavor.name,
+    slug: flavor.slug,
+    image: flavor.image,
+    imageEuro: flavor.imageEuro,
+    isArchived: flavor.isArchived,
+  }));
 
   return (
     <div className="space-y-6">
@@ -55,23 +87,30 @@ export default async function CatalogProductsPage({
                 : "Aqui controlas el precio que se muestra en POS y web, el descuento de suscripcion y que productos quedan ocultos."}
             </p>
           </div>
-          <a
-            href={toggleHref}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-950 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-white hover:bg-slate-800"
-          >
-            {showArchived ? <Eye size={14} /> : <EyeOff size={14} />}
-            {showArchived ? "Ver solo activos" : `Ver ocultos (${hiddenCount})`}
-          </a>
+          {!webScope ? (
+            <a
+              href={toggleHref}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-950 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-white hover:bg-slate-800"
+            >
+              {showArchived ? <Eye size={14} /> : <EyeOff size={14} />}
+              {showArchived ? "Ver solo activos" : `Ver ocultos (${hiddenCount})`}
+            </a>
+          ) : null}
         </div>
       </section>
 
-      <section className={`grid gap-4 ${webScope ? "md:grid-cols-2 xl:max-w-3xl" : "md:grid-cols-4"}`}>
-        <Metric label="Packs visibles" value={products.filter((product) => !product.isArchived).length} />
-        <Metric label="Packs ocultos" value={archivedProducts} />
-        {!webScope ? <Metric label="Sabores visibles" value={flavors.filter((flavor) => !flavor.isArchived).length} /> : null}
-        {!webScope ? <Metric label="Sabores ocultos" value={archivedFlavors} /> : null}
-      </section>
+      {!webScope ? (
+        <section className="grid gap-4 md:grid-cols-4">
+          <Metric label="Packs visibles" value={products.filter((product) => !product.isArchived).length} />
+          <Metric label="Packs ocultos" value={archivedProducts} />
+          <Metric label="Sabores visibles" value={flavors.filter((flavor) => !flavor.isArchived).length} />
+          <Metric label="Sabores ocultos" value={archivedFlavors} />
+        </section>
+      ) : null}
 
+      {webScope ? <WebPacksManager products={webProducts} flavors={webFlavors} adminEmail={adminEmail} /> : null}
+
+      {!webScope ? (
       <section className={`grid gap-6 ${webScope ? "xl:max-w-4xl" : "lg:grid-cols-2"}`}>
         <div className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-2">
@@ -362,6 +401,7 @@ export default async function CatalogProductsPage({
         </div>
         ) : null}
       </section>
+      ) : null}
     </div>
   );
 }

@@ -45,9 +45,8 @@ export default async function OrdersPage({
   }
 
   const shippingConfig = await getShippingConfig();
-
   const orders: OrderWithRelations[] = await db.order.findMany({
-    where: channel === "POS" ? { channel: "POS" } : { NOT: { channel: "POS" } },
+    where: channel === "POS" ? { channel: "POS" } : { channel: "WEB" },
     include: {
       orderItems: { include: { product: true, flavor: true, composition: true } },
       replacements: { select: { id: true, status: true } },
