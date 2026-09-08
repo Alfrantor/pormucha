@@ -44,6 +44,8 @@ export const PosInterface = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [wholesaleMode, setWholesaleMode] = useState(false);
   const [showPackModal, setShowPackModal] = useState<any>(null);
+  const [showBottleModal, setShowBottleModal] = useState<any>(null);
+  const [selectedBottlePresentation, setSelectedBottlePresentation] = useState("");
   const [packSelection, setPackSelection] = useState<Record<string, number>>({});
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [mobileStep, setMobileStep] = useState<"items" | "payment">("items");
@@ -83,7 +85,7 @@ export const PosInterface = ({
   const addToCart = (item: any) => {
     setCart(prev => {
       if (item.type === "BOTTLE") {
-        const exists = prev.findIndex(i => i.flavorId === item.flavorId);
+        const exists = prev.findIndex(i => i.flavorId === item.flavorId && i.presentation === item.presentation);
         if (exists >= 0) {
           const updated = [...prev];
           updated[exists] = { ...updated[exists], quantity: updated[exists].quantity + 1 };
@@ -107,13 +109,29 @@ export const PosInterface = ({
 
   const handleAddBottle = (flavor: any) => {
     const stock = flavor.locationStocks.find((s: any) => s.locationId === selectedLocation)?.quantity ?? 0;
-    const inCart = cart.find(c => c.flavorId === flavor.id)?.quantity ?? 0;
+    const inCart = cart
+      .filter(c => c.flavorId === flavor.id)
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
     if (stock - inCart <= 0) { toast.error("Sin stock suficiente"); return; }
+    const presentations = Array.isArray(flavor.presentations) && flavor.presentations.length > 0 ? flavor.presentations : ["Bala", "Euro"];
+    setSelectedBottlePresentation(presentations[0]);
+    setShowBottleModal(flavor);
+  };
+
+  const confirmBottlePresentation = () => {
+    if (!showBottleModal || !selectedBottlePresentation.trim()) {
+      toast.error("Selecciona una presentación.");
+      return;
+    }
+    const flavor = showBottleModal;
     addToCart({
       id: flavor.id, flavorId: flavor.id, type: "BOTTLE",
       name: flavor.name, price: getFlavorPrice(flavor),
+      presentation: selectedBottlePresentation.trim(),
       composition: [{ flavorId: flavor.id, name: flavor.name, quantity: 1 }],
     });
+    setShowBottleModal(null);
+    setSelectedBottlePresentation("");
   };
 
   const openPackModal = (prod: any) => {
@@ -186,7 +204,7 @@ export const PosInterface = ({
           clientName: selectedClient?.fullName,
           folio: resData.folio,
           items: cart.map(item => ({
-            name: item.name,
+            name: item.presentation ? `${item.name} · ${item.presentation}` : item.name,
             quantity: item.quantity,
             price: item.price,
             subtotal: item.price * item.quantity,
@@ -258,6 +276,12 @@ export const PosInterface = ({
                     <span className="text-[10px] font-bold text-gray-400 uppercase shrink-0">
                       {item.type === "PACK" ? "Pack" : "Botella"}
                     </span>
+                    {item.presentation && (
+                      <>
+                        <span className="text-[10px] text-gray-300 shrink-0">·</span>
+                        <span className="text-[10px] font-black uppercase text-blue-500 shrink-0">{item.presentation}</span>
+                      </>
+                    )}
                     <span className="text-[10px] text-gray-300 shrink-0">·</span>
                     <span className="text-[10px] text-gray-400 shrink-0">$</span>
                     <input
@@ -654,6 +678,12 @@ export const PosInterface = ({
                               <span className="text-[10px] font-bold text-gray-400 uppercase shrink-0">
                                 {item.type === "PACK" ? "Pack" : "Botella"}
                               </span>
+                              {item.presentation && (
+                                <>
+                                  <span className="text-[10px] text-gray-300">·</span>
+                                  <span className="text-[10px] font-black uppercase text-blue-500">{item.presentation}</span>
+                                </>
+                              )}
                               <span className="text-[10px] text-gray-300">·</span>
                               <span className="text-[10px] text-gray-400">$</span>
                               <input
@@ -889,6 +919,54 @@ export const PosInterface = ({
                   Cancelar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── BOTTLE PRESENTATION MODAL ── */}
+      {showBottleModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 sm:p-6">
+          <div className="bg-white rounded-[2rem] p-6 sm:p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="mb-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-500">Presentación</p>
+              <h2 className="mt-2 text-2xl font-black text-gray-900">{showBottleModal.name}</h2>
+              <p className="mt-1 text-sm font-semibold text-gray-400">Elige cómo sale esta botella del POS.</p>
+            </div>
+
+            <div className="grid gap-2">
+              {(Array.isArray(showBottleModal.presentations) && showBottleModal.presentations.length > 0 ? showBottleModal.presentations : ["Bala", "Euro"]).map((presentation: string) => (
+                <button
+                  key={presentation}
+                  type="button"
+                  onClick={() => setSelectedBottlePresentation(presentation)}
+                  className={`flex items-center justify-between rounded-2xl border-2 px-4 py-4 text-left transition-all ${
+                    selectedBottlePresentation === presentation
+                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                      : "border-gray-100 bg-gray-50 text-gray-600 hover:border-gray-200"
+                  }`}
+                >
+                  <span className="font-black">{presentation}</span>
+                  <span className={`h-4 w-4 rounded-full border-2 ${selectedBottlePresentation === presentation ? "border-blue-500 bg-blue-500" : "border-gray-300 bg-white"}`} />
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowBottleModal(null)}
+                className="flex-1 rounded-2xl border border-gray-200 px-4 py-4 text-xs font-black uppercase tracking-widest text-gray-500 transition hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmBottlePresentation}
+                className="flex-[1.4] rounded-2xl bg-gray-900 px-4 py-4 text-xs font-black uppercase tracking-widest text-white transition hover:bg-black"
+              >
+                Agregar
+              </button>
             </div>
           </div>
         </div>

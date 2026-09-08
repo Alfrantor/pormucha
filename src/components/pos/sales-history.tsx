@@ -260,6 +260,9 @@ export const SalesHistory = ({ locations }: SalesHistoryProps) => {
                                 <div key={item.id} className="flex justify-between items-center text-sm">
                                   <div>
                                     <span className="font-bold">{item.productName}</span>
+                                    {item.presentation && (
+                                      <span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-black uppercase text-blue-600">{item.presentation}</span>
+                                    )}
                                     <span className="text-gray-400 ml-2">x{item.quantity}</span>
                                   </div>
                                   <span className="font-mono">${formatMoney(item.subtotal)}</span>

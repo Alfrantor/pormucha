@@ -5,6 +5,7 @@ import { Plus, Search, X } from "lucide-react";
 import { createFlavor, createProduct, updateCatalogFlavor, updateCatalogProduct } from "@/actions/admin-actions";
 import { toggleStatus } from "@/actions/toggle-status";
 import { NoScrollNumberInput } from "@/components/NoScrollNumberInput";
+import { presentationsToInputValue } from "@/lib/flavor-presentations";
 
 type Pack = {
   id: string;
@@ -21,6 +22,7 @@ type Flavor = {
   slug: string;
   price: number;
   basePrice: number;
+  presentations: string[];
   stockTotal: number;
   isArchived: boolean;
 };
@@ -138,7 +140,7 @@ export function ProductsCatalogManager({ packs, flavors, adminEmail }: ProductsC
 
       {activeTab === "flavors" ? (
         <section className="overflow-hidden rounded-[1.8rem] border border-slate-200 bg-white shadow-sm">
-          <TableHeader columns={["Sabor", "Slug", "Precio POS", "Stock", "Estado", "Acción"]} />
+          <TableHeader columns={["Sabor", "Slug", "Precio POS", "Presentación", "Estado", "Acción"]} />
           <div className="divide-y divide-slate-100">
             {filteredFlavors.length > 0 ? (
               filteredFlavors.map((flavor) => <FlavorRow key={flavor.id} flavor={flavor} onEdit={() => setModal({ type: "edit-flavor", flavor })} />)
@@ -235,7 +237,7 @@ function FlavorRow({ flavor, onEdit, compactKind }: { flavor: Flavor; onEdit: ()
       </div>
       <MobileLabel label="Slug" value={flavor.slug} />
       <MobileLabel label="Precio POS" value={money(flavor.price || flavor.basePrice)} />
-      <MobileLabel label="Stock" value={`${flavor.stockTotal.toLocaleString("es-MX")} botellas`} />
+      <MobileLabel label="Presentación" value={flavor.presentations.join(", ")} />
       <StatusPill archived={flavor.isArchived} />
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" onClick={onEdit} className="rounded-full bg-slate-950 px-4 py-2 text-xs font-black text-white transition hover:bg-slate-800">
@@ -350,6 +352,18 @@ function ProductModal({ modal, adminEmail, onClose }: { modal: Exclude<ModalStat
                   <NoScrollNumberInput name="stock" min="0" step="1" defaultValue={0} className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:border-slate-400" />
                 </label>
               ) : null}
+              <label className="block sm:col-span-2">
+                <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-slate-500">Presentaciones</span>
+                <textarea
+                  name="presentations"
+                  required
+                  defaultValue={presentationsToInputValue(flavor?.presentations)}
+                  placeholder={"Bala\nEuro"}
+                  rows={3}
+                  className="w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:border-slate-400"
+                />
+                <p className="mt-2 text-xs font-semibold text-slate-400">Escribe una presentación por línea. POS pedirá elegir una al vender esta botella.</p>
+              </label>
             </div>
             <ModalActions onClose={onClose} submitLabel={isEdit ? "Guardar cambios" : "Crear sabor"} />
           </form>

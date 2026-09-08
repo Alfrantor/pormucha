@@ -1312,7 +1312,10 @@ export function TabPedidos({
                         <tbody className="divide-y divide-gray-100">
                           {paymentsModalData.order.orderItems.map((item: any) => (
                             <tr key={item.id}>
-                              <td className="px-3 py-2 font-bold text-gray-800">{item.productName}</td>
+                              <td className="px-3 py-2 font-bold text-gray-800">
+                                {item.productName}
+                                {item.presentation ? <span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-black uppercase text-blue-600">{item.presentation}</span> : null}
+                              </td>
                               <td className="px-3 py-2 text-center font-semibold text-gray-500">{item.quantity}</td>
                               <td className="px-3 py-2 text-right font-semibold text-gray-500">
                                 ${Number(item.unitPrice).toLocaleString("es-MX", { minimumFractionDigits: 2 })}

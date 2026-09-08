@@ -202,7 +202,7 @@ export function reprintTicket(sale: {
   locationName: string;
   fullName?: string | null;
   folio?: string | null;
-  items: { productName: string; quantity: number; price: number; subtotal: number }[];
+  items: { productName: string; presentation?: string | null; quantity: number; price: number; subtotal: number }[];
   subtotal?: number;
   serviceFee?: number;
   total: number;
@@ -215,7 +215,7 @@ export function reprintTicket(sale: {
     clientName: sale.fullName || undefined,
     folio: sale.folio || undefined,
     items: sale.items.map(item => ({
-      name: item.productName,
+      name: item.presentation ? `${item.productName} · ${item.presentation}` : item.productName,
       quantity: item.quantity,
       price: item.price,
       subtotal: item.subtotal,

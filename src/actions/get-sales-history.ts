@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { ensureFlavorPresentationSchema } from "@/lib/flavor-presentation-schema";
 
 interface GetSalesHistoryParams {
   startDate: string; // formato "YYYY-MM-DD"
@@ -9,6 +10,8 @@ interface GetSalesHistoryParams {
 }
 
 export async function getSalesHistory({ startDate, endDate, locationId }: GetSalesHistoryParams) {
+  await ensureFlavorPresentationSchema();
+
   const start = new Date(`${startDate}T00:00:00.000`);
   const end = new Date(`${endDate}T23:59:59.999`);
 
@@ -47,6 +50,7 @@ export async function getSalesHistory({ startDate, endDate, locationId }: GetSal
     items: sale.orderItems.map((item) => ({
       id: item.id,
       productName: item.productName,
+      presentation: item.presentation,
       quantity: item.quantity,
       price: item.unitPrice.toNumber(),
       subtotal: item.subtotal.toNumber(),

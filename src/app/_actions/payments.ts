@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { closeOrderCredit, syncClientCreditUsage } from "@/lib/credits";
+import { ensureFlavorPresentationSchema } from "@/lib/flavor-presentation-schema";
 
 function paymentErrorMessage(err: any) {
   const message = String(err?.message || err || "Error desconocido");
@@ -153,12 +154,14 @@ export async function getOrderPayments(orderId: string): Promise<{
     isPaid: boolean;
     folio: string | null;
     fullName: string | null;
-    orderItems: { id: string; productName: string; quantity: number; unitPrice: number; subtotal: number }[];
+    orderItems: { id: string; productName: string; presentation: string | null; quantity: number; unitPrice: number; subtotal: number }[];
   };
   payments?: { id: string; amount: number; paymentMethod: string; note: string | null; proofUrl: string | null; createdAt: string }[];
   error?: string;
 }> {
   try {
+    await ensureFlavorPresentationSchema();
+
     const order = await (db as any).order.findUnique({
       where: { id: orderId },
       select: {
@@ -172,6 +175,7 @@ export async function getOrderPayments(orderId: string): Promise<{
           select: {
             id: true,
             productName: true,
+            presentation: true,
             quantity: true,
             unitPrice: true,
             subtotal: true,

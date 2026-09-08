@@ -3,6 +3,8 @@
 import { db } from "@/lib/db";
 import { createShippingLabel } from "@/lib/shipping-service";
 import { ensureProductImageEuroSchema } from "@/lib/product-schema";
+import { ensureFlavorPresentationSchema } from "@/lib/flavor-presentation-schema";
+import { serializeFlavorPresentations } from "@/lib/flavor-presentations";
 import { revalidatePath } from "next/cache";
 import { Decimal } from "@prisma/client/runtime/library";
 
@@ -523,10 +525,13 @@ export async function updateFlavorPrice(formData: FormData) {
 }
 
 export async function updateCatalogFlavor(formData: FormData) {
+  await ensureFlavorPresentationSchema();
+
   const flavorId = formData.get("flavorId") as string;
   const name = ((formData.get("name") as string) || "").trim();
   const slug = ((formData.get("slug") as string) || "").trim();
   const newPrice = parseFloat(formData.get("newPrice") as string);
+  const presentations = serializeFlavorPresentations(formData.get("presentations"));
   const adminEmail = ((formData.get("adminEmail") as string) || "system").trim();
   const currentFlavor = await db.flavor.findUnique({ where: { id: flavorId } });
 
@@ -550,6 +555,7 @@ export async function updateCatalogFlavor(formData: FormData) {
       slug,
       price: newPrice,
       basePrice: newPrice,
+      presentations,
     },
   });
 
@@ -731,11 +737,14 @@ export async function updateProductDimensions(formData: FormData) {
 }
 
 export async function createFlavor(formData: FormData) {
+  await ensureFlavorPresentationSchema();
+
   const name = ((formData.get("name") as string) || "").trim();
   const slug = ((formData.get("slug") as string) || "").trim();
   const price = parseFloat(formData.get("price") as string);
   const image = ((formData.get("image") as string) || "").trim();
   const imageEuro = ((formData.get("imageEuro") as string) || "").trim();
+  const presentations = serializeFlavorPresentations(formData.get("presentations"));
   const initialStock = parseInt(formData.get("stock") as string) || 0;
   const adminEmail = formData.get("adminEmail") as string || "system";
 
@@ -746,7 +755,7 @@ export async function createFlavor(formData: FormData) {
 
   // 2. Creamos el sabor
   const newFlavor = await db.flavor.create({
-    data: { name, slug, price, basePrice: price, image: image || null, imageEuro: imageEuro || null }
+    data: { name, slug, price, basePrice: price, image: image || null, imageEuro: imageEuro || null, presentations }
   });
 
   // 3. Si mandaste un stock inicial, lo registramos en la ubicación encontrada

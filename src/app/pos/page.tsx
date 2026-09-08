@@ -3,10 +3,14 @@ import { db } from "@/lib/db";
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { PosInterface } from "@/components/pos/pos-interface";
+import { ensureFlavorPresentationSchema } from "@/lib/flavor-presentation-schema";
+import { parseFlavorPresentations } from "@/lib/flavor-presentations";
 
 export default async function PosPage() {
   const user = await currentUser();
   if (!user) { redirect("/"); return null; }
+
+  await ensureFlavorPresentationSchema();
 
   const locations = await db.location.findMany();
   const clients = await db.client.findMany({ orderBy: { fullName: 'asc' } });
@@ -45,6 +49,7 @@ export default async function PosPage() {
     wholesalePrice: f.wholesalePrice ? Number(f.wholesalePrice) : null,
     minimumWholesale: f.minimumWholesale ?? 50,
     unitCount: f.unitCount,
+    presentations: parseFlavorPresentations(f.presentations),
     locationStocks: f.locationStocks.map(s => ({
       locationId: s.locationId,
       quantity: Number(s.quantity)
@@ -68,7 +73,8 @@ export default async function PosPage() {
       id: item.id,
       price: Number(item.unitPrice),
       quantity: item.quantity,
-      productName: item.productName
+      productName: item.productName,
+      presentation: item.presentation,
     }))
   }));
 

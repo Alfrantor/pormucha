@@ -3,6 +3,8 @@ import { ProductsCatalogManager } from "@/components/admin/ProductsCatalogManage
 import { WebPacksManager } from "@/components/admin/WebPacksManager";
 import { db } from "@/lib/db";
 import { ensureProductImageEuroSchema } from "@/lib/product-schema";
+import { ensureFlavorPresentationSchema } from "@/lib/flavor-presentation-schema";
+import { parseFlavorPresentations } from "@/lib/flavor-presentations";
 
 export default async function CatalogProductsPage({
   searchParams,
@@ -14,7 +16,7 @@ export default async function CatalogProductsPage({
   const user = await currentUser();
   const adminEmail = user?.emailAddresses[0]?.emailAddress || "system";
 
-  await ensureProductImageEuroSchema();
+  await Promise.all([ensureProductImageEuroSchema(), ensureFlavorPresentationSchema()]);
 
   const [products, flavors] = await Promise.all([
     db.product.findMany({
@@ -47,6 +49,7 @@ export default async function CatalogProductsPage({
     slug: flavor.slug,
     price: Number(flavor.price || 0),
     basePrice: Number(flavor.basePrice || flavor.price || 0),
+    presentations: parseFlavorPresentations(flavor.presentations),
     stockTotal: flavor.locationStocks.reduce((sum, stock) => sum + Number(stock.quantity || 0), 0),
     isArchived: flavor.isArchived,
   }));

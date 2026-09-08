@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { ensureFlavorPresentationSchema } from "@/lib/flavor-presentation-schema";
 function buildFolioPrefix(date: Date): string {
   const month = date.getMonth() + 1;
   const year = date.getFullYear() % 100;
@@ -8,6 +9,8 @@ function buildFolioPrefix(date: Date): string {
 
 export async function POST(request: Request) {
   try {
+    await ensureFlavorPresentationSchema();
+
     const body = await request.json();
 
     const isCourtesy = body.paymentMethod === "COURTESY";
@@ -65,6 +68,7 @@ export async function POST(request: Request) {
               productId: item.productId || null,
               flavorId: item.flavorId || null,
               productName: item.name,
+              presentation: item.presentation || null,
               quantity: item.quantity,
               unitPrice: isCourtesy ? 0 : item.price,
               subtotal: isCourtesy ? 0 : item.price * item.quantity,
