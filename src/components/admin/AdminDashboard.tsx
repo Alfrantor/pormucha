@@ -956,7 +956,8 @@ export function TabPedidos({
       </div>
 
       <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
-        <table className="w-full text-left">
+        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+        <table className="min-w-[980px] w-full text-left">
           <thead>
             <tr className="bg-gray-50 text-[10px] uppercase font-black text-gray-500 border-b">
               <th className="px-6 py-4">Folio / ID</th>
@@ -1130,6 +1131,7 @@ export function TabPedidos({
                             folio: order.folio,
                             items: (order.orderItems || []).map((item: any) => ({
                               productName: item.productName,
+                              presentation: item.presentation,
                               quantity: item.quantity,
                               price: Number(item.unitPrice),
                               subtotal: Number(item.subtotal),
@@ -1162,6 +1164,7 @@ export function TabPedidos({
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* ── PAGINACIÓN ── */}
