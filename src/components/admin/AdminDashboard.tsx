@@ -6,7 +6,7 @@ import {
   BarChart3, Package, Repeat, Users, ShoppingBag, Truck, Contact2, DollarSign,
   ShoppingCart, ChevronRight, LayoutDashboard, Package2, UserCog, Menu, MonitorCheck,
   Building2, Pencil, Trash2, Plus, X, TrendingUp, TrendingDown, ArrowUpRight, Printer, PackageOpen,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, FileSpreadsheet,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -414,7 +414,7 @@ export function TabPedidos({
       } : null);
       // Actualizar también la fila en la tabla
       setLocalOrders(prev => prev.map((o: any) =>
-        o.id !== paymentsModal.orderId ? o : { ...o, status: res.isPaidNow ? "PAID" : "PENDING" }
+        o.id !== paymentsModal.orderId ? o : { ...o, amountPaid: res.amountPaid, isPaid: res.isPaidNow, status: res.isPaidNow ? "PAID" : "PENDING" }
       ));
       setPmCancelConfirm(null);
     } else {
@@ -442,7 +442,12 @@ export function TabPedidos({
       toast.success(res.isPaidNow ? "¡Orden pagada completamente!" : `Abono registrado. Restante: $${res.remaining.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`);
       const fresh = await getOrderPayments(paymentsModal.orderId);
       if (fresh.success && fresh.order) setPaymentsModalData({ order: fresh.order, payments: fresh.payments || [] });
-      setLocalOrders(prev => prev.map((o: any) => o.id !== paymentsModal.orderId ? o : { ...o, status: res.isPaidNow ? "PAID" : o.status }));
+      setLocalOrders(prev => prev.map((o: any) => o.id !== paymentsModal.orderId ? o : {
+        ...o,
+        amountPaid: res.amountPaid,
+        isPaid: res.isPaidNow,
+        status: res.isPaidNow ? "PAID" : "PENDING",
+      }));
       setPmAddPayment(false);
       setPmPayAmount("");
       setPmPayNote("");
@@ -605,7 +610,7 @@ export function TabPedidos({
         setPaymentsModalData({ order: fresh.order, payments: fresh.payments || [] });
       }
       setLocalOrders(prev => prev.map((o: any) =>
-        o.id !== paymentsModal.orderId ? o : { ...o, status: res.isPaidNow ? "PAID" : "PENDING" }
+        o.id !== paymentsModal.orderId ? o : { ...o, amountPaid: res.amountPaid, isPaid: res.isPaidNow, status: res.isPaidNow ? "PAID" : "PENDING" }
       ));
     } else {
       toast.error(res.error || "Error al recalcular");
@@ -696,10 +701,65 @@ export function TabPedidos({
     toast.success("Pedido marcado como enviado.");
   };
 
+  const downloadPosReport = () => {
+    if (!dateFrom || !dateTo) {
+      toast.error("Selecciona fecha inicial y fecha final para descargar el reporte POS.");
+      return;
+    }
+
+    if (dateFrom > dateTo) {
+      toast.error("La fecha inicial no puede ser mayor que la fecha final.");
+      return;
+    }
+
+    const params = new URLSearchParams({ from: dateFrom, to: dateTo });
+    const link = document.createElement("a");
+    link.href = `/api/admin/orders/pos-report?${params.toString()}`;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadPosExcel = () => {
+    if (!dateFrom || !dateTo) {
+      toast.error("Selecciona fecha inicial y fecha final para exportar Excel.");
+      return;
+    }
+
+    if (dateFrom > dateTo) {
+      toast.error("La fecha inicial no puede ser mayor que la fecha final.");
+      return;
+    }
+
+    const params = new URLSearchParams({ from: dateFrom, to: dateTo });
+    const link = document.createElement("a");
+    link.href = `/api/admin/orders/pos-export?${params.toString()}`;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const cancelledCount = localOrders.filter(o => o.status === "CANCELLED").length;
   const posCount       = localOrders.filter(o => o.channel === "POS" && o.status !== "CANCELLED").length;
   const webCount       = localOrders.filter(o => o.channel !== "POS" && o.status !== "CANCELLED").length;
-  const unpaidCount    = localOrders.filter(o => !o.isPaid && o.status !== "CANCELLED").length;
+  const getOrderRemaining = (order: any) => Math.max(0, Number(order.total || 0) - Number(order.amountPaid || 0));
+  const isOrderSettled = (order: any) => Number(order.total || 0) > 0 && getOrderRemaining(order) <= 0.01;
+  const isOrderPartiallyPaid = (order: any) => !isOrderSettled(order) && Number(order.amountPaid || 0) > 0;
+  const getPaymentStatusLabel = (order: any) => {
+    if (order.status === "CANCELLED") return "Cancelado";
+    if (isOrderSettled(order)) return "Pagado";
+    if (isOrderPartiallyPaid(order)) return "Abonado";
+    return "Pendiente";
+  };
+  const getPaymentStatusBadge = (order: any) => {
+    if (order.status === "CANCELLED") return "bg-red-50 text-red-600 border-red-100";
+    if (isOrderSettled(order)) return "bg-green-50 text-green-700 border-green-100";
+    if (isOrderPartiallyPaid(order)) return "bg-orange-50 text-orange-700 border-orange-100";
+    return "bg-amber-50 text-amber-600 border-amber-100";
+  };
+  const unpaidCount    = localOrders.filter(o => o.status !== "CANCELLED" && !isOrderSettled(o)).length;
   const webOrders = localOrders.filter(o => o.channel !== "POS" && o.status !== "CANCELLED");
   const webNoLabelCount = webOrders.filter(o => !hasShippingLabel(o)).length;
   const webReadyCount = webOrders.filter(o => hasShippingLabel(o) && !isOrderShipped(o)).length;
@@ -722,7 +782,7 @@ export function TabPedidos({
 
         // Canal
         if (channelFilter === "CANCELLED") return order.status === "CANCELLED";
-        if (channelFilter === "UNPAID") return !order.isPaid && order.status !== "CANCELLED";
+        if (channelFilter === "UNPAID") return order.status !== "CANCELLED" && !isOrderSettled(order);
         if (channelFilter === "POS") return order.channel === "POS" && order.status !== "CANCELLED";
         if (channelFilter === "WEB") return order.channel !== "POS" && order.status !== "CANCELLED";
         return true;
@@ -823,50 +883,74 @@ export function TabPedidos({
       </div>
 
       {/* ── BARRA DE BÚSQUEDA Y FECHAS ── */}
-      <div className="bg-white rounded-2xl border shadow-sm p-4 flex flex-col sm:flex-row gap-3">
+      <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
         {/* Buscador */}
-        <div className="relative flex-1">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por # folio o nombre del cliente..."
-            className="w-full pl-9 pr-4 py-2.5 border-2 border-gray-100 rounded-xl text-sm font-medium text-gray-800 focus:outline-none focus:border-gray-300 transition bg-gray-50"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
-          )}
-        </div>
-        {/* Fechas */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center gap-1">
-            <label className="text-[10px] font-black text-gray-400 uppercase whitespace-nowrap">Desde</label>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+          <div className="relative flex-1">
+            <svg className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
             <input
-              type="date"
-              value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="p-2 border-2 border-gray-100 rounded-xl text-xs font-mono bg-gray-50 focus:outline-none focus:border-gray-300 transition"
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar por folio o nombre del cliente..."
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm font-semibold text-slate-800 outline-none transition focus:border-slate-950 focus:bg-white"
             />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full px-2 text-lg leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700">×</button>
+            )}
           </div>
-          <div className="flex items-center gap-1">
-            <label className="text-[10px] font-black text-gray-400 uppercase whitespace-nowrap">Hasta</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              className="p-2 border-2 border-gray-100 rounded-xl text-xs font-mono bg-gray-50 focus:outline-none focus:border-gray-300 transition"
-            />
-          </div>
-          {(dateFrom || dateTo) && (
+
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] xl:w-auto">
+            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
+              Desde
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-bold text-slate-800 outline-none transition focus:border-slate-950 focus:bg-white"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
+              Hasta
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-bold text-slate-800 outline-none transition focus:border-slate-950 focus:bg-white"
+              />
+            </label>
             <button
               onClick={() => { setDateFrom(""); setDateTo(""); }}
-              className="text-xs font-bold text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-100 transition whitespace-nowrap"
+              className="rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black text-slate-500 transition hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-40"
+              disabled={!dateFrom && !dateTo}
             >
               Limpiar
             </button>
+          </div>
+
+          {!isWebOrdersPage && channelFilter === "POS" && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={downloadPosReport}
+                disabled={!dateFrom || !dateTo || dateFrom > dateTo}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:bg-slate-800 disabled:bg-slate-300"
+              >
+                <BarChart3 size={15} />
+                PDF
+              </button>
+              <button
+                type="button"
+                onClick={downloadPosExcel}
+                disabled={!dateFrom || !dateTo || dateFrom > dateTo}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-emerald-700 transition hover:bg-emerald-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              >
+                <FileSpreadsheet size={15} />
+                Excel
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -891,8 +975,19 @@ export function TabPedidos({
                 const isCancelled = order.status === "CANCELLED";
                 const hasReplacement = order.replacements?.length > 0;
                 const isReplacement = !!order.replacesOrderId;
+                const usePaymentStatus = !isWebOrdersPage && (channelFilter === "UNPAID" || isPOS);
+                const displayStatus = usePaymentStatus ? getPaymentStatusLabel(order) : statusLabel(order.status);
+                const displayStatusClass = usePaymentStatus ? getPaymentStatusBadge(order) : statusBadge(order.status);
+                const remaining = getOrderRemaining(order);
+                const canOpenPaymentDetail = !isCancelled && !isWebOrdersPage && (isPOS || channelFilter === "UNPAID");
                 return (
-                  <tr key={order.id} className={`hover:bg-gray-50/50 transition-colors ${isCancelled ? "opacity-60" : ""}`}>
+                  <tr
+                    key={order.id}
+                    onClick={() => {
+                      if (canOpenPaymentDetail) openPaymentsModal(order);
+                    }}
+                    className={`transition-colors ${canOpenPaymentDetail ? "cursor-pointer hover:bg-orange-50/50" : "hover:bg-gray-50/50"} ${isCancelled ? "opacity-60" : ""}`}
+                  >
                     <td className="px-6 py-4">
                       {order.folio ? (
                         <span className="font-mono text-xs font-black text-blue-600 bg-blue-50 px-2 py-1 rounded">
@@ -940,15 +1035,24 @@ export function TabPedidos({
                       <p className="font-black text-sm text-gray-900">
                         ${Number(order.total).toLocaleString("es-MX")}
                       </p>
+                      {!isWebOrdersPage && !isCancelled && !isOrderSettled(order) && (
+                        <p className={`mt-1 text-[10px] font-black ${isOrderPartiallyPaid(order) ? "text-orange-600" : "text-amber-600"}`}>
+                          {isOrderPartiallyPaid(order)
+                            ? `Abonado: $${Number(order.amountPaid || 0).toLocaleString("es-MX", { minimumFractionDigits: 2 })}`
+                            : "Sin abonos"}
+                          {" · "}
+                          Pendiente: ${remaining.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                        </p>
+                      )}
                     </td>
 
                     <td className="px-6 py-4">
-                      <span className={`text-[10px] px-3 py-1 rounded-full font-black tracking-tighter border ${statusBadge(order.status)}`}>
-                        ● {statusLabel(order.status)}
+                      <span className={`text-[10px] px-3 py-1 rounded-full font-black tracking-tighter border ${displayStatusClass}`}>
+                        ● {displayStatus}
                       </span>
                     </td>
 
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4" onClick={(event) => event.stopPropagation()}>
                       <div className="flex items-center justify-center gap-2">
                         {/* Botón envío (solo web) */}
                         {!isPOS && !isCancelled && (
@@ -979,7 +1083,16 @@ export function TabPedidos({
                             onClick={() => openPaymentsModal(order)}
                             className="text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest border border-green-200 text-green-700 hover:bg-green-50 transition-all"
                           >
-                            💳 Pagos
+                            Detalle / pagos
+                          </button>
+                        )}
+
+                        {!isPOS && channelFilter === "UNPAID" && !isCancelled && (
+                          <button
+                            onClick={() => openPaymentsModal(order)}
+                            className="text-[10px] px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest border border-orange-200 text-orange-700 hover:bg-orange-50 transition-all"
+                          >
+                            Ver detalle
                           </button>
                         )}
 
@@ -1111,7 +1224,7 @@ export function TabPedidos({
             {/* Header */}
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-black text-gray-900">Gestión de Pagos</h3>
+                <h3 className="text-lg font-black text-gray-900">Detalle de orden y pagos</h3>
                 <p className="text-sm text-gray-400 font-mono mt-0.5">{paymentsModal.orderLabel}</p>
               </div>
               <button onClick={() => setPaymentsModal(null)} className="p-2 rounded-full hover:bg-gray-100 transition text-gray-400">
@@ -1139,7 +1252,9 @@ export function TabPedidos({
                     <span className="font-black">${paymentsModalData.order.total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Pagado (en DB)</span>
+                    <span className="text-gray-500">
+                      {paymentsModalData.order.amountPaid >= paymentsModalData.order.total - 0.01 ? "Pagado" : "Abonado"}
+                    </span>
                     <span className={`font-black ${paymentsModalData.order.amountPaid >= paymentsModalData.order.total ? "text-green-600" : "text-orange-600"}`}>
                       ${paymentsModalData.order.amountPaid.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
                     </span>
@@ -1154,8 +1269,14 @@ export function TabPedidos({
                   )}
                   <div className="flex justify-between border-t pt-1.5 mt-1.5">
                     <span className="text-gray-500">Estado</span>
-                    <span className={`text-xs font-black px-2 py-0.5 rounded-full ${paymentsModalData.order.isPaid ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>
-                      {paymentsModalData.order.isPaid ? "✓ Pagado" : "Pendiente"}
+                    <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                      paymentsModalData.order.amountPaid >= paymentsModalData.order.total - 0.01
+                        ? "bg-green-100 text-green-700"
+                        : paymentsModalData.order.amountPaid > 0
+                          ? "bg-orange-100 text-orange-700"
+                          : "bg-amber-100 text-amber-700"
+                    }`}>
+                      {paymentsModalData.order.amountPaid >= paymentsModalData.order.total - 0.01 ? "Pagado" : paymentsModalData.order.amountPaid > 0 ? "Abonado" : "Pendiente"}
                     </span>
                   </div>
 
@@ -1163,8 +1284,46 @@ export function TabPedidos({
                   {paymentsModalData.payments.length === 0 && paymentsModalData.order.amountPaid > 0 && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-2">
                       <p className="text-xs font-bold text-amber-700">
-                        ⚠ El campo "Pagado" tiene un valor pero no hay abonos registrados en la base de datos. Usa ⟳ Recalcular para corregirlo.
+                        La orden tiene monto abonado, pero no hay abonos detallados registrados. Usa Recalcular para sincronizarlo.
                       </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    Productos comprados ({paymentsModalData.order.orderItems.length})
+                  </p>
+                  {paymentsModalData.order.orderItems.length === 0 ? (
+                    <div className="py-5 text-center text-gray-400 border-2 border-dashed rounded-2xl">
+                      <p className="text-sm font-bold">Sin productos registrados</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-hidden rounded-2xl border border-gray-100">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                          <tr>
+                            <th className="px-3 py-2">Producto</th>
+                            <th className="px-3 py-2 text-center">Cant.</th>
+                            <th className="px-3 py-2 text-right">Precio</th>
+                            <th className="px-3 py-2 text-right">Subtotal</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {paymentsModalData.order.orderItems.map((item: any) => (
+                            <tr key={item.id}>
+                              <td className="px-3 py-2 font-bold text-gray-800">{item.productName}</td>
+                              <td className="px-3 py-2 text-center font-semibold text-gray-500">{item.quantity}</td>
+                              <td className="px-3 py-2 text-right font-semibold text-gray-500">
+                                ${Number(item.unitPrice).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3 py-2 text-right font-black text-gray-900">
+                                ${Number(item.subtotal).toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>
@@ -1244,7 +1403,7 @@ export function TabPedidos({
                 </div>
 
                 {/* ── Formulario de nuevo abono ── */}
-                {!paymentsModalData.order.isPaid && (
+                {paymentsModalData.order.amountPaid < paymentsModalData.order.total - 0.01 && (
                   <div className="border-2 border-dashed border-gray-200 rounded-2xl overflow-hidden">
                     {!pmAddPayment ? (
                       <button

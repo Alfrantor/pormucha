@@ -4,6 +4,18 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { closeOrderCredit, syncClientCreditUsage } from "@/lib/credits";
 
+function paymentErrorMessage(err: any) {
+  const message = String(err?.message || err || "Error desconocido");
+  if (
+    message.includes("Can't reach database server") ||
+    message.includes("PrismaClientInitializationError") ||
+    message.includes("P1001")
+  ) {
+    return "No se pudo conectar a la base de datos. Revisa la conexión a Neon e inténtalo de nuevo.";
+  }
+  return message;
+}
+
 // Recalcula amountPaid e isPaid desde la suma real de OrderPayment en DB
 async function syncOrderPayment(tx: any, orderId: string) {
   const agg = await (tx as any).orderPayment.aggregate({
@@ -35,10 +47,9 @@ export async function registerOrderPayment(
     const result = await db.$transaction(async (tx) => {
       const order = await (tx as any).order.findUnique({
         where: { id: orderId },
-        select: { total: true, isPaid: true },
+        select: { total: true },
       });
       if (!order) throw new Error("Orden no encontrada");
-      if ((order as any).isPaid) throw new Error("Esta orden ya está completamente pagada");
 
       const total = Number(order.total);
 
@@ -49,6 +60,7 @@ export async function registerOrderPayment(
       });
       const currentPaid = Number(agg._sum?.amount || 0);
       const remaining = total - currentPaid;
+      if (remaining <= 0.01) throw new Error("Esta orden ya está completamente pagada");
 
       if (amount <= 0) throw new Error("El monto debe ser mayor a 0");
       if (amount > remaining + 0.01) throw new Error(`El monto supera el saldo pendiente ($${remaining.toFixed(2)})`);
@@ -89,7 +101,7 @@ export async function registerOrderPayment(
     revalidatePath("/admin");
     return { success: true, ...result };
   } catch (err: any) {
-    return { success: false, isPaidNow: false, amountPaid: 0, remaining: 0, error: err.message };
+    return { success: false, isPaidNow: false, amountPaid: 0, remaining: 0, error: paymentErrorMessage(err) };
   }
 }
 
@@ -128,20 +140,44 @@ export async function cancelOrderPayment(
     revalidatePath("/admin");
     return { success: true, ...result };
   } catch (err: any) {
-    return { success: false, amountPaid: 0, isPaidNow: false, error: err.message };
+    return { success: false, amountPaid: 0, isPaidNow: false, error: paymentErrorMessage(err) };
   }
 }
 
 export async function getOrderPayments(orderId: string): Promise<{
   success: boolean;
-  order?: { id: string; total: number; amountPaid: number; isPaid: boolean; folio: string | null; fullName: string | null };
+  order?: {
+    id: string;
+    total: number;
+    amountPaid: number;
+    isPaid: boolean;
+    folio: string | null;
+    fullName: string | null;
+    orderItems: { id: string; productName: string; quantity: number; unitPrice: number; subtotal: number }[];
+  };
   payments?: { id: string; amount: number; paymentMethod: string; note: string | null; proofUrl: string | null; createdAt: string }[];
   error?: string;
 }> {
   try {
     const order = await (db as any).order.findUnique({
       where: { id: orderId },
-      select: { id: true, total: true, amountPaid: true, isPaid: true, folio: true, fullName: true },
+      select: {
+        id: true,
+        total: true,
+        amountPaid: true,
+        isPaid: true,
+        folio: true,
+        fullName: true,
+        orderItems: {
+          select: {
+            id: true,
+            productName: true,
+            quantity: true,
+            unitPrice: true,
+            subtotal: true,
+          },
+        },
+      },
     });
     if (!order) return { success: false, error: "Orden no encontrada" };
 
@@ -156,6 +192,11 @@ export async function getOrderPayments(orderId: string): Promise<{
         ...order,
         total: Number(order.total),
         amountPaid: Number(order.amountPaid || 0),
+        orderItems: (order.orderItems || []).map((item: any) => ({
+          ...item,
+          unitPrice: Number(item.unitPrice || 0),
+          subtotal: Number(item.subtotal || 0),
+        })),
       },
       payments: payments.map((p: any) => ({
         id: p.id,
@@ -167,7 +208,7 @@ export async function getOrderPayments(orderId: string): Promise<{
       })),
     };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    return { success: false, error: paymentErrorMessage(err) };
   }
 }
 
@@ -198,6 +239,6 @@ export async function recalculateOrderPayment(
     revalidatePath("/admin");
     return { success: true, ...result };
   } catch (err: any) {
-    return { success: false, amountPaid: 0, isPaidNow: false, error: err.message };
+    return { success: false, amountPaid: 0, isPaidNow: false, error: paymentErrorMessage(err) };
   }
 }
