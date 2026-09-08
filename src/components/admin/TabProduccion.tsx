@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   addProductionIngredient,
   cancelFinalBeverageBlend,
@@ -181,6 +182,8 @@ export default function TabProduccion({
   baseBeverageInventory,
   finalBeverageBlends,
   userEmail,
+  initialView = "producciones",
+  showViewSwitcher = true,
 }: any) {
   const FERMENTATION_PAGE_SIZE = 25;
   const router = useRouter();
@@ -197,7 +200,7 @@ export default function TabProduccion({
     setNfcBaseUrl(resolvePublicAppUrl(window.location.origin));
   }, []);
 
-  const [view, setView] = useState<"producciones" | "final">("producciones");
+  const [view, setView] = useState<"producciones" | "final">(initialView);
   const [recipeFilter, setRecipeFilter] = useState<RecipeBoardFilter>("ALL");
   const [fermentationStatusFilter, setFermentationStatusFilter] = useState<FermentationStatusFilter>("ALL");
   const [fermentationSearch, setFermentationSearch] = useState("");
@@ -702,7 +705,8 @@ export default function TabProduccion({
     setNewProdStartedLiters("");
     setNewProdNotes("");
     setIngredients([]);
-    window.location.reload();
+    toast.success("Proceso iniciado.");
+    router.refresh();
   };
 
   const handleRecordParam = async () => {
@@ -732,12 +736,13 @@ export default function TabProduccion({
     }
 
     if (!currentParamCheck.ok) {
-      setParamError(`Parametros fuera de rango: ${currentParamCheck.failing.map((item) => item.label).join(", ")}`);
+      setParamError(`Parámetros fuera de rango: ${currentParamCheck.failing.map((item) => item.label).join(", ")}`);
     } else {
       setParamError("");
     }
 
-    window.location.reload();
+    toast.success("Medición registrada.");
+    router.refresh();
   };
 
   const handleAddIngredient = async () => {
@@ -764,7 +769,8 @@ export default function TabProduccion({
       return;
     }
 
-    window.location.reload();
+    toast.success("Insumo registrado.");
+    router.refresh();
   };
 
   const openCompletePanel = (prod: any) => {
@@ -885,22 +891,23 @@ export default function TabProduccion({
         })
         .join(" | ");
 
-      window.alert(
+      toast.success(
         completionDestination === "BUCKET"
-          ? `Proceso finalizado correctamente.\n\nLote: ${selectedProd.name}\nDestino: Cubeta ${selectedProd.tank?.name || "original"}\nExistencia: ${finalLotLiters.toLocaleString("es-MX")} Lt`
-          : `Proceso finalizado y resguardado correctamente.\n\nLote: ${selectedProd.name}\nTanques: ${allocationSummary || "Sin detalle"}\nLitros finales: ${finalLotLiters.toLocaleString("es-MX")} Lt`,
+          ? `Proceso finalizado. Existencia en cubeta: ${finalLotLiters.toLocaleString("es-MX")} Lt.`
+          : `Proceso finalizado y resguardado. ${allocationSummary || `${finalLotLiters.toLocaleString("es-MX")} Lt asignados`}.`,
       );
     } finally {
       setCompleteSaving(false);
     }
-    window.location.reload();
+    router.refresh();
   };
 
   const handleCancel = async (id: string) => {
-    if (!confirm("Cancelar esta produccion?")) return;
+    if (!confirm("¿Cancelar esta producción?")) return;
     const reason = prompt("Motivo de cancelación. Ejemplo: merma, contaminación o causa externa.", "");
     await cancelProduction(id, reason || undefined);
-    window.location.reload();
+    toast.success("Producción cancelada.");
+    router.refresh();
   };
 
   const openSecondPhase = (prod: any) => {
@@ -929,7 +936,7 @@ export default function TabProduccion({
       return;
     }
     if (!phase2ReceivedBy.trim() || !phase2MeasuredBy.trim() || !phase2StartedBy.trim()) {
-      setPhase2Error("Completa quien recibio, quien midio y quien inicio fase dos");
+      setPhase2Error("Completa quién recibió, quién midió y quién inició fase dos");
       return;
     }
 
@@ -969,7 +976,8 @@ export default function TabProduccion({
     }
 
     setShowSecondPhaseModal(false);
-    window.location.reload();
+    toast.success("Fase 2 registrada.");
+    router.refresh();
   };
 
   const addPhase2IngredientRow = () => {
@@ -1032,7 +1040,8 @@ export default function TabProduccion({
     }
 
     setShowThirdPhaseModal(false);
-    window.location.reload();
+    toast.success("Fase final registrada.");
+    router.refresh();
   };
 
   const finalBlendTargetLitersValue = Number(finalBlendTargetLiters || 0);
@@ -1201,7 +1210,8 @@ export default function TabProduccion({
     }
 
     resetFinalBlendForm();
-    window.location.reload();
+    toast.success("Bebida final creada.");
+    router.refresh();
   };
 
   const handleCancelFinalBlend = async (blendId: string) => {
@@ -1209,19 +1219,24 @@ export default function TabProduccion({
     if (!confirmed) return;
     const result = await cancelFinalBeverageBlend(blendId);
     if (!result.success) {
-      window.alert(result.error || "No se pudo cancelar la bebida final");
+      toast.error(result.error || "No se pudo cancelar la bebida final");
       return;
     }
-    window.location.reload();
+    toast.success("Bebida final cancelada.");
+    router.refresh();
   };
 
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-black text-slate-950">Fermentados</h2>
+        <h2 className="text-2xl font-black text-slate-950">{view === "final" ? "Bebida final" : "Fermentados"}</h2>
         <div className="flex gap-2">
-          <button onClick={() => setView("producciones")} className={tabClass(view === "producciones")}>Fórmulas</button>
-          <button onClick={() => setView("final")} className={tabClass(view === "final")}>Bebida final</button>
+          {showViewSwitcher && (
+            <>
+              <button onClick={() => setView("producciones")} className={tabClass(view === "producciones")}>Procesos</button>
+              <button onClick={() => setView("final")} className={tabClass(view === "final")}>Bebida final</button>
+            </>
+          )}
           {view === "producciones" && (
             <button
               type="button"
@@ -1802,7 +1817,7 @@ export default function TabProduccion({
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="space-y-5 p-6">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-black text-slate-950">Nueva produccion</h3>
+                <h3 className="text-xl font-black text-slate-950">Nueva producción</h3>
                 <button onClick={() => setShowCreateProd(false)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
               </div>
 
@@ -1850,7 +1865,7 @@ export default function TabProduccion({
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-black text-slate-900">Formula inicial</p>
+                    <p className="text-sm font-black text-slate-900">Fórmula inicial</p>
                     <button onClick={addIngredientRow} className="text-xs font-bold text-blue-700 hover:underline">Agregar insumo</button>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
@@ -1890,7 +1905,7 @@ export default function TabProduccion({
                         <button onClick={() => removeIngredientRow(index)} className="rounded-lg px-2 text-red-500 hover:bg-red-50">x</button>
                       </div>
                     ))}
-                    {ingredients.length === 0 && <p className="text-xs italic text-slate-400">Sin insumos cargados aun</p>}
+                    {ingredients.length === 0 && <p className="text-xs italic text-slate-400">Sin insumos cargados aún</p>}
                   </div>
                 </div>
 
@@ -1918,7 +1933,7 @@ export default function TabProduccion({
               <div className="flex gap-3">
                 <button onClick={() => setShowCreateProd(false)} className="flex-1 rounded-lg border py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
                 <button onClick={handleCreateProd} disabled={prodSaving || stockShortages.length > 0} className="flex-1 rounded-lg bg-slate-950 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:bg-slate-300">
-                  {prodSaving ? "Guardando..." : "Iniciar produccion"}
+                  {prodSaving ? "Guardando..." : "Iniciar producción"}
                 </button>
               </div>
             </div>
@@ -2077,7 +2092,7 @@ export default function TabProduccion({
 
               {selectedProd.status === "IN_PROGRESS" && (
                 <div className="flex gap-2 border-b pb-3">
-                  <button onClick={() => setProdView("params")} className={subTabClass(prodView === "params")}>Parametros</button>
+                  <button onClick={() => setProdView("params")} className={subTabClass(prodView === "params")}>Parámetros</button>
                   <button onClick={() => setProdView("additions")} className={subTabClass(prodView === "additions")}>Insumos</button>
                   {selectedProdPhase2 && !selectedProdPhase3 && (
                     <button
@@ -2115,7 +2130,7 @@ export default function TabProduccion({
                       </Field>
                       {!currentParamCheck.ok && (
                         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                          Parametros fuera de rango: {currentParamCheck.failing.map((item) => `${item.label} (${item.actual})`).join(", ")}
+                          Parámetros fuera de rango: {currentParamCheck.failing.map((item) => `${item.label} (${item.actual})`).join(", ")}
                         </div>
                       )}
                       {paramError && <p className="mt-3 text-xs font-semibold text-rose-600">{paramError}</p>}
@@ -2158,7 +2173,7 @@ export default function TabProduccion({
                               </tr>
                             );
                           }) : (
-                          <tr><td colSpan={6} className="px-4 py-6 text-center italic text-slate-400">Sin mediciones aun</td></tr>
+                          <tr><td colSpan={6} className="px-4 py-6 text-center italic text-slate-400">Sin mediciones aún</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -2193,11 +2208,11 @@ export default function TabProduccion({
                                 {addition.rawMaterial?.name} {Number(addition.quantity)} {addition.rawMaterial?.unit}
                               </div>
                               <div className="mt-1 text-xs text-violet-500">
-                                {addition.location?.name || "Sin ubicacion"} | {fmtDate(addition.addedAt)}
+                                {addition.location?.name || "Sin ubicación"} | {fmtDate(addition.addedAt)}
                               </div>
                             </div>
                           )) : (
-                          <p className="text-xs italic text-violet-500">Todavia no hay adiciones registradas en fase 2.</p>
+                          <p className="text-xs italic text-violet-500">Todavía no hay adiciones registradas en fase 2.</p>
                         )}
                       </div>
                     </div>
@@ -2215,7 +2230,7 @@ export default function TabProduccion({
                     <Field label="Cantidad">
                       <input type="number" min="0" step="0.01" value={addQty} onChange={(e) => setAddQty(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
                     </Field>
-                    <Field label="Ubicacion">
+                    <Field label="Ubicación">
                       <select value={addLoc} onChange={(e) => setAddLoc(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
                         {safeLocations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
                       </select>
@@ -2479,7 +2494,7 @@ export default function TabProduccion({
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Como se recibio el producto">
+                <Field label="Cómo se recibió el producto">
                   <select value={phase2Condition} onChange={(e) => setPhase2Condition(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
                     <option value="Aceptado">Aceptado</option>
                     <option value="Observado">Observado</option>
@@ -2499,13 +2514,13 @@ export default function TabProduccion({
                 <Field label="Fecha y hora de lectura">
                   <input type="datetime-local" value={phase2Date} onChange={(e) => setPhase2Date(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
                 </Field>
-                <Field label="Quien recibio">
+                <Field label="Quién recibió">
                   <input value={phase2ReceivedBy} onChange={(e) => setPhase2ReceivedBy(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
                 </Field>
-                <Field label="Quien tomo parametros">
+                <Field label="Quién tomó parámetros">
                   <input value={phase2MeasuredBy} onChange={(e) => setPhase2MeasuredBy(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
                 </Field>
-                <Field label="Quien inicio fase dos">
+                <Field label="Quién inició fase dos">
                   <input value={phase2StartedBy} onChange={(e) => setPhase2StartedBy(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
                 </Field>
               </div>
@@ -2519,7 +2534,7 @@ export default function TabProduccion({
 
               {!phase2Check.ok && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                  Parametros fuera de rango para fase dos: {phase2Check.failing.map((item) => `${item.label} (${item.actual})`).join(", ")}
+                  Parámetros fuera de rango para fase dos: {phase2Check.failing.map((item) => `${item.label} (${item.actual})`).join(", ")}
                 </div>
               )}
 
@@ -2527,7 +2542,7 @@ export default function TabProduccion({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-black text-violet-900">Insumos adicionales de fase 2</p>
-                    <p className="text-xs text-violet-700">Aqui puedes agregar productos extra que entren justo al iniciar esta fase.</p>
+                    <p className="text-xs text-violet-700">Aquí puedes agregar productos extra que entren justo al iniciar esta fase.</p>
                   </div>
                   <button onClick={addPhase2IngredientRow} type="button" className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-violet-700 hover:bg-violet-100">
                     Agregar producto
@@ -2561,7 +2576,7 @@ export default function TabProduccion({
                         onChange={(e) => setPhase2Additions((prev) => prev.map((row, idx) => idx === index ? { ...row, locationId: e.target.value } : row))}
                         className="min-w-[180px] rounded-lg border p-2 text-xs"
                       >
-                        <option value="">Ubicacion</option>
+                        <option value="">Ubicación</option>
                         {safeLocations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
                       </select>
                       <button onClick={() => removePhase2IngredientRow(index)} type="button" className="rounded-lg px-3 text-rose-600 hover:bg-rose-100">

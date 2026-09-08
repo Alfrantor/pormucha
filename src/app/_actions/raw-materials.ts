@@ -11,6 +11,16 @@ async function requireAdmin() {
   return role;
 }
 
+function revalidateRawMaterialViews() {
+  revalidatePath("/admin");
+  revalidatePath("/admin/catalog");
+  revalidatePath("/admin/catalog/raw-materials");
+  revalidatePath("/admin/catalog/formulas");
+  revalidatePath("/admin/inventory");
+  revalidatePath("/admin/inventory/raw-materials");
+  revalidatePath("/admin/production");
+}
+
 export async function createRawMaterial(data: {
   name: string;
   unit: string;
@@ -31,7 +41,7 @@ export async function createRawMaterial(data: {
         cost: data.cost ?? null,
       },
     });
-    revalidatePath("/admin");
+    revalidateRawMaterialViews();
     return { success: true, id: mat.id };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -55,7 +65,7 @@ export async function updateRawMaterial(
         ...(data.cost !== undefined && { cost: data.cost ?? null }),
       },
     });
-    revalidatePath("/admin");
+    revalidateRawMaterialViews();
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -66,7 +76,7 @@ export async function archiveRawMaterial(id: string, archive: boolean): Promise<
   try {
     await requireAdmin();
     await (db as any).rawMaterial.update({ where: { id }, data: { isArchived: archive } });
-    revalidatePath("/admin");
+    revalidateRawMaterialViews();
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -114,7 +124,7 @@ export async function registerRawMaterialMovement(data: {
 
       return newQty;
     });
-    revalidatePath("/admin");
+    revalidateRawMaterialViews();
     return { success: true, newQuantity: result };
   } catch (err: any) {
     return { success: false, error: err.message };

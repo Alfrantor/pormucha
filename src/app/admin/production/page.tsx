@@ -4,11 +4,11 @@ import ProductionWorkspace from "@/components/admin/ProductionWorkspace";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
-type ProductionTab = "bebida" | "gasificado" | "etiquetado" | "formulas";
+type ProductionTab = "bebida" | "final" | "gasificado" | "etiquetado";
 
 function resolveInitialTab(value: string | string[] | undefined): ProductionTab {
   const raw = Array.isArray(value) ? value[0] : value;
-  return raw === "gasificado" || raw === "etiquetado" || raw === "formulas" ? raw : "bebida";
+  return raw === "final" || raw === "gasificado" || raw === "etiquetado" ? raw : "bebida";
 }
 
 function isDecimalLike(value: unknown): value is { toNumber: () => number } {
@@ -160,10 +160,14 @@ export default async function ProductionPage({
   const user = await currentUser();
   const params = (await searchParams) || {};
   const rawTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
-  const initialTab = rawTab === "gasificado" || rawTab === "etiquetado" || rawTab === "formulas" ? rawTab : "bebida";
+  const initialTab = resolveInitialTab(rawTab);
 
   if (role !== "admin" && role !== "vendedor") {
     redirect("/perfil");
+  }
+
+  if (rawTab === "formulas") {
+    redirect("/admin/catalog/formulas");
   }
 
   await ensureProductionPhaseTable();

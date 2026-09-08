@@ -97,10 +97,17 @@ export default async function UsersPage() {
     orderBy: [{ createdAt: "desc" }],
   });
 
-  const visibleStaffUsers = staffUsersFresh.filter((user) => {
-    if (!user.clerkUserId) return true;
-    return clerkAdmins.some((clerkUser) => clerkUser.id === user.clerkUserId);
-  });
+  const visibleStaffUsers = staffUsersFresh.map((user) => ({
+    id: user.id,
+    clerkUserId: user.clerkUserId,
+    fullName: user.fullName,
+    email: user.email,
+    role: user.role,
+    status: user.status,
+    notes: user.notes,
+    createdAt: user.createdAt.toISOString(),
+    updatedAt: user.updatedAt.toISOString(),
+  }));
 
   return (
     <div className="space-y-6">
@@ -108,11 +115,13 @@ export default async function UsersPage() {
         <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Equipo</p>
         <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Usuarios</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-          Aquí se muestran los usuarios con rol administrador de Clerk y los usuarios dados de alta manualmente en el ERP.
+          Aquí administras usuarios internos, separando quién tiene acceso real con Clerk y quién queda como registro manual del ERP.
         </p>
       </section>
 
-      <ProductionPinCard />
+      <div id="pin-nfc-produccion">
+        <ProductionPinCard />
+      </div>
 
       <StaffUserManagement users={visibleStaffUsers} />
     </div>

@@ -2,7 +2,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import React, { startTransition, useState } from "react";
-import ProductionFormulasManager from "@/components/admin/ProductionFormulasManager";
 import TabProduccion from "@/components/admin/TabProduccion";
 import {
   cancelGasificationBatch,
@@ -14,7 +13,7 @@ import {
 } from "@/app/_actions/production-processes";
 import { useRouter } from "next/navigation";
 
-type WorkspaceTab = "bebida" | "gasificado" | "etiquetado" | "formulas";
+type WorkspaceTab = "bebida" | "final" | "gasificado" | "etiquetado";
 
 function fmtDate(value: string | Date | null | undefined) {
   if (!value) return "-";
@@ -38,29 +37,21 @@ export default function ProductionWorkspace({
 }: any) {
   const router = useRouter();
   const [tab, setTab] = useState<WorkspaceTab>(initialTab);
-  const [formulaModalOpen, setFormulaModalOpen] = useState(false);
-  const [formulaModalCode, setFormulaModalCode] = useState<string | null>(null);
-  const [formulaModalKey, setFormulaModalKey] = useState(0);
-  const safeFormulas = Array.isArray(formulas) ? formulas : [];
-
-  const openFormulaModal = (code: string | null = null) => {
-    setFormulaModalCode(code);
-    setFormulaModalKey((current) => current + 1);
-    setFormulaModalOpen(true);
-  };
 
   return (
     <div className="space-y-6">
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap gap-2">
           <TabButton active={tab === "bebida"} onClick={() => setTab("bebida")} title="Fermentados" desc="Lotes e insumos" />
-          <TabButton active={tab === "gasificado"} onClick={() => setTab("gasificado")} title="Gasificado" desc="Carbonatacion y cierre" />
-          <TabButton active={tab === "formulas"} onClick={() => setTab("formulas")} title="Fórmulas" desc="Revisar recetas y pasos" />
+          <TabButton active={tab === "final"} onClick={() => setTab("final")} title="Bebida final" desc="Blend y cálculo" />
+          <TabButton active={tab === "gasificado"} onClick={() => setTab("gasificado")} title="Gasificado" desc="Carbonatación y cierre" />
+          <TabButton active={tab === "etiquetado"} onClick={() => setTab("etiquetado")} title="Etiquetado" desc="Botellas y salida" />
         </div>
       </section>
 
       {tab === "bebida" && (
         <TabProduccion
+          key="fermentados"
           tanks={tanks}
           storageTanks={storageTanks}
           productions={productions}
@@ -71,6 +62,26 @@ export default function ProductionWorkspace({
           baseBeverageInventory={baseBeverageInventory}
           finalBeverageBlends={finalBeverageBlends}
           userEmail={userEmail}
+          initialView="producciones"
+          showViewSwitcher={false}
+        />
+      )}
+
+      {tab === "final" && (
+        <TabProduccion
+          key="bebida-final"
+          tanks={tanks}
+          storageTanks={storageTanks}
+          productions={productions}
+          rawMaterials={rawMaterials}
+          locations={locations}
+          formulas={formulas}
+          flavors={flavors}
+          baseBeverageInventory={baseBeverageInventory}
+          finalBeverageBlends={finalBeverageBlends}
+          userEmail={userEmail}
+          initialView="final"
+          showViewSwitcher={false}
         />
       )}
 
@@ -86,28 +97,16 @@ export default function ProductionWorkspace({
         />
       )}
 
-      {tab === "formulas" && (
-        <FormulaLibraryPanel
-          formulas={safeFormulas}
-          onCreate={() => openFormulaModal(null)}
-          onEdit={(code: string) => openFormulaModal(code)}
+      {tab === "etiquetado" && (
+        <LabelingPanel
+          locations={locations}
+          flavors={flavors}
+          batches={labelingBatches}
+          userEmail={userEmail}
+          onRefresh={() => startTransition(() => router.refresh())}
         />
       )}
 
-      {formulaModalOpen && (
-        <FormulaModal onClose={() => setFormulaModalOpen(false)}>
-          <ProductionFormulasManager
-            key={`${formulaModalKey}-${formulaModalCode || "new"}`}
-            formulas={safeFormulas}
-            rawMaterials={rawMaterials}
-            initialSelectedCode={formulaModalCode || undefined}
-            hideTopAction
-            autoCreateNew={formulaModalCode === null}
-            compactModal
-            onDone={() => setFormulaModalOpen(false)}
-          />
-        </FormulaModal>
-      )}
     </div>
   );
 }
@@ -116,27 +115,26 @@ function TabButton({
   active,
   onClick,
   title,
-  desc,
 }: {
   active: boolean;
   onClick: () => void;
   title: string;
-  desc: string;
+  desc?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`min-w-[220px] rounded-[1.4rem] border p-4 text-left transition ${
-        active ? "border-slate-950 bg-slate-950 text-white shadow-lg" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+      className={`rounded-xl border px-5 py-3 text-sm font-black transition ${
+        active ? "border-slate-950 bg-slate-950 text-white shadow-sm" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
       }`}
     >
-      <p className="text-sm font-black">{title}</p>
-      <p className={`mt-1 text-xs ${active ? "text-slate-300" : "text-slate-500"}`}>{desc}</p>
+      {title}
     </button>
   );
 }
 
 function GasificationPanel({ tanks, locations, flavors, batches, finalBeverageBlends, userEmail, onRefresh }: any) {
+  const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     name: "",
     flavorId: "",
@@ -192,14 +190,61 @@ function GasificationPanel({ tanks, locations, flavors, batches, finalBeverageBl
       carbonationVol: "",
       notes: "",
     });
+    setShowForm(false);
     onRefresh();
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="space-y-5">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-[1.8rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Proceso</p>
+          <h3 className="mt-2 text-2xl font-black text-slate-950">Gasificado</h3>
+          <p className="mt-1 text-sm text-slate-500">Registra lotes de bebida final que pasan a carbonatación.</p>
+        </div>
+        <button type="button" onClick={() => setShowForm(true)} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
+          Nuevo gasificado
+        </button>
+      </section>
+
+      <BatchList
+        title="Gasificados registrados"
+        empty="Todavía no hay procesos de gasificado."
+        batches={batches}
+        stats={(batch: any) => [
+          `Sabor: ${batch.flavor?.name || "-"}`,
+          `Cubeta: ${batch.tank?.name || "-"}`,
+          `Litros: ${batch.litersProcessed ?? "-"}`,
+          `Botellas: ${batch.bottlesUsed ?? "-"}`,
+        ]}
+        onComplete={async (batch: any) => {
+          await completeGasificationBatch(batch.id, {
+            litersProcessed: batch.litersProcessed ?? undefined,
+            bottlesUsed: batch.bottlesUsed ?? undefined,
+            pressurePsi: batch.pressurePsi ?? undefined,
+            carbonationVol: batch.carbonationVol ?? undefined,
+            notes: batch.notes || undefined,
+          });
+          onRefresh();
+        }}
+        onCancel={async (batch: any) => {
+          await cancelGasificationBatch(batch.id, batch.notes || undefined);
+          onRefresh();
+        }}
+      />
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 p-4 backdrop-blur-sm">
+          <section className="my-4 w-full max-w-4xl rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
         <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Nuevo proceso</p>
         <h3 className="mt-2 text-2xl font-black text-slate-950">Gasificado</h3>
+              </div>
+              <button type="button" onClick={() => setShowForm(false)} className="rounded-full bg-slate-100 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-200">
+                Cerrar
+              </button>
+            </div>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <Field label="Nombre del lote">
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
@@ -216,7 +261,7 @@ function GasificationPanel({ tanks, locations, flavors, batches, finalBeverageBl
               {tanks.map((tank: any) => <option key={tank.id} value={tank.id}>{tank.name}</option>)}
             </select>
           </Field>
-          <Field label="Ubicacion">
+          <Field label="Ubicación">
             <select value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm">
               <option value="">Selecciona</option>
               {locations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
@@ -252,41 +297,23 @@ function GasificationPanel({ tanks, locations, flavors, batches, finalBeverageBl
           <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
         </Field>
         {error && <p className="mt-3 text-sm font-semibold text-rose-600">{error}</p>}
-        <button onClick={submit} disabled={saving} className="mt-4 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300">
-          {saving ? "Guardando..." : "Crear proceso de gasificado"}
-        </button>
-      </section>
-
-      <BatchList
-        title="Gasificados registrados"
-        empty="Todavia no hay procesos de gasificado."
-        batches={batches}
-        stats={(batch: any) => [
-          `Sabor: ${batch.flavor?.name || "-"}`,
-          `Cubeta: ${batch.tank?.name || "-"}`,
-          `Litros: ${batch.litersProcessed ?? "-"}`,
-          `Botellas: ${batch.bottlesUsed ?? "-"}`,
-        ]}
-        onComplete={async (batch: any) => {
-          await completeGasificationBatch(batch.id, {
-            litersProcessed: batch.litersProcessed ?? undefined,
-            bottlesUsed: batch.bottlesUsed ?? undefined,
-            pressurePsi: batch.pressurePsi ?? undefined,
-            carbonationVol: batch.carbonationVol ?? undefined,
-            notes: batch.notes || undefined,
-          });
-          onRefresh();
-        }}
-        onCancel={async (batch: any) => {
-          await cancelGasificationBatch(batch.id, batch.notes || undefined);
-          onRefresh();
-        }}
-      />
+        <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row">
+          <button type="button" onClick={() => setShowForm(false)} className="flex-1 rounded-full border border-slate-200 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-50">
+            Cancelar
+          </button>
+          <button onClick={submit} disabled={saving} className="flex-1 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300">
+            {saving ? "Guardando..." : "Crear proceso de gasificado"}
+          </button>
+        </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
 
 function LabelingPanel({ locations, flavors, batches, userEmail, onRefresh }: any) {
+  const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     name: "",
     flavorId: "",
@@ -342,15 +369,106 @@ function LabelingPanel({ locations, flavors, batches, userEmail, onRefresh }: an
       labelsUsed: "",
       notes: "",
     });
+    setShowForm(false);
     onRefresh();
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <div className="space-y-6">
-        <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Nuevo proceso</p>
-        <h3 className="mt-2 text-2xl font-black text-slate-950">Etiquetado</h3>
+    <div className="space-y-5">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-[1.8rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Proceso</p>
+          <h3 className="mt-2 text-2xl font-black text-slate-950">Etiquetado</h3>
+          <p className="mt-1 text-sm text-slate-500">Controla las botellas etiquetadas y su disponibilidad por ubicación.</p>
+        </div>
+        <button type="button" onClick={() => setShowForm(true)} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
+          Nuevo etiquetado
+        </button>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[0.75fr_1.25fr]">
+        <section className="rounded-[1.8rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Inventario generado</p>
+              <h4 className="mt-2 text-xl font-black text-slate-950">Botellas etiquetadas</h4>
+              <p className="mt-2 text-sm text-slate-500">
+                Stock disponible para procesos posteriores.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-950 px-4 py-3 text-right text-white">
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/60">Total</p>
+              <p className="mt-2 text-3xl font-black">{totalLabeledBottles}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {bottleInventory.length === 0 && (
+              <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                Aún no hay botellas etiquetadas registradas en inventario.
+              </div>
+            )}
+            {bottleInventory.map((flavor: any) => (
+              <div key={flavor.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-black text-slate-950">{flavor.name}</p>
+                    <p className="text-xs text-slate-400">Stock disponible</p>
+                  </div>
+                  <p className="text-2xl font-black text-slate-950">{flavor.total}</p>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(flavor.locationStocks || [])
+                    .filter((stock: any) => Number(stock.quantity || 0) > 0)
+                    .map((stock: any) => (
+                      <span key={stock.id} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">
+                        {stock.location?.name || "Sin ubicación"}: {Number(stock.quantity)}
+                      </span>
+                    ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <BatchList
+          title="Etiquetados registrados"
+          empty="Todavía no hay procesos de etiquetado."
+          batches={batches}
+          stats={(batch: any) => [
+            `Sabor: ${batch.flavor?.name || "-"}`,
+            `Ubicación: ${batch.location?.name || "-"}`,
+            `Recibidas: ${batch.unitsReceived ?? "-"}`,
+            `Etiquetadas: ${batch.unitsLabeled ?? "-"}`,
+          ]}
+          onComplete={async (batch: any) => {
+            await completeLabelingBatch(batch.id, {
+              unitsReceived: batch.unitsReceived ?? undefined,
+              unitsLabeled: batch.unitsLabeled ?? undefined,
+              labelsUsed: batch.labelsUsed ?? undefined,
+              notes: batch.notes || undefined,
+            });
+            onRefresh();
+          }}
+          onCancel={async (batch: any) => {
+            await cancelLabelingBatch(batch.id, batch.notes || undefined);
+            onRefresh();
+          }}
+        />
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 p-4 backdrop-blur-sm">
+          <section className="my-4 w-full max-w-4xl rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Nuevo proceso</p>
+                <h3 className="mt-2 text-2xl font-black text-slate-950">Etiquetado</h3>
+              </div>
+              <button type="button" onClick={() => setShowForm(false)} className="rounded-full bg-slate-100 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-200">
+                Cerrar
+              </button>
+            </div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <Field label="Nombre del lote">
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
@@ -361,7 +479,7 @@ function LabelingPanel({ locations, flavors, batches, userEmail, onRefresh }: an
                 {flavors.map((flavor: any) => <option key={flavor.id} value={flavor.id}>{flavor.name}</option>)}
               </select>
             </Field>
-            <Field label="Ubicacion">
+            <Field label="Ubicación">
               <select value={form.locationId} onChange={(e) => setForm({ ...form, locationId: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm">
                 <option value="">Selecciona</option>
                 {locations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
@@ -380,218 +498,21 @@ function LabelingPanel({ locations, flavors, batches, userEmail, onRefresh }: an
               <input type="number" value={form.labelsUsed} onChange={(e) => setForm({ ...form, labelsUsed: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
             </Field>
           </div>
-          <Field label="Notas">
-            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
-          </Field>
-          {error && <p className="mt-3 text-sm font-semibold text-rose-600">{error}</p>}
-          <button onClick={submit} disabled={saving} className="mt-4 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300">
+        <Field label="Notas">
+          <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full rounded-xl border border-slate-200 p-3 text-sm" />
+        </Field>
+        {error && <p className="mt-3 text-sm font-semibold text-rose-600">{error}</p>}
+        <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row">
+          <button type="button" onClick={() => setShowForm(false)} className="flex-1 rounded-full border border-slate-200 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-50">
+            Cancelar
+          </button>
+          <button onClick={submit} disabled={saving} className="flex-1 rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300">
             {saving ? "Guardando..." : "Crear proceso de etiquetado"}
           </button>
-        </section>
-
-        <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Inventario generado</p>
-              <h4 className="mt-2 text-xl font-black text-slate-950">Botellas etiquetadas</h4>
-              <p className="mt-2 text-sm text-slate-500">
-                Cada proceso de etiquetado completado entra aqui y queda disponible para envasado, gasificado o movimientos posteriores.
-              </p>
-            </div>
-            <div className="rounded-2xl bg-slate-950 px-4 py-3 text-right text-white">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/60">Total</p>
-              <p className="mt-2 text-3xl font-black">{totalLabeledBottles}</p>
-            </div>
-          </div>
-
-          <div className="mt-5 space-y-3">
-            {bottleInventory.length === 0 && (
-              <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-                Aun no hay botellas etiquetadas registradas en inventario.
-              </div>
-            )}
-            {bottleInventory.map((flavor: any) => (
-              <div key={flavor.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="font-black text-slate-950">{flavor.name}</p>
-                    <p className="text-xs text-slate-400">Stock disponible para procesos posteriores</p>
-                  </div>
-                  <p className="text-2xl font-black text-slate-950">{flavor.total}</p>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {(flavor.locationStocks || [])
-                    .filter((stock: any) => Number(stock.quantity || 0) > 0)
-                    .map((stock: any) => (
-                      <span key={stock.id} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">
-                        {stock.location?.name || "Sin ubicacion"}: {Number(stock.quantity)}
-                      </span>
-                    ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <BatchList
-        title="Etiquetados registrados"
-        empty="Todavia no hay procesos de etiquetado."
-        batches={batches}
-        stats={(batch: any) => [
-          `Sabor: ${batch.flavor?.name || "-"}`,
-          `Ubicacion: ${batch.location?.name || "-"}`,
-          `Recibidas: ${batch.unitsReceived ?? "-"}`,
-          `Etiquetadas: ${batch.unitsLabeled ?? "-"}`,
-        ]}
-        onComplete={async (batch: any) => {
-          await completeLabelingBatch(batch.id, {
-            unitsReceived: batch.unitsReceived ?? undefined,
-            unitsLabeled: batch.unitsLabeled ?? undefined,
-            labelsUsed: batch.labelsUsed ?? undefined,
-            notes: batch.notes || undefined,
-          });
-          onRefresh();
-        }}
-        onCancel={async (batch: any) => {
-          await cancelLabelingBatch(batch.id, batch.notes || undefined);
-          onRefresh();
-        }}
-      />
-    </div>
-  );
-}
-
-function FormulaLibraryPanel({
-  formulas,
-  onCreate,
-  onEdit,
-}: {
-  formulas: any[];
-  onCreate: () => void;
-  onEdit: (code: string) => void;
-}) {
-  const visibleFormulas = Array.isArray(formulas) ? formulas : [];
-
-  return (
-    <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-      <section className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Biblioteca</p>
-            <h3 className="mt-2 text-2xl font-black text-slate-950">Fórmulas</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              Aquí puedes revisar las fórmulas activas, sus pasos, duración y los insumos que usa cada una.
-            </p>
-          </div>
-          <button type="button" onClick={onCreate} className="rounded-full bg-slate-950 px-4 py-3 text-sm font-black text-white hover:bg-slate-800">
-            Nueva receta
-          </button>
         </div>
-
-        <div className="mt-5 space-y-3">
-          {visibleFormulas.length === 0 && (
-            <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-              Todavía no hay fórmulas cargadas.
-            </div>
-          )}
-
-          {visibleFormulas.map((formula: any) => {
-            const totalSteps = Array.isArray(formula.steps) ? formula.steps.length : 0;
-            const totalItems = Array.isArray(formula.items) ? formula.items.length : 0;
-
-            return (
-              <button
-                key={formula.id}
-                type="button"
-                className="w-full rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-slate-300 hover:bg-white"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">Tipo {formula.code}</p>
-                    <h4 className="mt-1 text-lg font-black text-slate-950">{formula.name}</h4>
-                    {formula.description && <p className="mt-1 text-sm text-slate-500">{formula.description}</p>}
-                  </div>
-                  <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] ${formula.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
-                    {formula.isActive ? "Activa" : "Inactiva"}
-                  </span>
-                </div>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                  <MetricChip label="Pasos" value={totalSteps} />
-                  <MetricChip label="Insumos" value={totalItems} />
-                  <MetricChip label="Días" value={formula.durationDays ?? 0} />
-                </div>
-              </button>
-            );
-          })}
+          </section>
         </div>
-      </section>
-
-      <section className="rounded-[1.8rem] border border-dashed border-slate-200 bg-slate-50 p-6 shadow-sm">
-        <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Detalle</p>
-        <h3 className="mt-2 text-2xl font-black text-slate-950">Vista rápida</h3>
-        <p className="mt-2 text-sm leading-6 text-slate-500">
-          Más adelante aquí podemos abrir cada fórmula para editar sus pasos y el checklist de preparación.
-        </p>
-
-        <div className="mt-5 space-y-4">
-          {visibleFormulas.slice(0, 3).map((formula: any) => (
-            <div key={formula.id} className="rounded-[1.3rem] border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-black text-slate-950">{formula.name}</p>
-                  <p className="text-xs text-slate-500">Tipo {formula.code}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onEdit(formula.code)}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-slate-700 hover:border-slate-300 hover:text-slate-950"
-                  >
-                    Editar
-                  </button>
-                </div>
-              </div>
-              <div className="mt-3 space-y-2">
-                {(Array.isArray(formula.steps) ? formula.steps : []).map((step: any, index: number) => (
-                  <div key={step.id || `${formula.id}-${index}`} className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                    <span className="font-black text-slate-950">Paso {step.stepNumber || index + 1}:</span> {step.title || "Sin título"}
-                    {step.instructions ? <span className="block text-xs text-slate-500">{step.instructions}</span> : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function FormulaModal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/70 p-2 backdrop-blur-sm sm:items-center sm:p-3">
-      <div className="flex h-[calc(100dvh-1rem)] w-[min(1100px,calc(100vw-1rem))] flex-col overflow-hidden rounded-[1.25rem] bg-white shadow-2xl sm:h-[88dvh] sm:w-[min(1040px,calc(100vw-2rem))] sm:rounded-[1.6rem]">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Producción</p>
-            <h3 className="mt-1 text-lg font-black text-slate-950 sm:text-xl">Editor de recetas</h3>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800 sm:px-4 sm:text-sm">
-            Cerrar
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function MetricChip({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-2xl bg-white px-3 py-2">
-      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{label}</p>
-      <p className="mt-1 text-lg font-black text-slate-950">{value}</p>
+      )}
     </div>
   );
 }

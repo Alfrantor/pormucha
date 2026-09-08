@@ -23,7 +23,7 @@ export async function createStaffUser(formData: FormData) {
     throw new Error("El nombre completo es obligatorio.");
   }
 
-  await db.staffUser.create({
+  const user = await db.staffUser.create({
     data: {
       fullName,
       email,
@@ -34,10 +34,13 @@ export async function createStaffUser(formData: FormData) {
   });
 
   revalidatePath("/admin/users");
+  return { id: user.id };
 }
 
 export async function updateStaffUser(formData: FormData) {
   const id = normalizeText(formData.get("id"));
+  const fullName = normalizeText(formData.get("fullName"));
+  const email = normalizeEmail(formData.get("email"));
   const role = normalizeText(formData.get("role"));
   const status = normalizeText(formData.get("status"));
   const notes = normalizeText(formData.get("notes"));
@@ -49,6 +52,8 @@ export async function updateStaffUser(formData: FormData) {
   await db.staffUser.update({
     where: { id },
     data: {
+      ...(fullName ? { fullName } : {}),
+      email,
       ...(role ? { role } : {}),
       ...(status ? { status } : {}),
       notes,

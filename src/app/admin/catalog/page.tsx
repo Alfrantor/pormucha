@@ -1,4 +1,4 @@
-import { Boxes, FlaskConical, MapPinned, Package2, FlaskRound, Layers3 } from "lucide-react";
+import { Boxes, FlaskConical, MapPinned, Package2, Layers3 } from "lucide-react";
 import { CatalogSectionPage } from "./_components/CatalogSectionPage";
 
 export default async function CatalogPage() {
@@ -6,7 +6,6 @@ export default async function CatalogPage() {
     <CatalogSectionPage
       cards={[
         { href: "/admin/catalog/products", title: "Productos", desc: "Packs y configuración comercial", icon: <Package2 size={18} />, meta: "Precio, imagen y suscripción" },
-        { href: "/admin/catalog/flavors", title: "Sabores", desc: "Sabores regulares y euro con su inventario y precio", icon: <FlaskRound size={18} />, meta: "POS, web e inventario" },
         { href: "/admin/catalog/raw-materials", title: "Materias primas y consumibles", desc: "Insumos clasificados por tipo y unidad", icon: <Boxes size={18} />, meta: "Materia prima / consumibles" },
         { href: "/admin/catalog/tanks", title: "Tanques de resguardo", desc: "Contenedores operativos y sus estados", icon: <Layers3 size={18} />, meta: "Producción y trazabilidad" },
         { href: "/admin/catalog/locations", title: "Almacenes / plantas", desc: "Lerma, Mérida y demás ubicaciones", icon: <MapPinned size={18} />, meta: "Ubicaciones activas" },

@@ -5,7 +5,6 @@ import {
   BarChart3,
   Boxes,
   BriefcaseBusiness,
-  CreditCard,
   FlaskConical,
   LayoutGrid,
   PenTool,
@@ -61,7 +60,7 @@ const sections: SectionGroup[] = [
     items: [
       { href: "/admin/production", title: "Producción", desc: "Fermentados, lotes y parámetros", icon: <FlaskConical size={20} />, accent: "bg-lime-50 text-lime-700" },
       { href: "/admin/production?tab=etiquetado", title: "Etiquetado", desc: "Botellas, etiquetas y salida", icon: <Tag size={20} />, accent: "bg-orange-50 text-orange-700" },
-      { href: "/admin/production?tab=formulas", title: "Recetas", desc: "Fórmulas y preparación", icon: <FlaskConical size={20} />, accent: "bg-teal-50 text-teal-700" },
+      { href: "/admin/catalog/formulas", title: "Recetas", desc: "Fórmulas y preparación", icon: <FlaskConical size={20} />, accent: "bg-teal-50 text-teal-700" },
       { href: "/admin/inventory/transfers", title: "Traspasos", desc: "Movimientos entre almacenes", icon: <Truck size={20} />, accent: "bg-sky-50 text-sky-700" },
       { href: "/admin/inventory", title: "Inventarios", desc: "Stock, materia prima y resguardos", icon: <Boxes size={20} />, accent: "bg-purple-50 text-purple-700" },
     ],
@@ -71,7 +70,6 @@ const sections: SectionGroup[] = [
     description: "Registros maestros, permisos y reglas base del sistema.",
     items: [
       { href: "/admin/catalog", title: "Catálogos", desc: "Productos, fórmulas, tanques y plantas", icon: <LayoutGrid size={20} />, accent: "bg-slate-100 text-slate-800" },
-      { href: "/admin/pricing", title: "Precios", desc: "Escalas, descuentos y configuración comercial", icon: <CreditCard size={20} />, accent: "bg-green-50 text-green-700" },
       { href: "/admin/users", title: "Usuarios", desc: "Equipo interno, roles y PIN NFC", icon: <ShieldCheck size={20} />, accent: "bg-stone-100 text-stone-800" },
     ],
   },

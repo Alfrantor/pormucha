@@ -9,12 +9,21 @@ import { Decimal } from "@prisma/client/runtime/library";
 // ==========================================
 // UBICACIONES
 // ==========================================
+function revalidateLocationViews() {
+  revalidatePath("/admin");
+  revalidatePath("/admin/catalog");
+  revalidatePath("/admin/catalog/locations");
+  revalidatePath("/admin/inventory");
+  revalidatePath("/admin/inventory/raw-materials");
+  revalidatePath("/admin/production");
+  revalidatePath("/pos");
+}
+
 export async function createLocation(formData: FormData) {
   const name = formData.get("name") as string;
   const address = formData.get("address") as string;
   await db.location.create({ data: { name, address, isDefault: false } });
-  revalidatePath("/admin");
-  revalidatePath("/pos");
+  revalidateLocationViews();
 }
 
 export async function updateLocation(formData: FormData) {
@@ -22,8 +31,132 @@ export async function updateLocation(formData: FormData) {
   const name = formData.get("name") as string;
   const address = formData.get("address") as string;
   await db.location.update({ where: { id }, data: { name, address } });
-  revalidatePath("/admin");
-  revalidatePath("/pos");
+  revalidateLocationViews();
+}
+
+export async function createCatalogLocation(data: {
+  name: string;
+  address?: string;
+  isDefault?: boolean;
+}): Promise<{ success: boolean; location?: { id: string; name: string; address: string | null; isDefault: boolean; isArchived: boolean }; error?: string }> {
+  try {
+    const name = data.name.trim();
+    const address = data.address?.trim() || null;
+    if (!name) return { success: false, error: "El nombre es obligatorio." };
+
+    const location = await db.$transaction(async (tx) => {
+      if (data.isDefault) {
+        await tx.location.updateMany({ data: { isDefault: false } });
+      }
+
+      return tx.location.create({
+        data: {
+          name,
+          address,
+          isDefault: Boolean(data.isDefault),
+        },
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          isDefault: true,
+          isArchived: true,
+        },
+      });
+    });
+
+    revalidateLocationViews();
+    return { success: true, location };
+  } catch (error: any) {
+    return { success: false, error: error.message || "No se pudo crear la ubicación." };
+  }
+}
+
+export async function updateCatalogLocation(
+  id: string,
+  data: { name: string; address?: string; isDefault?: boolean },
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const name = data.name.trim();
+    const address = data.address?.trim() || null;
+    if (!name) return { success: false, error: "El nombre es obligatorio." };
+
+    await db.$transaction(async (tx) => {
+      if (data.isDefault) {
+        await tx.location.updateMany({
+          where: { id: { not: id } },
+          data: { isDefault: false },
+        });
+      }
+
+      await tx.location.update({
+        where: { id },
+        data: {
+          name,
+          address,
+          isDefault: Boolean(data.isDefault),
+        },
+      });
+    });
+
+    revalidateLocationViews();
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "No se pudo actualizar la ubicación." };
+  }
+}
+
+export async function archiveCatalogLocation(id: string, archive: boolean): Promise<{ success: boolean; error?: string }> {
+  try {
+    const location = await db.location.findUnique({
+      where: { id },
+      include: {
+        stocks: { select: { quantity: true } },
+        rawMaterialStocks: { select: { quantity: true } },
+      },
+    });
+
+    if (!location) return { success: false, error: "La ubicación no existe." };
+    if (archive && location.isDefault) {
+      return { success: false, error: "No se puede archivar la ubicación principal." };
+    }
+
+    if (archive) {
+      const productStock = location.stocks.reduce((sum, stock) => sum + Number(stock.quantity || 0), 0);
+      const rawMaterialStock = location.rawMaterialStocks.reduce((sum, stock) => sum + Number(stock.quantity || 0), 0);
+      const [openProductions, openGasification, openLabeling] = await Promise.all([
+        db.production.count({
+          where: {
+            status: "IN_PROGRESS",
+            OR: [
+              { ingredients: { some: { locationId: id } } },
+              { additions: { some: { locationId: id } } },
+            ],
+          },
+        }),
+        db.gasificationBatch.count({ where: { locationId: id, status: "IN_PROGRESS" } }),
+        db.labelingBatch.count({ where: { locationId: id, status: "IN_PROGRESS" } }),
+      ]);
+      const openProcesses = openProductions + openGasification + openLabeling;
+
+      if (productStock > 0 || rawMaterialStock > 0 || openProcesses > 0) {
+        return {
+          success: false,
+          error: "No se puede archivar porque tiene inventario o procesos activos.",
+        };
+      }
+    }
+
+    await db.location.update({
+      where: { id },
+      data: { isArchived: archive },
+    });
+
+    revalidateLocationViews();
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "No se pudo cambiar el estado de la ubicación." };
+  }
 }
 
 // ==========================================
@@ -63,73 +196,208 @@ export async function createTransfer(formData: FormData) {
   const toLocationId = formData.get("toLocationId") as string;
   const quantitySent = parseInt(formData.get("quantitySent") as string);
   const senderEmail = formData.get("senderEmail") as string;
-  const observations = formData.get("observations") as string;
+  const observations = String(formData.get("observations") || "").trim();
 
-  if (quantitySent <= 0 || fromLocationId === toLocationId) return;
+  try {
+    if (!flavorId || !fromLocationId || !toLocationId) {
+      throw new Error("Selecciona producto, origen y destino.");
+    }
 
-  const currentStock = await db.stock.findUnique({
-    where: { flavorId_locationId: { flavorId, locationId: fromLocationId } }
-  });
+    if (!Number.isFinite(quantitySent) || quantitySent <= 0) {
+      throw new Error("La cantidad debe ser mayor a cero.");
+    }
 
-  if (!currentStock || currentStock.quantity < quantitySent) {
-    throw new Error("No hay suficiente stock en la ubicación de origen.");
+    if (fromLocationId === toLocationId) {
+      throw new Error("El origen y destino no pueden ser el mismo almacén.");
+    }
+
+    const result = await db.$transaction(async (tx) => {
+      const [flavor, fromLocation, toLocation, currentStock] = await Promise.all([
+        tx.flavor.findUnique({ where: { id: flavorId }, select: { id: true, name: true } }),
+        tx.location.findUnique({ where: { id: fromLocationId }, select: { id: true, name: true } }),
+        tx.location.findUnique({ where: { id: toLocationId }, select: { id: true, name: true } }),
+        tx.stock.findUnique({ where: { flavorId_locationId: { flavorId, locationId: fromLocationId } } }),
+      ]);
+
+      if (!flavor) throw new Error("El producto seleccionado no existe.");
+      if (!fromLocation) throw new Error("El almacén de origen no existe.");
+      if (!toLocation) throw new Error("El almacén de destino no existe.");
+      if (!currentStock || currentStock.quantity < quantitySent) {
+        throw new Error(`No hay suficiente stock en origen. Disponibles: ${currentStock?.quantity || 0} pzas.`);
+      }
+
+      await tx.stock.update({
+        where: { flavorId_locationId: { flavorId, locationId: fromLocationId } },
+        data: { quantity: { decrement: quantitySent } }
+      });
+
+      await tx.inventoryMovement.create({
+        data: {
+          flavorId,
+          locationId: fromLocationId,
+          type: "OUT",
+          quantity: quantitySent,
+          reason: `Traspaso en tránsito hacia ${toLocation.name}`,
+          userId: senderEmail
+        }
+      });
+
+      const transfer = await tx.transfer.create({
+        data: { flavorId, fromLocationId, toLocationId, quantitySent, senderEmail, observations, status: "PENDING" },
+        include: { flavor: true, fromLocation: true, toLocation: true },
+      });
+
+      return transfer;
+    });
+
+    revalidatePath("/admin/inventory/transfers");
+    revalidatePath("/admin/inventory/products");
+    revalidatePath("/admin/inventory");
+    revalidatePath("/admin");
+    revalidatePath("/pos");
+
+    return { success: true, transferId: result.id };
+  } catch (err: any) {
+    return { success: false, error: err.message || "No se pudo crear el traspaso." };
   }
-
-  await db.stock.update({
-    where: { flavorId_locationId: { flavorId, locationId: fromLocationId } },
-    data: { quantity: { decrement: quantitySent } }
-  });
-
-  await db.inventoryMovement.create({
-    data: { flavorId, locationId: fromLocationId, type: "OUT", quantity: quantitySent, reason: "Envío en Tránsito", userId: senderEmail }
-  });
-
-  await db.transfer.create({
-    data: { flavorId, fromLocationId, toLocationId, quantitySent, senderEmail, observations, status: "PENDING" }
-  });
-
-  revalidatePath("/admin");
-  revalidatePath("/pos");
 }
 
 export async function receiveTransfer(formData: FormData) {
   const transferId = formData.get("transferId") as string;
   const quantityReceived = parseInt(formData.get("quantityReceived") as string);
   const receiverEmail = formData.get("receiverEmail") as string;
-  const obs = formData.get("observations") as string;
+  const obs = String(formData.get("observations") || "").trim();
 
-  if (quantityReceived < 0) return;
+  try {
+    if (!transferId) throw new Error("No se encontró el traspaso.");
+    if (!Number.isFinite(quantityReceived) || quantityReceived < 0) {
+      throw new Error("La cantidad recibida debe ser válida.");
+    }
 
-  const transfer = await db.transfer.findUnique({ where: { id: transferId } });
-  if (!transfer || transfer.status !== "PENDING") return;
+    const result = await db.$transaction(async (tx) => {
+      const transfer = await tx.transfer.findUnique({
+        where: { id: transferId },
+        include: { flavor: true, fromLocation: true, toLocation: true },
+      });
 
-  const finalObs = obs ? `${transfer.observations || ''}\n[Recepción]: ${obs}` : transfer.observations;
-  const shrinkage = transfer.quantitySent - quantityReceived;
+      if (!transfer) throw new Error("El traspaso no existe.");
+      if (transfer.status !== "PENDING") throw new Error("Este traspaso ya fue cerrado.");
+      if (quantityReceived > transfer.quantitySent) {
+        throw new Error("No puedes recibir más piezas de las enviadas.");
+      }
 
-  await db.transfer.update({
-    where: { id: transferId },
-    data: { status: "COMPLETED", quantityReceived, receiverEmail, observations: finalObs }
-  });
+      const finalObs = obs ? `${transfer.observations || ""}${transfer.observations ? "\n" : ""}[Recepción]: ${obs}` : transfer.observations;
+      const shrinkage = transfer.quantitySent - quantityReceived;
 
-  if (quantityReceived > 0) {
-    await db.stock.upsert({
-      where: { flavorId_locationId: { flavorId: transfer.flavorId, locationId: transfer.toLocationId } },
-      create: { flavorId: transfer.flavorId, locationId: transfer.toLocationId, quantity: quantityReceived },
-      update: { quantity: { increment: quantityReceived } }
+      const updatedTransfer = await tx.transfer.update({
+        where: { id: transferId },
+        data: { status: "COMPLETED", quantityReceived, receiverEmail, observations: finalObs },
+        include: { flavor: true, fromLocation: true, toLocation: true },
+      });
+
+      if (quantityReceived > 0) {
+        await tx.stock.upsert({
+          where: { flavorId_locationId: { flavorId: transfer.flavorId, locationId: transfer.toLocationId } },
+          create: { flavorId: transfer.flavorId, locationId: transfer.toLocationId, quantity: quantityReceived },
+          update: { quantity: { increment: quantityReceived } }
+        });
+        await tx.inventoryMovement.create({
+          data: {
+            flavorId: transfer.flavorId,
+            locationId: transfer.toLocationId,
+            type: "IN",
+            quantity: quantityReceived,
+            reason: `Recepción de traspaso desde ${transfer.fromLocation.name}`,
+            userId: receiverEmail
+          }
+        });
+      }
+
+      if (shrinkage > 0) {
+        await tx.inventoryMovement.create({
+          data: {
+            flavorId: transfer.flavorId,
+            locationId: transfer.fromLocationId,
+            type: "OUT",
+            quantity: shrinkage,
+            reason: `Merma/Pérdida en traspaso ${transferId}`,
+            userId: receiverEmail
+          }
+        });
+      }
+
+      return updatedTransfer;
     });
-    await db.inventoryMovement.create({
-      data: { flavorId: transfer.flavorId, locationId: transfer.toLocationId, type: "IN", quantity: quantityReceived, reason: "Recepción de Envío", userId: receiverEmail }
-    });
+
+    revalidatePath("/admin/inventory/transfers");
+    revalidatePath("/admin/inventory/products");
+    revalidatePath("/admin/inventory");
+    revalidatePath("/admin");
+    revalidatePath("/pos");
+
+    return { success: true, transferId: result.id };
+  } catch (err: any) {
+    return { success: false, error: err.message || "No se pudo recibir el traspaso." };
   }
+}
 
-  if (shrinkage > 0) {
-    await db.inventoryMovement.create({
-      data: { flavorId: transfer.flavorId, locationId: transfer.fromLocationId, type: "OUT", quantity: shrinkage, reason: `Merma/Pérdida (Envío ${transferId})`, userId: receiverEmail }
+export async function cancelTransfer(formData: FormData) {
+  const transferId = formData.get("transferId") as string;
+  const userEmail = formData.get("userEmail") as string;
+  const reason = String(formData.get("reason") || "").trim();
+
+  try {
+    if (!transferId) throw new Error("No se encontró el traspaso.");
+    if (!reason) throw new Error("Escribe el motivo de cancelación.");
+
+    const result = await db.$transaction(async (tx) => {
+      const transfer = await tx.transfer.findUnique({
+        where: { id: transferId },
+        include: { flavor: true, fromLocation: true, toLocation: true },
+      });
+
+      if (!transfer) throw new Error("El traspaso no existe.");
+      if (transfer.status !== "PENDING") throw new Error("Solo se pueden cancelar traspasos en tránsito.");
+
+      await tx.stock.upsert({
+        where: { flavorId_locationId: { flavorId: transfer.flavorId, locationId: transfer.fromLocationId } },
+        create: { flavorId: transfer.flavorId, locationId: transfer.fromLocationId, quantity: transfer.quantitySent },
+        update: { quantity: { increment: transfer.quantitySent } },
+      });
+
+      await tx.inventoryMovement.create({
+        data: {
+          flavorId: transfer.flavorId,
+          locationId: transfer.fromLocationId,
+          type: "IN",
+          quantity: transfer.quantitySent,
+          reason: `Cancelación de traspaso | ${reason}`,
+          userId: userEmail,
+        },
+      });
+
+      return tx.transfer.update({
+        where: { id: transferId },
+        data: {
+          status: "CANCELLED",
+          receiverEmail: userEmail,
+          quantityReceived: 0,
+          observations: `${transfer.observations || ""}${transfer.observations ? "\n" : ""}[Cancelación]: ${reason}`,
+        },
+        include: { flavor: true, fromLocation: true, toLocation: true },
+      });
     });
-  }
 
-  revalidatePath("/admin");
-  revalidatePath("/pos");
+    revalidatePath("/admin/inventory/transfers");
+    revalidatePath("/admin/inventory/products");
+    revalidatePath("/admin/inventory");
+    revalidatePath("/admin");
+    revalidatePath("/pos");
+
+    return { success: true, transferId: result.id };
+  } catch (err: any) {
+    return { success: false, error: err.message || "No se pudo cancelar el traspaso." };
+  }
 }
 
 // ==========================================
@@ -171,6 +439,63 @@ export async function updatePackPrice(formData: FormData) {
   revalidatePath("/suscripciones");
 }
 
+export async function updateCatalogProduct(formData: FormData) {
+  const productId = formData.get("productId") as string;
+  const name = ((formData.get("name") as string) || "").trim();
+  const newPrice = parseFloat(formData.get("newPrice") as string);
+  const quantity = parseInt(formData.get("quantity") as string);
+  const clubDiscountPercent = parseInt(formData.get("clubDiscountPercent") as string);
+  const safeDiscount = Number.isNaN(clubDiscountPercent) ? 0 : Math.max(0, Math.min(100, clubDiscountPercent));
+
+  const currentProduct = await db.product.findUnique({
+    where: { id: productId },
+    include: { plans: true },
+  });
+
+  if (!currentProduct || !name || Number.isNaN(newPrice) || Number.isNaN(quantity) || quantity <= 0) return;
+
+  if (Number(currentProduct.price) !== newPrice) {
+    await db.productPriceHistory.create({
+      data: {
+        productId,
+        oldPrice: currentProduct.price,
+        newPrice,
+        userId: ((formData.get("adminEmail") as string) || "system").trim(),
+      },
+    });
+  }
+
+  await db.product.update({
+    where: { id: productId },
+    data: {
+      name,
+      price: newPrice,
+      quantity,
+      clubDiscountPercent: safeDiscount,
+    },
+  });
+
+  const subscriptionPrice = Math.max(0, newPrice * (1 - safeDiscount / 100));
+  await Promise.all(
+    currentProduct.plans.map((plan) =>
+      db.plan.update({
+        where: { id: plan.id },
+        data: {
+          price: subscriptionPrice,
+          stripePriceId: null,
+        },
+      })
+    )
+  );
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/catalog/products");
+  revalidatePath("/admin/catalog/products?scope=web");
+  revalidatePath("/pos");
+  revalidatePath("/tienda");
+  revalidatePath("/suscripciones");
+}
+
 export async function updateFlavorPrice(formData: FormData) {
   const flavorId = formData.get("flavorId") as string;
   const newPrice = parseFloat(formData.get("newPrice") as string);
@@ -195,6 +520,46 @@ export async function updateFlavorPrice(formData: FormData) {
   revalidatePath("/admin/pricing");
   revalidatePath("/tienda");
   revalidatePath("/pos");
+}
+
+export async function updateCatalogFlavor(formData: FormData) {
+  const flavorId = formData.get("flavorId") as string;
+  const name = ((formData.get("name") as string) || "").trim();
+  const slug = ((formData.get("slug") as string) || "").trim();
+  const newPrice = parseFloat(formData.get("newPrice") as string);
+  const adminEmail = ((formData.get("adminEmail") as string) || "system").trim();
+  const currentFlavor = await db.flavor.findUnique({ where: { id: flavorId } });
+
+  if (!currentFlavor || !name || !slug || Number.isNaN(newPrice)) return;
+
+  if (Number(currentFlavor.price || 0) !== newPrice) {
+    await db.flavorPriceHistory.create({
+      data: {
+        flavorId,
+        oldBasePrice: new Decimal(currentFlavor.price || 0),
+        newBasePrice: new Decimal(newPrice),
+        userId: adminEmail,
+      },
+    });
+  }
+
+  await db.flavor.update({
+    where: { id: flavorId },
+    data: {
+      name,
+      slug,
+      price: newPrice,
+      basePrice: newPrice,
+    },
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/catalog/products");
+  revalidatePath("/admin/catalog/products?scope=web");
+  revalidatePath("/admin/pricing");
+  revalidatePath("/pos");
+  revalidatePath("/tienda");
+  revalidatePath("/suscripciones");
 }
 
 export async function updatePackImage(formData: FormData) {
@@ -335,7 +700,7 @@ export async function updateFlavorImages(formData: FormData) {
 // PRODUCTOS Y SABORES
 // ==========================================
 export async function createProduct(formData: FormData) {
-  const name = formData.get("name") as string;
+  const name = ((formData.get("name") as string) || "").trim();
   const price = parseFloat(formData.get("price") as string);
   const quantity = parseInt(formData.get("quantity") as string);
   const clubDiscountPercent = parseInt(formData.get("clubDiscountPercent") as string) || 0;
@@ -348,6 +713,11 @@ export async function createProduct(formData: FormData) {
 
   await db.product.create({ data: { name, price, quantity, clubDiscountPercent, image: image || null, weight, height, width, length } });
   revalidatePath("/admin");
+  revalidatePath("/admin/catalog/products");
+  revalidatePath("/admin/catalog/products?scope=web");
+  revalidatePath("/pos");
+  revalidatePath("/tienda");
+  revalidatePath("/suscripciones");
 }
 
 export async function updateProductDimensions(formData: FormData) {
@@ -361,8 +731,8 @@ export async function updateProductDimensions(formData: FormData) {
 }
 
 export async function createFlavor(formData: FormData) {
-  const name = formData.get("name") as string;
-  const slug = formData.get("slug") as string;
+  const name = ((formData.get("name") as string) || "").trim();
+  const slug = ((formData.get("slug") as string) || "").trim();
   const price = parseFloat(formData.get("price") as string);
   const image = ((formData.get("image") as string) || "").trim();
   const imageEuro = ((formData.get("imageEuro") as string) || "").trim();
@@ -376,7 +746,7 @@ export async function createFlavor(formData: FormData) {
 
   // 2. Creamos el sabor
   const newFlavor = await db.flavor.create({
-    data: { name, slug, price, image: image || null, imageEuro: imageEuro || null }
+    data: { name, slug, price, basePrice: price, image: image || null, imageEuro: imageEuro || null }
   });
 
   // 3. Si mandaste un stock inicial, lo registramos en la ubicación encontrada
@@ -403,6 +773,12 @@ export async function createFlavor(formData: FormData) {
   }
 
   revalidatePath("/admin");
+  revalidatePath("/admin/catalog/products");
+  revalidatePath("/admin/catalog/products?scope=web");
+  revalidatePath("/admin/pricing");
+  revalidatePath("/pos");
+  revalidatePath("/tienda");
+  revalidatePath("/suscripciones");
 }
 
 export async function updateClubDiscountPercent(formData: FormData) {

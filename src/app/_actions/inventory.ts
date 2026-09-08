@@ -209,3 +209,136 @@ export async function registerProductInventoryEntry(data: {
     return { success: false, error: err.message || "No se pudo registrar la entrada" };
   }
 }
+
+export async function registerProductInventoryMovement(data: {
+  flavorId: string;
+  locationId: string;
+  type: "IN" | "OUT" | "ADJUST";
+  quantity: number;
+  lot?: string;
+  reason: string;
+}) {
+  try {
+    const { email } = await requireInventoryAccess();
+
+    if (!data.flavorId || !data.locationId) {
+      throw new Error("Producto y ubicación son obligatorios");
+    }
+
+    if (!(data.quantity >= 0)) {
+      throw new Error("La cantidad debe ser un número válido");
+    }
+
+    if (data.type !== "ADJUST" && data.quantity <= 0) {
+      throw new Error("La cantidad debe ser mayor a cero");
+    }
+
+    const reason = data.reason.trim();
+    if (!reason) {
+      throw new Error("El motivo es obligatorio");
+    }
+
+    const lot = data.lot?.trim();
+    const result = await db.$transaction(async (tx) => {
+      const [flavor, location, currentStock] = await Promise.all([
+        tx.flavor.findUnique({
+          where: { id: data.flavorId },
+          select: { id: true, name: true, slug: true },
+        }),
+        tx.location.findUnique({
+          where: { id: data.locationId },
+          select: { id: true, name: true },
+        }),
+        tx.stock.findUnique({
+          where: {
+            flavorId_locationId: {
+              flavorId: data.flavorId,
+              locationId: data.locationId,
+            },
+          },
+        }),
+      ]);
+
+      if (!flavor) throw new Error("El producto seleccionado no existe");
+      if (!location) throw new Error("La ubicación seleccionada no existe");
+
+      const currentQuantity = Number(currentStock?.quantity ?? 0);
+      const requestedQuantity = Math.trunc(data.quantity);
+      const nextQuantity =
+        data.type === "IN"
+          ? currentQuantity + requestedQuantity
+          : data.type === "OUT"
+            ? currentQuantity - requestedQuantity
+            : requestedQuantity;
+
+      if (nextQuantity < 0) {
+        throw new Error("No hay suficiente existencia para registrar la salida");
+      }
+
+      const movementType = data.type === "ADJUST" ? (nextQuantity >= currentQuantity ? "IN" : "OUT") : data.type;
+      const movementQuantity = data.type === "ADJUST" ? Math.abs(nextQuantity - currentQuantity) : requestedQuantity;
+      const fullReason = `${data.type === "ADJUST" ? "Ajuste de inventario" : data.type === "IN" ? "Entrada" : "Salida"} | ${reason}${lot ? ` | Lote: ${lot}` : ""}`;
+
+      await tx.stock.upsert({
+        where: {
+          flavorId_locationId: {
+            flavorId: data.flavorId,
+            locationId: data.locationId,
+          },
+        },
+        create: {
+          flavorId: data.flavorId,
+          locationId: data.locationId,
+          quantity: nextQuantity,
+        },
+        update: {
+          quantity: nextQuantity,
+        },
+      });
+
+      const movement = await tx.inventoryMovement.create({
+        data: {
+          flavorId: data.flavorId,
+          locationId: data.locationId,
+          type: movementType,
+          quantity: movementQuantity,
+          reason: fullReason,
+          userId: email,
+        },
+        include: {
+          location: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      return {
+        flavor,
+        location,
+        nextQuantity,
+        movement: {
+          ...movement,
+          createdAt: movement.createdAt.toISOString(),
+        },
+      };
+    });
+
+    revalidatePath("/admin/inventory/products");
+    revalidatePath("/admin/inventory");
+    revalidatePath("/admin");
+    revalidatePath("/pos");
+
+    return {
+      success: true,
+      flavorId: result.flavor.id,
+      locationId: result.location.id,
+      newQuantity: result.nextQuantity,
+      movement: result.movement,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "No se pudo registrar el movimiento" };
+  }
+}

@@ -33,7 +33,12 @@ export async function toggleStatus(formData: FormData) {
     }
 
     revalidatePath("/admin");
+    revalidatePath("/admin/catalog");
+    revalidatePath("/admin/catalog/products");
+    revalidatePath("/admin/catalog/products?scope=web");
     revalidatePath("/pos");
+    revalidatePath("/tienda");
+    revalidatePath("/suscripciones");
   } catch (error) {
     console.error("Error toggling status:", error);
   }

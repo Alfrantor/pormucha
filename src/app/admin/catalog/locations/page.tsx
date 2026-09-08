@@ -1,61 +1,147 @@
-import Link from "next/link";
+import { LocationsCatalogManager } from "@/components/admin/LocationsCatalogManager";
 import { db } from "@/lib/db";
-import { CatalogSectionPage } from "../_components/CatalogSectionPage";
-import { MapPinned, Warehouse } from "lucide-react";
 
 export default async function CatalogLocationsPage() {
   const locations = await db.location.findMany({
-    where: { isArchived: false },
+    include: {
+      stocks: {
+        select: {
+          quantity: true,
+          flavor: { select: { name: true } },
+        },
+        orderBy: { flavor: { name: "asc" } },
+      },
+      rawMaterialStocks: {
+        select: {
+          quantity: true,
+          rawMaterial: { select: { name: true, unit: true } },
+        },
+        orderBy: { rawMaterial: { name: "asc" } },
+      },
+      orders: {
+        select: {
+          id: true,
+          folio: true,
+          channel: true,
+          status: true,
+          total: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      },
+      transfersFrom: {
+        select: {
+          id: true,
+          status: true,
+          quantitySent: true,
+          quantityReceived: true,
+          createdAt: true,
+          flavor: { select: { name: true } },
+          toLocation: { select: { name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      },
+      transfersTo: {
+        select: {
+          id: true,
+          status: true,
+          quantitySent: true,
+          quantityReceived: true,
+          createdAt: true,
+          flavor: { select: { name: true } },
+          fromLocation: { select: { name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      },
+      _count: {
+        select: {
+          orders: true,
+          transfersFrom: true,
+          transfersTo: true,
+        },
+      },
+    },
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
   });
 
-  return (
-    <div className="space-y-6">
-      <CatalogSectionPage
-        eyebrow="Catalogo"
-        title="Almacenes / plantas"
-        description="Aquí están las ubicaciones operativas del ERP. Hoy deberían vivir Lerma, Mérida y cualquier otra planta o almacén futuro."
-        stats={[
-          { label: "Ubicaciones activas", value: locations.length },
-          { label: "Planta principal", value: locations.find((loc) => loc.isDefault)?.name ?? "Sin definir" },
-          { label: "Con dirección", value: locations.filter((loc) => Boolean(loc.address)).length },
-        ]}
-        cards={[
-          { href: "/admin/inventory", title: "Inventarios", desc: "Stock por ubicación, materia prima y traspasos", icon: <Warehouse size={18} />, meta: "Uso por planta" },
-        ]}
-      />
+  const locationsWithUsage = await Promise.all(
+    locations.map(async (location) => {
+      const [openProductions, openGasification, openLabeling] = await Promise.all([
+        db.production.count({
+          where: {
+            status: "IN_PROGRESS",
+            OR: [
+              { ingredients: { some: { locationId: location.id } } },
+              { additions: { some: { locationId: location.id } } },
+            ],
+          },
+        }),
+        db.gasificationBatch.count({ where: { locationId: location.id, status: "IN_PROGRESS" } }),
+        db.labelingBatch.count({ where: { locationId: location.id, status: "IN_PROGRESS" } }),
+      ]);
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {locations.map((location) => (
-          <article
-            key={location.id}
-            className={`rounded-[1.6rem] border p-5 shadow-sm ${location.isDefault ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white"}`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className={`text-[10px] font-black uppercase tracking-[0.35em] ${location.isDefault ? "text-white/60" : "text-slate-400"}`}>Planta / almacén</p>
-                <h2 className="mt-2 text-2xl font-black tracking-tight">{location.name}</h2>
-              </div>
-              <span
-                className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.2em] ${
-                  location.isDefault ? "bg-white/15 text-white" : "bg-emerald-100 text-emerald-700"
-                }`}
-              >
-                {location.isDefault ? "Principal" : "Secundaria"}
-              </span>
-            </div>
-            <p className={`mt-3 text-sm ${location.isDefault ? "text-slate-200" : "text-slate-500"}`}>
-              {location.address || "Sin dirección registrada"}
-            </p>
-          </article>
-        ))}
-      </section>
-
-      <div className="flex justify-start">
-        <Link href="/admin/inventory" className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">
-          Ir a inventarios
-        </Link>
-      </div>
-    </div>
+      return {
+        id: location.id,
+        name: location.name,
+        address: location.address,
+        isDefault: location.isDefault,
+        isArchived: location.isArchived,
+        productStockTotal: location.stocks.reduce((sum, stock) => sum + Number(stock.quantity || 0), 0),
+        rawMaterialStockTotal: location.rawMaterialStocks.reduce((sum, stock) => sum + Number(stock.quantity || 0), 0),
+        orderCount: location._count.orders,
+        incomingTransferCount: location._count.transfersTo,
+        outgoingTransferCount: location._count.transfersFrom,
+        openProcessCount: openProductions + openGasification + openLabeling,
+        productStocks: location.stocks
+          .filter((stock) => Number(stock.quantity || 0) > 0)
+          .map((stock) => ({
+            name: stock.flavor.name,
+            quantity: Number(stock.quantity || 0),
+          })),
+        rawMaterialStocks: location.rawMaterialStocks
+          .filter((stock) => Number(stock.quantity || 0) > 0)
+          .map((stock) => ({
+            name: stock.rawMaterial.name,
+            unit: stock.rawMaterial.unit,
+            quantity: Number(stock.quantity || 0),
+          })),
+        recentOrders: location.orders.map((order) => ({
+          id: order.id,
+          folio: order.folio,
+          channel: order.channel,
+          status: order.status,
+          total: Number(order.total || 0),
+          createdAt: order.createdAt.toISOString(),
+        })),
+        outgoingTransfers: location.transfersFrom.map((transfer) => ({
+          id: transfer.id,
+          status: transfer.status,
+          quantitySent: transfer.quantitySent,
+          quantityReceived: transfer.quantityReceived,
+          flavorName: transfer.flavor.name,
+          relatedLocationName: transfer.toLocation.name,
+          createdAt: transfer.createdAt.toISOString(),
+        })),
+        incomingTransfers: location.transfersTo.map((transfer) => ({
+          id: transfer.id,
+          status: transfer.status,
+          quantitySent: transfer.quantitySent,
+          quantityReceived: transfer.quantityReceived,
+          flavorName: transfer.flavor.name,
+          relatedLocationName: transfer.fromLocation.name,
+          createdAt: transfer.createdAt.toISOString(),
+        })),
+        openProcesses: [
+          { label: "Producción", count: openProductions },
+          { label: "Gasificado", count: openGasification },
+          { label: "Etiquetado", count: openLabeling },
+        ].filter((item) => item.count > 0),
+      };
+    }),
   );
+
+  return <LocationsCatalogManager locations={locationsWithUsage} />;
 }
