@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Search, Plus, Edit, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { ClientModal } from "./ClientModal";
+import { MEXICO_STATES } from "@/lib/mexico-states";
 
 const PAGE_SIZE = 20;
 
@@ -20,6 +21,7 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
   const [classificationFilter, setClassificationFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [giroFilter, setGiroFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState("");
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [editingClient, setEditingClient] = useState<any>(null);
@@ -32,16 +34,18 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
         !c.fullName?.toLowerCase().includes(q) &&
         !c.email?.toLowerCase().includes(q) &&
         !c.rfc?.toLowerCase().includes(q) &&
-        !c.businessName?.toLowerCase().includes(q)
+        !c.businessName?.toLowerCase().includes(q) &&
+        !c.state?.toLowerCase().includes(q)
       ) {
         return false;
       }
       if (classificationFilter && c.classification !== classificationFilter) return false;
       if (typeFilter && c.type !== typeFilter) return false;
       if (giroFilter && c.giroId !== giroFilter) return false;
+      if (stateFilter && (c.state || c.addresses?.[0]?.state) !== stateFilter) return false;
       return true;
     });
-  }, [clients, search, classificationFilter, typeFilter, giroFilter]);
+  }, [clients, search, classificationFilter, typeFilter, giroFilter, stateFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -154,13 +158,30 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
           </select>
         )}
 
-        {(search || classificationFilter || typeFilter || giroFilter) && (
+        <select
+          value={stateFilter}
+          onChange={(e) => {
+            setStateFilter(e.target.value);
+            resetPage();
+          }}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Estado</option>
+          {MEXICO_STATES.map((state) => (
+            <option key={state} value={state}>
+              {state}
+            </option>
+          ))}
+        </select>
+
+        {(search || classificationFilter || typeFilter || giroFilter || stateFilter) && (
           <button
             onClick={() => {
               setSearch("");
               setClassificationFilter("");
               setTypeFilter("");
               setGiroFilter("");
+              setStateFilter("");
               resetPage();
             }}
             className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-500 transition hover:bg-gray-50 hover:text-gray-800"
@@ -181,13 +202,14 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
               <th className="px-5 py-3">Giro</th>
               <th className="px-5 py-3">Crédito</th>
               <th className="px-5 py-3">Estado</th>
+              <th className="px-5 py-3">Estatus</th>
               <th className="px-5 py-3 text-center">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {paginated.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-10 text-center text-sm italic text-gray-400">
+                <td colSpan={9} className="px-6 py-10 text-center text-sm italic text-gray-400">
                   No hay clientes con esos filtros
                 </td>
               </tr>
@@ -247,6 +269,9 @@ export function ClientsTable({ clients, total, giros, onClientClick, selectedCli
                     ) : (
                       <span className="text-xs text-gray-300">Sin límite</span>
                     )}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="text-xs font-semibold text-gray-600">{client.state || client.addresses?.[0]?.state || "Sin estado"}</span>
                   </td>
                   <td className="px-5 py-3">
                     <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${statusColors[client.status] || "border-gray-200 bg-gray-50 text-gray-500"}`}>

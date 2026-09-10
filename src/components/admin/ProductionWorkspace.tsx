@@ -42,8 +42,8 @@ export default function ProductionWorkspace({
     <div className="space-y-6">
       <section className="rounded-[1.8rem] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap gap-2">
-          <TabButton active={tab === "bebida"} onClick={() => setTab("bebida")} title="Fermentados" desc="Lotes e insumos" />
-          <TabButton active={tab === "final"} onClick={() => setTab("final")} title="Bebida final" desc="Blend y cálculo" />
+          <TabButton active={tab === "bebida"} onClick={() => setTab("bebida")} title="Producción base" desc="Lotes e insumos" />
+          <TabButton active={tab === "final"} onClick={() => setTab("final")} title="Bebida final" desc="Mezcla y cálculo" />
           <TabButton active={tab === "gasificado"} onClick={() => setTab("gasificado")} title="Gasificado" desc="Carbonatación y cierre" />
           <TabButton active={tab === "etiquetado"} onClick={() => setTab("etiquetado")} title="Etiquetado" desc="Botellas y salida" />
         </div>

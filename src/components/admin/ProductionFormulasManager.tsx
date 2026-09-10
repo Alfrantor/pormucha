@@ -125,7 +125,7 @@ function createDefaultFormula(code: string, recipeType: FormulaState["recipeType
 }
 
 function getRecipeTypeLabel(recipeType?: string | null) {
-  if (recipeType === "FLAVOR") return "Sabor";
+  if (recipeType === "FLAVOR") return "Saborizante";
   if (recipeType === "BLEND") return "Blend";
   if (recipeType === "SCOOBY") return "Scooby";
   return "Acidificante";
@@ -456,7 +456,7 @@ export default function ProductionFormulasManager({
                           ? "Receta blend"
                           : "Receta acidificante"}
                   </p>
-                  <h3 className="mt-2 text-3xl font-black text-slate-950">{currentFormula.name || "Nueva receta"}</h3>
+                  <h3 className="mt-2 text-3xl font-black text-slate-950">{currentFormula.name || "Nueva fórmula"}</h3>
                   <p className="mt-2 text-sm text-slate-500">
                     {currentFormula.recipeType === "FLAVOR"
                       ? currentFormula.flavorItemName || "Sabor sin item principal definido"
@@ -473,10 +473,10 @@ export default function ProductionFormulasManager({
               {currentFormula.recipeType === "FLAVOR" ? (
                 <>
                   <div className="grid gap-4 md:grid-cols-3">
-                    <InfoCard label="Flavour juice %" value={`${formatNumber(Number(currentFormula.flavorJuicePercent || 0))}%`} />
+                    <InfoCard label="Jugo / sabor %" value={`${formatNumber(Number(currentFormula.flavorJuicePercent || 0))}%`} />
                     <InfoCard label="CO₂ (g/L)" value={`${formatNumber(Number(currentFormula.co2GramsPerLiter || 0))} g/L`} />
                     <InfoCard label="Carbonatación" value={currentFormula.carbonationMethod || "-"} />
-                    <InfoCard label="F2 condition target" value={`${formatNumber(Number(currentFormula.f2ConditionDays || 0), 0)} días`} />
+                    <InfoCard label="Objetivo F2" value={`${formatNumber(Number(currentFormula.f2ConditionDays || 0), 0)} días`} />
                     <InfoCard label="Ingredientes F2" value={`${currentFormula.flavorIngredients.filter((item) => item.rawMaterialId || item.freeTextName).length}`} />
                     <InfoCard label="Calculadora" value={`${formatNumber(litersToCalculate, 0)} L`} />
                   </div>
@@ -759,15 +759,15 @@ export default function ProductionFormulasManager({
             <div className="space-y-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Nueva receta</p>
-                  <h3 className="mt-2 text-3xl font-black text-slate-950">{currentFormula.name || "Nueva receta"}</h3>
+                  <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Fórmula de producción</p>
+                  <h3 className="mt-2 text-3xl font-black text-slate-950">{currentFormula.name || "Nueva fórmula"}</h3>
                 </div>
                 <div className="flex gap-3">
                   <button type="button" onClick={cancelEdit} className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-50">
                     Cancelar
                   </button>
                   <button type="button" onClick={saveFormula} disabled={savingCode === selectedCode} className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300">
-                    {savingCode === selectedCode ? "Guardando..." : "Guardar receta"}
+                    {savingCode === selectedCode ? "Guardando..." : "Guardar fórmula"}
                   </button>
                 </div>
               </div>
@@ -789,8 +789,6 @@ export default function ProductionFormulasManager({
                           recipeType:
                             event.target.value === "FLAVOR"
                               ? "FLAVOR"
-                              : event.target.value === "BLEND"
-                                ? "BLEND"
                               : event.target.value === "SCOOBY"
                                 ? "SCOOBY"
                                 : "ACIDIFIER",
@@ -800,13 +798,8 @@ export default function ProductionFormulasManager({
                     >
                       <option value="ACIDIFIER">Acidificante</option>
                       <option value="SCOOBY">Scooby</option>
-                      <option value="BLEND">Blend</option>
-                      <option value="FLAVOR">Sabor</option>
+                      <option value="FLAVOR">Saborizante</option>
                     </select>
-                  </Field>
-
-                  <Field label="Código">
-                    <input value={currentFormula.code} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, code: normalizeCode(event.target.value) }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900" />
                   </Field>
                 </div>
 

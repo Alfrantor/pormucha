@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient, updateClient } from "@/app/_actions/clients";
+import { MEXICO_STATES } from "@/lib/mexico-states";
 import { X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -25,6 +26,7 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
     rfc: client?.rfc || "",
     businessName: client?.businessName || "",
     zipCode: client?.zipCode || "",
+    state: client?.state || client?.addresses?.[0]?.state || "",
     classification: client?.classification || "MINORISTA",
     creditLimit: client?.creditLimit?.toString() || "0",
     paymentTerms: client?.paymentTerms?.toString() || "",
@@ -84,6 +86,7 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
         paymentTerms: formData.type === "PUBLICO_GENERAL" ? undefined : formData.paymentTerms ? parseInt(formData.paymentTerms) : undefined,
         globalDiscount: formData.type === "PUBLICO_GENERAL" ? undefined : formData.globalDiscount ? parseInt(formData.globalDiscount) : undefined,
         giroId: formData.type === "PUBLICO_GENERAL" ? undefined : formData.giroId || undefined,
+        state: formData.state,
       };
 
       const result = client ? await updateClient(client.id, data) : await createClient(data);
@@ -186,6 +189,24 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
               />
             </div>
 
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-gray-700">Estado *</label>
+              <select
+                name="state"
+                value={formData.state}
+                onChange={handleChange}
+                required
+                className="w-full rounded-lg border border-gray-200 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Selecciona un estado</option>
+                {MEXICO_STATES.map((state) => (
+                  <option key={state} value={state}>
+                    {state}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {!isPublicoGeneral && (
               <>
                 <div>
@@ -226,6 +247,7 @@ export function ClientModal({ client, onClose }: ClientModalProps) {
                     className="w-full rounded-lg border border-gray-200 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
               </>
             )}
           </div>

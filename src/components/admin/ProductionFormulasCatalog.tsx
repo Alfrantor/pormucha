@@ -6,7 +6,8 @@ import ProductionFormulasManager from "@/components/admin/ProductionFormulasMana
 import { archiveProductionFormula } from "@/app/_actions/production-formulas";
 import type { ProductionFormulaView } from "@/lib/production-profiles";
 
-type RecipeFilter = "ALL" | "ACIDIFIER" | "SCOOBY" | "FLAVOR" | "BLEND";
+type RecipeFilter = "ALL" | "ACIDIFIER" | "SCOOBY" | "FLAVOR" | "ARCHIVED";
+type RecipeType = "ACIDIFIER" | "SCOOBY" | "FLAVOR";
 
 export default function ProductionFormulasCatalog({
   formulas,
@@ -18,21 +19,34 @@ export default function ProductionFormulasCatalog({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [filter, setFilter] = useState<RecipeFilter>("ALL");
+  const [search, setSearch] = useState("");
   const [selectedCode, setSelectedCode] = useState<string>("");
-  const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
+  const [modalMode, setModalMode] = useState<"choose" | "create" | "edit" | null>(null);
   const [modalKey, setModalKey] = useState(0);
-  const [createRecipeType, setCreateRecipeType] = useState<"ACIDIFIER" | "SCOOBY" | "FLAVOR" | "BLEND">("ACIDIFIER");
+  const [createRecipeType, setCreateRecipeType] = useState<RecipeType>("ACIDIFIER");
 
-  const safeFormulas = useMemo(() => (Array.isArray(formulas) ? formulas : []), [formulas]);
+  const safeFormulas = useMemo(
+    () => (Array.isArray(formulas) ? formulas.filter((formula) => (formula.recipeType || "ACIDIFIER") !== "BLEND") : []),
+    [formulas],
+  );
 
   const filteredFormulas = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
     return safeFormulas
-      .filter((formula) => (filter === "ALL" ? true : (formula.recipeType || "ACIDIFIER") === filter))
+      .filter((formula) => {
+        if (filter === "ARCHIVED") return !formula.isActive;
+        if (!formula.isActive) return false;
+        return filter === "ALL" ? true : (formula.recipeType || "ACIDIFIER") === filter;
+      })
+      .filter((formula) => {
+        if (!normalizedSearch) return true;
+        return `${formula.name} ${formula.formulaSummary || ""}`.toLowerCase().includes(normalizedSearch);
+      })
       .sort((a, b) => {
         if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
         return String(a.name || "").localeCompare(String(b.name || ""), "es-MX", { sensitivity: "base" });
       });
-  }, [safeFormulas, filter]);
+  }, [safeFormulas, filter, search]);
 
   const selectedVisibleCode = useMemo(() => {
     if (filteredFormulas.length === 0) return "";
@@ -47,16 +61,12 @@ export default function ProductionFormulasCatalog({
     [filteredFormulas, selectedVisibleCode],
   );
 
-  const openCreate = (recipeType: "ACIDIFIER" | "SCOOBY" | "FLAVOR" | "BLEND" = "ACIDIFIER") => {
+  const openCreate = (recipeType: RecipeType) => {
     setSelectedCode("");
     setCreateRecipeType(recipeType);
     setFilter(recipeType);
     setModalMode("create");
     setModalKey((current) => current + 1);
-  };
-
-  const openCreateBlend = () => {
-    openCreate("BLEND");
   };
 
   const openEdit = (code: string) => {
@@ -72,7 +82,7 @@ export default function ProductionFormulasCatalog({
     const confirmed = window.confirm(
       nextActive
         ? `¿Deseas reactivar la fórmula ${formula.name}?`
-        : `¿Deseas eliminar la fórmula ${formula.name}? Se ocultará del catálogo, pero no se borrará físicamente.`,
+        : `¿Deseas archivar la fórmula ${formula.name}? Se ocultará del catálogo operativo, pero no se borrará físicamente.`,
     );
     if (!confirmed) return;
 
@@ -90,13 +100,12 @@ export default function ProductionFormulasCatalog({
   };
 
   const counts = useMemo(() => {
-    const byType = (type: RecipeFilter) => safeFormulas.filter((formula) => (formula.recipeType || "ACIDIFIER") === type).length;
     return {
-      all: safeFormulas.length,
-      acidifier: byType("ACIDIFIER"),
-      scooby: byType("SCOOBY"),
-      flavor: byType("FLAVOR"),
-      blend: byType("BLEND"),
+      all: safeFormulas.filter((formula) => formula.isActive).length,
+      acidifier: safeFormulas.filter((formula) => formula.isActive && (formula.recipeType || "ACIDIFIER") === "ACIDIFIER").length,
+      scooby: safeFormulas.filter((formula) => formula.isActive && formula.recipeType === "SCOOBY").length,
+      flavor: safeFormulas.filter((formula) => formula.isActive && formula.recipeType === "FLAVOR").length,
+      archived: safeFormulas.filter((formula) => !formula.isActive).length,
     };
   }, [safeFormulas]);
 
@@ -105,48 +114,52 @@ export default function ProductionFormulasCatalog({
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Catálogo</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Fórmulas</h1>
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Fórmulas de producción</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-500">
+            Define las bases que se producen y luego alimentan inventario: acidificante, scooby y saborizante. La bebida final se calcula en producción.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-          onClick={() => openCreate("ACIDIFIER")}
+            onClick={() => setModalMode("choose")}
             className="rounded-full bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800"
           >
-            Nueva fórmula
-          </button>
-          <button
-            type="button"
-            onClick={openCreateBlend}
-            className="rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-800 hover:bg-slate-50"
-          >
-            Nuevo blend
+            Crear fórmula
           </button>
         </div>
       </section>
 
-      <section className="flex flex-wrap gap-2 rounded-[1.6rem] border border-slate-200 bg-white p-4 shadow-sm">
-        {[
-          { value: "ALL" as const, label: "Todos", count: counts.all },
-          { value: "ACIDIFIER" as const, label: "Acidificante", count: counts.acidifier },
-          { value: "SCOOBY" as const, label: "Scooby", count: counts.scooby },
-          { value: "FLAVOR" as const, label: "Saborizante", count: counts.flavor },
-          { value: "BLEND" as const, label: "Blend", count: counts.blend },
-        ].map((tab) => {
-          const active = filter === tab.value;
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => setFilter(tab.value)}
-              className={`rounded-full border px-4 py-2 text-sm font-bold transition ${
-                active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              {tab.label} <span className={`ml-1 text-xs ${active ? "text-white/70" : "text-slate-400"}`}>({tab.count})</span>
-            </button>
-          );
-        })}
+      <section className="space-y-4 rounded-[1.6rem] border border-slate-200 bg-white p-4 shadow-sm">
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Buscar por nombre o resumen..."
+          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+        />
+        <div className="flex flex-wrap gap-2">
+          {[
+            { value: "ALL" as const, label: "Todos", count: counts.all },
+            { value: "ACIDIFIER" as const, label: "Acidificante", count: counts.acidifier },
+            { value: "SCOOBY" as const, label: "Scooby", count: counts.scooby },
+            { value: "FLAVOR" as const, label: "Saborizante", count: counts.flavor },
+            { value: "ARCHIVED" as const, label: "Archivadas", count: counts.archived },
+          ].map((tab) => {
+            const active = filter === tab.value;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setFilter(tab.value)}
+                className={`rounded-full border px-4 py-2 text-sm font-bold transition ${
+                  active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {tab.label} <span className={`ml-1 text-xs ${active ? "text-white/70" : "text-slate-400"}`}>({tab.count})</span>
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
@@ -164,14 +177,13 @@ export default function ProductionFormulasCatalog({
             ) : (
               filteredFormulas.map((formula) => {
                 const active = selectedCode === formula.code;
+                const complete = isFormulaReady(formula);
                 const recipeLabel =
                   formula.recipeType === "FLAVOR"
                     ? "Saborizante"
                     : formula.recipeType === "SCOOBY"
                       ? "Scooby"
-                      : formula.recipeType === "BLEND"
-                        ? "Blend"
-                        : "Acidificante";
+                      : "Acidificante";
                 return (
                   <button
                     key={formula.id}
@@ -188,16 +200,25 @@ export default function ProductionFormulasCatalog({
                         <p className={`text-xs font-black uppercase tracking-[0.25em] ${active ? "text-white/65" : "text-slate-400"}`}>{recipeLabel}</p>
                         <h3 className="mt-1 text-lg font-black">{formula.name || "Sin nombre"}</h3>
                         <p className={`mt-1 text-xs ${active ? "text-white/70" : "text-slate-500"}`}>
-                          Código {formula.code} · {formula.isActive ? "Activa" : "Inactiva"}
+                          {formula.isActive ? "Activa" : "Inactiva"}
                         </p>
                       </div>
-                      <span
-                        className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
-                          formula.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
-                        }`}
-                      >
-                        {formula.isActive ? "Activa" : "Inactiva"}
-                      </span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span
+                          className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
+                            formula.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
+                          }`}
+                        >
+                          {formula.isActive ? "Activa" : "Inactiva"}
+                        </span>
+                        <span
+                          className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
+                            complete ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {complete ? "Lista" : "Incompleta"}
+                        </span>
+                      </div>
                     </div>
                   </button>
                 );
@@ -220,12 +241,14 @@ export default function ProductionFormulasCatalog({
                       ? "Saborizante"
                       : selectedFormula.recipeType === "SCOOBY"
                         ? "Scooby"
-                        : selectedFormula.recipeType === "BLEND"
-                          ? "Blend"
-                          : "Acidificante"}
+                        : "Acidificante"}
                   </p>
                   <h3 className="mt-2 text-3xl font-black text-slate-950">{selectedFormula.name}</h3>
-                  <p className="mt-1 text-sm text-slate-500">Código {selectedFormula.code}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-black ${isFormulaReady(selectedFormula) ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700"}`}>
+                      {isFormulaReady(selectedFormula) ? "Lista para producción" : "Incompleta"}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -242,7 +265,7 @@ export default function ProductionFormulasCatalog({
                       selectedFormula.isActive ? "bg-rose-100 text-rose-700 hover:bg-rose-200" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
                     }`}
                   >
-                    {selectedFormula.isActive ? "Eliminar" : "Reactivar"}
+                    {selectedFormula.isActive ? "Archivar" : "Reactivar"}
                   </button>
                 </div>
               </div>
@@ -258,9 +281,16 @@ export default function ProductionFormulasCatalog({
                 <p className="mt-2 text-sm text-slate-600">{selectedFormula.formulaSummary || selectedFormula.description || "Sin resumen."}</p>
               </div>
 
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-sm font-black text-slate-950">Uso en producción</p>
+                <p className="mt-2 text-sm text-slate-600">
+                  Esta fórmula se usa para iniciar procesos de producción y generar inventario base. La bebida final se calcula aparte desde producción usando lotes, tanques y Brix real.
+                </p>
+              </div>
+
               {selectedFormula.recipeType === "FLAVOR" ? (
                 <div className="grid gap-3 md:grid-cols-2">
-                  <DetailChip label="Flavour juice %" value={`${Number(selectedFormula.flavorJuicePercent || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}%`} />
+                  <DetailChip label="Jugo / sabor %" value={`${Number(selectedFormula.flavorJuicePercent || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}%`} />
                   <DetailChip label="CO₂" value={`${Number(selectedFormula.co2GramsPerLiter || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} g/L`} />
                   <DetailChip label="Carbonatación" value={selectedFormula.carbonationMethod || "-"} />
                   <DetailChip label="Objetivo F2" value={`${Number(selectedFormula.f2ConditionDays || 0).toLocaleString("es-MX", { maximumFractionDigits: 0 })} días`} />
@@ -278,24 +308,23 @@ export default function ProductionFormulasCatalog({
                 </div>
               )}
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-sm font-black text-slate-950">Pasos</p>
-                <div className="mt-3 space-y-3">
-                  {selectedFormula.steps.length === 0 ? (
-                    <p className="text-sm text-slate-500">No hay pasos registrados.</p>
-                  ) : (
-                    selectedFormula.steps.map((step) => (
+              {selectedFormula.steps.length > 0 && (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-sm font-black text-slate-950">Pasos</p>
+                  <div className="mt-3 space-y-3">
+                    {selectedFormula.steps.map((step) => (
                       <div key={step.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                         <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Paso {step.stepNumber}</p>
                         <p className="mt-1 font-black text-slate-950">{step.title}</p>
                         {step.instructions ? <p className="mt-1 text-sm text-slate-600">{step.instructions}</p> : null}
                         {step.resultLiters != null ? <p className="mt-2 text-xs font-semibold text-slate-500">Resultado: {Number(step.resultLiters).toLocaleString("es-MX", { maximumFractionDigits: 2 })} L</p> : null}
                       </div>
-                    ))
-                  )}
-                </div>
-              </section>
+                    ))}
+                  </div>
+                </section>
+              )}
 
+              {(selectedFormula.recipeType === "FLAVOR" || selectedFormula.blendItems.length > 0) && (
               <section className="rounded-2xl border border-slate-200 bg-white p-4">
                 <p className="text-sm font-black text-slate-950">Componentes</p>
                 <div className="mt-3 space-y-2">
@@ -316,13 +345,13 @@ export default function ProductionFormulasCatalog({
                       ))
                     )
                   ) : selectedFormula.blendItems.length === 0 ? (
-                    <p className="text-sm text-slate-500">Sin componentes de blend.</p>
+                    <p className="text-sm text-slate-500">Sin componentes registrados.</p>
                   ) : (
                     selectedFormula.blendItems.map((item) => (
                       <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
                         <div>
                           <p className="font-semibold text-slate-900">{item.rawMaterialName || item.freeTextName || "Componente"}</p>
-                          <p className="text-xs text-slate-500">{Number(item.sharePercent || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}% del blend</p>
+                          <p className="text-xs text-slate-500">{Number(item.sharePercent || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}% de participación</p>
                         </div>
                         <p className="text-sm font-black text-slate-950">
                           {Number(item.quantity || item.gramsPerLiter || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} {item.unit || "g"}
@@ -332,10 +361,50 @@ export default function ProductionFormulasCatalog({
                   )}
                 </div>
               </section>
+              )}
             </div>
           )}
         </section>
       </div>
+
+      {modalMode === "choose" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+          <div className="w-full max-w-3xl rounded-[1.8rem] bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Nueva fórmula</p>
+                <h3 className="mt-2 text-2xl font-black text-slate-950">¿Qué tipo de fórmula vas a crear?</h3>
+                <p className="mt-2 text-sm text-slate-500">Elige la base que se producirá. La bebida final se calcula después en producción.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalMode(null)}
+                className="rounded-full bg-slate-100 px-4 py-2 text-xs font-black text-slate-600 hover:bg-slate-200"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-3 md:grid-cols-3">
+              {[
+                { type: "ACIDIFIER" as const, title: "Acidificante", desc: "Base ácida para balancear la bebida final." },
+                { type: "SCOOBY" as const, title: "Scooby", desc: "Cultivo/base fermentada para producción." },
+                { type: "FLAVOR" as const, title: "Saborizante", desc: "Sabor con jugo, fruta o concentrado si aplica." },
+              ].map((option) => (
+                <button
+                  key={option.type}
+                  type="button"
+                  onClick={() => openCreate(option.type)}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-left transition hover:border-slate-950 hover:bg-white"
+                >
+                  <p className="text-lg font-black text-slate-950">{option.title}</p>
+                  <p className="mt-2 text-sm text-slate-500">{option.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {(modalMode === "create" || modalMode === "edit") && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-4 pt-6">
@@ -343,7 +412,7 @@ export default function ProductionFormulasCatalog({
             <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">
-                  {modalMode === "create" ? "Nueva fórmula" : "Editar fórmula"}
+                  {modalMode === "create" ? "Nueva fórmula de producción" : "Editar fórmula de producción"}
                 </p>
                 <h3 className="mt-1 text-xl font-black text-slate-950">
                   {modalMode === "create" ? "Crear una nueva fórmula" : selectedFormula?.name || "Editar fórmula"}
@@ -377,4 +446,18 @@ function DetailChip({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm font-bold text-slate-950">{value}</p>
     </div>
   );
+}
+
+function isFormulaReady(formula: ProductionFormulaView) {
+  if (!formula.name?.trim() || !formula.code?.trim()) return false;
+  if (formula.recipeType === "FLAVOR") {
+    const hasBrix = formula.brixMax != null || formula.brixMin != null;
+    const hasFlavorBase = Boolean(formula.flavorItemName?.trim()) || formula.flavorIngredients.length > 0;
+    return hasBrix && hasFlavorBase;
+  }
+
+  return Boolean(formula.teaType?.trim()) &&
+    Number(formula.teaGramsPerLiter || 0) > 0 &&
+    Number(formula.durationDays || 0) > 0 &&
+    (formula.brixMax != null || formula.brixMin != null);
 }

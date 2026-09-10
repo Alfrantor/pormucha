@@ -5,7 +5,7 @@ export function formatProductionName(startedAt: string | Date, tankName: string 
   const year = String(date.getFullYear());
 
   const tankSegment = extractTankSegment(tankName);
-  const processSegment = String(productType || "").trim().toUpperCase() || "A";
+  const processSegment = extractProcessSegment(productType);
 
   return `${day}-${month}-${year}-${tankSegment}-${processSegment}`;
 }
@@ -21,4 +21,12 @@ function extractTankSegment(tankName: string | null | undefined) {
     .toUpperCase()
     .replace(/\s+/g, "-")
     .replace(/[^A-Z0-9-]/g, "") || "SIN-TANQUE";
+}
+
+function extractProcessSegment(productType: string | null | undefined) {
+  return String(productType || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Z0-9-]/g, "") || "FORMULA";
 }

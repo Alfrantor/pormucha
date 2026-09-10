@@ -293,7 +293,7 @@ export default function TabProduccion({
 
   const productionFormulaOptions = useMemo(() => {
     return safeFormulas
-      .filter((formula: any) => formula?.isActive)
+      .filter((formula: any) => formula?.isActive && formula?.recipeType !== "BLEND")
       .sort((a: any, b: any) => String(a?.name || "").localeCompare(String(b?.name || ""), "es-MX", { sensitivity: "base" }));
   }, [safeFormulas]);
 
@@ -552,7 +552,7 @@ export default function TabProduccion({
   const profile = profileFromFormula(selectedFormula, newProdType);
   const selectedTankForNewProd = availableTanks.find((tank: any) => tank.id === newProdTank) || null;
   const generatedProdName = newProdTank
-    ? formatProductionName(newProdStart, selectedTankForNewProd?.name, selectedFormula?.code || newProdType || "F1")
+    ? formatProductionName(newProdStart, selectedTankForNewProd?.name, selectedFormula?.name || "Formula")
     : "";
   const newProdBatchLiters = Number(newProdStartedLiters || 0);
   const projectedTeaTotal = Number(selectedFormula?.teaGramsPerLiter || 0) * newProdBatchLiters;
@@ -1084,7 +1084,7 @@ export default function TabProduccion({
       sourceType: row.sourceType,
       sourceId: row.sourceId,
       liters: resolveFinalBlendLiters("FLAVOR", row.liters),
-      label: selected ? `${selected.name} (${selected.code})` : "Receta sabor",
+      label: selected ? selected.name : "Saborizante",
       recipeType: "FLAVOR",
       availableLiters: selected?.availableLiters ?? null,
       brix: manualBrix != null && Number.isFinite(manualBrix) ? manualBrix : recipeBrix,
@@ -1229,7 +1229,7 @@ export default function TabProduccion({
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-black text-slate-950">{view === "final" ? "Bebida final" : "Fermentados"}</h2>
+        <h2 className="text-2xl font-black text-slate-950">{view === "final" ? "Bebida final" : "Producción base"}</h2>
         <div className="flex gap-2">
           {showViewSwitcher && (
             <>
@@ -1452,7 +1452,7 @@ export default function TabProduccion({
         <div className="space-y-4">
           <div className="grid gap-3 md:grid-cols-4">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Mezclas finales</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Bebidas finales</p>
               <p className="mt-2 text-2xl font-black text-slate-950">{finalBlendList.length}</p>
               <p className="text-xs text-slate-500">registros creados</p>
             </div>
@@ -1462,7 +1462,7 @@ export default function TabProduccion({
               <p className="text-xs text-slate-500">disponibles para combinar</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Recetas sabor</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">Saborizantes</p>
               <p className="mt-2 text-2xl font-black text-slate-950">{flavorFormulaOptions.length}</p>
               <p className="text-xs text-slate-500">con brix objetivo</p>
             </div>
@@ -1478,7 +1478,7 @@ export default function TabProduccion({
               <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Proceso</p>
               <h3 className="mt-2 text-2xl font-black text-slate-950">Bebida final</h3>
               <p className="mt-2 text-sm text-slate-500">
-                Combina lotes de bebida base y recetas sabor para calcular el brix ponderado y la azúcar estimada que se necesita agregar antes del envasado.
+                Combina lotes de acidificante, scooby y saborizante para calcular el brix ponderado y el azúcar estimado antes del envasado.
               </p>
 
               <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -1571,7 +1571,7 @@ export default function TabProduccion({
 
               {selectedFinalBlendFlavor && (
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                  Blend ligado a <strong className="text-slate-950">{selectedFinalBlendFlavor.name}</strong>.
+                  Bebida ligada a <strong className="text-slate-950">{selectedFinalBlendFlavor.name}</strong>.
                 </div>
               )}
 
@@ -1649,10 +1649,10 @@ export default function TabProduccion({
                               className="w-full rounded-lg border p-2 text-sm"
                             >
                               <option value="BASE_LOT">Lote base</option>
-                              <option value="FLAVOR_RECIPE">Receta sabor</option>
+                              <option value="FLAVOR_RECIPE">Saborizante</option>
                             </select>
                           </Field>
-                          <Field label={row.sourceType === "BASE_LOT" ? "Fuente base" : "Receta sabor"}>
+                          <Field label={row.sourceType === "BASE_LOT" ? "Fuente base" : "Saborizante"}>
                             <select
                               value={row.sourceId}
                               onChange={(e) =>
@@ -1667,7 +1667,7 @@ export default function TabProduccion({
                                 <option key={option.id} value={option.id}>
                                   {row.sourceType === "BASE_LOT"
                                     ? `${option.label} · ${Number(option.litersRemaining || 0).toLocaleString("es-MX")} Lt${option.brix == null ? " · falta Brix" : ""}`
-                                    : `${option.name} (${option.code}) · ${Number(option.availableLiters || 0).toLocaleString("es-MX")} Lt`}
+                                    : `${option.name} · ${Number(option.availableLiters || 0).toLocaleString("es-MX")} Lt`}
                                 </option>
                               ))}
                             </select>
@@ -1836,7 +1836,7 @@ export default function TabProduccion({
                       <option value="">Selecciona</option>
                       {formulaOptions.map((formula: any) => (
                         <option key={formula.id} value={formula.code}>
-                          {formula.name} ({formula.code})
+                          {formula.name}
                         </option>
                       ))}
                     </select>
@@ -1950,7 +1950,7 @@ export default function TabProduccion({
                   <h3 className="text-lg font-black text-slate-950 font-sans" style={{ fontFamily: "var(--font-admin)" }}>
                     {selectedProd.name}
                   </h3>
-                  <p className="text-xs text-slate-500">Tipo {selectedProd.productType} | Cubeta {selectedProd.tank?.name || "-"}</p>
+                  <p className="text-xs text-slate-500">Fórmula {selectedProd.formula?.name || "-"} | Cubeta {selectedProd.tank?.name || "-"}</p>
                 </div>
                 <button onClick={() => setSelectedProd(null)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
               </div>
@@ -2488,7 +2488,7 @@ export default function TabProduccion({
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-black text-slate-950">Iniciar segunda fase</h3>
-                  <p className="text-xs text-slate-500">{secondPhaseTarget.name} | Tipo {secondPhaseTarget.productType}</p>
+                  <p className="text-xs text-slate-500">{secondPhaseTarget.name} | Fórmula {secondPhaseTarget.formula?.name || "-"}</p>
                 </div>
                 <button onClick={() => setShowSecondPhaseModal(false)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
               </div>
@@ -2614,7 +2614,7 @@ export default function TabProduccion({
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-black text-slate-950">Iniciar fase 3: extraccion</h3>
-                  <p className="text-xs text-slate-500">{thirdPhaseTarget.name} | Tipo {thirdPhaseTarget.productType}</p>
+                  <p className="text-xs text-slate-500">{thirdPhaseTarget.name} | Fórmula {thirdPhaseTarget.formula?.name || "-"}</p>
                 </div>
                 <button onClick={() => setShowThirdPhaseModal(false)} className="text-xl text-slate-400 hover:text-slate-700">x</button>
               </div>

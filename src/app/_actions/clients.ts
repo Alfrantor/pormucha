@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { ensureClientStateSchema } from "@/lib/client-schema";
+import { isMexicoState } from "@/lib/mexico-states";
 import { ensureSubscriptionScheduleSchema } from "@/lib/subscriptions";
 
 export async function createClient(data: {
@@ -12,6 +14,7 @@ export async function createClient(data: {
   rfc?: string;
   businessName?: string;
   zipCode?: string;
+  state?: string;
   classification?: string;
   creditLimit?: number;
   paymentTerms?: number;
@@ -21,8 +24,15 @@ export async function createClient(data: {
   giroId?: string;
 }) {
   try {
+    await ensureClientStateSchema();
+
     const normalizedEmail = data.email?.trim() || null;
     const normalizedBusinessName = data.businessName?.trim() || null;
+    const normalizedState = data.state?.trim() || null;
+
+    if (!isMexicoState(normalizedState)) {
+      return { error: "Selecciona un estado válido de México." };
+    }
 
     const client = await db.client.create({
       data: {
@@ -33,6 +43,7 @@ export async function createClient(data: {
         rfc: data.rfc?.trim().toUpperCase() || null,
         businessName: normalizedBusinessName,
         zipCode: data.zipCode?.trim() || null,
+        state: normalizedState,
         classification: data.classification || "MINORISTA",
         creditLimit: data.creditLimit ? parseFloat(data.creditLimit.toString()) : 0,
         paymentTerms: data.paymentTerms,
@@ -71,6 +82,7 @@ export async function updateClient(
     rfc?: string;
     businessName?: string;
     zipCode?: string;
+    state?: string;
     classification?: string;
     creditLimit?: number;
     paymentTerms?: number;
@@ -83,6 +95,14 @@ export async function updateClient(
   },
 ) {
   try {
+    await ensureClientStateSchema();
+
+    const normalizedState = data.state !== undefined ? data.state.trim() || null : undefined;
+
+    if (data.state !== undefined && !isMexicoState(normalizedState)) {
+      return { error: "Selecciona un estado válido de México." };
+    }
+
     const normalizedData = {
       ...data,
       fullName: data.fullName?.trim(),
@@ -91,6 +111,7 @@ export async function updateClient(
       rfc: data.rfc !== undefined ? data.rfc.trim().toUpperCase() || null : undefined,
       businessName: data.businessName !== undefined ? data.businessName.trim() || null : undefined,
       zipCode: data.zipCode !== undefined ? data.zipCode.trim() || null : undefined,
+      state: normalizedState,
       contactName: data.contactName !== undefined ? data.contactName.trim() || null : undefined,
       contactPhone: data.contactPhone !== undefined ? data.contactPhone.trim() || null : undefined,
       contactEmail: data.contactEmail !== undefined ? data.contactEmail.trim() || null : undefined,
@@ -125,6 +146,7 @@ export async function updateClient(
 
 export async function getClient(id: string) {
   try {
+    await ensureClientStateSchema();
     await ensureSubscriptionScheduleSchema();
 
     return await db.client.findUnique({

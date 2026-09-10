@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { ensureCrmSchema } from "@/lib/crm-schema";
 import { NextResponse } from "next/server";
 import { Resend } from 'resend';
 
@@ -30,11 +31,22 @@ export async function POST(req: Request) {
         }
 
         // --- SI PASA LA PRUEBA, CONTINÚA CON EL FLUJO NORMAL ---
+        await ensureCrmSchema();
 
         // 4. Intentar crear el lead en Neon
         const subscriber = await db.lead.create({
             data: { name, email, phone }
         });
+
+        await db.$executeRaw`
+            UPDATE "Lead"
+            SET "source" = 'WEB',
+                "stage" = 'NEW',
+                "status" = 'ACTIVE',
+                "interest" = 'Prelanzamiento / web',
+                "updatedAt" = ${new Date()}
+            WHERE "id" = ${subscriber.id}
+        `;
 
         // 5. Si se creó con éxito, enviar tu correo de bienvenida personalizado
         await resend.emails.send({

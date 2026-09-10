@@ -24,6 +24,7 @@ model Client {
   businessName          String?               // Razón Social (para jurídicas)
   curp                  String?               // CURP (para personas físicas) — en desuso, no se muestra en UI
   zipCode               String?               // Código postal
+  state                 String?               // Estado de México para segmentación CRM
 
   // Clasificación comercial
   classification        String                @default("MINORISTA") // MINORISTA | MAYORISTA | DISTRIBUIDOR
@@ -62,6 +63,7 @@ model Client {
   credits               Credit[]
   interactions          ClientInteraction[]
   flavorDiscounts       FlavorDiscount[]      @relation("FlavorDiscountClient")
+  leads                 Lead[]
 
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
@@ -482,11 +484,59 @@ model OrderPayment {
 }
 
 model Lead {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  phone     String?
-  createdAt DateTime @default(now())
+  id             String         @id @default(cuid())
+  name           String
+  email          String         @unique
+  phone          String?
+  company        String?
+  personType     String?        // PERSONA | EMPRESA
+  source         String         @default("WEB") // WEB | MANUAL | INSTAGRAM | WHATSAPP | REFERIDO | OTRO
+  state          String?
+  city           String?
+  interest       String?
+  stage          String         @default("NEW") // NEW | FIRST_CONTACT | INTERESTED | SAMPLE_SENT | NEGOTIATION | CONVERTED | LOST
+  status         String         @default("ACTIVE") // ACTIVE | CONVERTED | LOST | ARCHIVED
+  responsible    String?
+  responsibleUserId String?
+  responsibleName String?
+  createdByUserId String?
+  createdByName   String?
+  firstContactAt DateTime?
+  lastContactAt  DateTime?
+  nextFollowUpAt DateTime?
+  sampleSentAt   DateTime?
+  convertedAt    DateTime?
+  lostAt         DateTime?
+  lostReason     String?
+  clientId       String?
+  client         Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  activities     LeadActivity[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([stage])
+  @@index([status])
+  @@index([source])
+  @@index([state])
+  @@index([clientId])
+}
+
+model LeadActivity {
+  id             String   @id @default(cuid())
+  leadId         String
+  lead           Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  type           String   // CALL | WHATSAPP | EMAIL | MEETING | SAMPLE | QUOTE | NOTE | PURCHASE
+  note           String
+  outcome        String?
+  nextFollowUpAt DateTime?
+  createdBy      String?
+  createdByUserId String?
+  createdByName   String?
+  createdAt      DateTime @default(now())
+
+  @@index([leadId])
+  @@index([type])
+  @@index([nextFollowUpAt])
 }
 
 model RawMaterial {

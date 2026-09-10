@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { ensureClientStateSchema } from "@/lib/client-schema";
+import { ensureCrmSchema } from "@/lib/crm-schema";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { ArrowLeft, MapPin, CreditCard, MessageSquare } from "lucide-react";
@@ -18,16 +20,53 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
     redirect("/perfil");
   }
 
-  const client = await db.client.findUnique({
-    where: { id },
-    include: {
-      addresses: true,
-      orders: { orderBy: { createdAt: "desc" }, take: 10 },
-      credits: { orderBy: { createdAt: "desc" }, take: 10 },
-      interactions: { orderBy: { createdAt: "desc" }, take: 20 },
-      flavorDiscounts: true,
-    },
-  });
+  await ensureClientStateSchema();
+  await ensureCrmSchema();
+
+  const [client, crmLeads] = await Promise.all([
+    db.client.findUnique({
+      where: { id },
+      include: {
+        addresses: true,
+        orders: { orderBy: { createdAt: "desc" }, take: 10 },
+        credits: { orderBy: { createdAt: "desc" }, take: 10 },
+        interactions: { orderBy: { createdAt: "desc" }, take: 20 },
+        flavorDiscounts: true,
+      },
+    }),
+    db.$queryRaw<any[]>`
+      SELECT
+        l."id",
+        l."name",
+        l."source",
+        l."stage",
+        l."status",
+        l."createdAt",
+        l."convertedAt",
+        l."responsibleName",
+        COALESCE(
+          (
+            SELECT json_agg(activity_row ORDER BY activity_row."createdAt" DESC)
+            FROM (
+              SELECT
+                a."id",
+                a."type",
+                a."note",
+                a."createdByName",
+                a."createdAt"
+              FROM "LeadActivity" a
+              WHERE a."leadId" = l."id"
+              ORDER BY a."createdAt" DESC
+              LIMIT 20
+            ) activity_row
+          ),
+          '[]'::json
+        ) AS "activities"
+      FROM "Lead" l
+      WHERE l."clientId" = ${id}
+      ORDER BY l."convertedAt" DESC NULLS LAST, l."createdAt" DESC
+    `.catch(() => []),
+  ]);
 
   if (!client) {
     return (
@@ -67,7 +106,8 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
               <Field label="Correo" value={client.email || "-"} />
               <Field label="Teléfono" value={client.phone || "-"} />
               <Field label="RFC" value={client.rfc || "-"} mono />
-              <Field label="Estado" value={client.status} />
+              <Field label="Estado" value={client.state || client.addresses.find((address) => address.isDefault)?.state || "-"} />
+              <Field label="Estatus" value={client.status} />
             </div>
           </section>
 
@@ -108,6 +148,43 @@ export default async function ClientDetailPage({ params }: ClientDetailPageProps
               )}
             </div>
           </section>
+
+          {crmLeads.length > 0 ? (
+            <section className="rounded-[1.8rem] border border-amber-200 bg-amber-50 p-6 shadow-sm">
+              <h2 className="text-xl font-black text-slate-950">Historial CRM</h2>
+              <p className="mt-1 text-sm text-amber-800">Este cliente viene de un lead convertido y conserva su seguimiento comercial.</p>
+              <div className="mt-5 space-y-4">
+                {crmLeads.map((lead: any) => (
+                  <div key={lead.id} className="rounded-3xl border border-amber-200 bg-white p-4">
+                    <div className="grid gap-3 sm:grid-cols-4">
+                      <Field label="Lead original" value={lead.name || "-"} />
+                      <Field label="Origen" value={lead.source || "-"} />
+                      <Field label="Convertido" value={lead.convertedAt ? new Date(lead.convertedAt).toLocaleDateString("es-MX") : "-"} />
+                      <Field label="Responsable" value={lead.responsibleName || "-"} />
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {Array.isArray(lead.activities) && lead.activities.length > 0 ? (
+                        lead.activities.map((activity: any) => (
+                          <div key={activity.id} className="rounded-2xl bg-slate-50 p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">{activity.type}</p>
+                              <p className="text-xs font-semibold text-slate-400">
+                                {new Date(activity.createdAt).toLocaleDateString("es-MX")}
+                                {activity.createdByName ? ` · ${activity.createdByName}` : ""}
+                              </p>
+                            </div>
+                            <p className="mt-2 text-sm font-semibold text-slate-700">{activity.note}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Sin interacciones CRM registradas.</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </div>
 
         <div className="space-y-6">

@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { ClientsTable } from "@/components/admin/ClientsTable";
+import { ensureClientStateSchema } from "@/lib/client-schema";
 import { ensureSubscriptionScheduleSchema } from "@/lib/subscriptions";
 
 interface ClientsPageProps {
@@ -12,14 +13,15 @@ interface ClientsPageProps {
 }
 
 export default async function ClientsPage({ searchParams }: ClientsPageProps) {
-  await ensureSubscriptionScheduleSchema();
-
   const { sessionClaims } = await auth();
   const role = (sessionClaims?.metadata as any)?.role;
 
   if (role !== "admin") {
     redirect("/perfil");
   }
+
+  await ensureClientStateSchema();
+  await ensureSubscriptionScheduleSchema();
 
   const resolvedParams = await searchParams;
   const search = resolvedParams?.search;
@@ -33,6 +35,7 @@ export default async function ClientsPage({ searchParams }: ClientsPageProps) {
       { email: { contains: search, mode: "insensitive" } },
       { rfc: { contains: search, mode: "insensitive" } },
       { businessName: { contains: search, mode: "insensitive" } },
+      { state: { contains: search, mode: "insensitive" } },
     ];
   }
 

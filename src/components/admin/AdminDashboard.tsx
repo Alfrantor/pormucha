@@ -744,6 +744,7 @@ export function TabPedidos({
   const cancelledCount = localOrders.filter(o => o.status === "CANCELLED").length;
   const posCount       = localOrders.filter(o => o.channel === "POS" && o.status !== "CANCELLED").length;
   const webCount       = localOrders.filter(o => o.channel !== "POS" && o.status !== "CANCELLED").length;
+  const isCourtesyOrder = (order: any) => order.paymentMethod === "COURTESY" || Number(order.total || 0) <= 0;
   const getOrderRemaining = (order: any) => Math.max(0, Number(order.total || 0) - Number(order.amountPaid || 0));
   const isOrderSettled = (order: any) => Number(order.total || 0) > 0 && getOrderRemaining(order) <= 0.01;
   const isOrderPartiallyPaid = (order: any) => !isOrderSettled(order) && Number(order.amountPaid || 0) > 0;
@@ -759,7 +760,7 @@ export function TabPedidos({
     if (isOrderPartiallyPaid(order)) return "bg-orange-50 text-orange-700 border-orange-100";
     return "bg-amber-50 text-amber-600 border-amber-100";
   };
-  const unpaidCount    = localOrders.filter(o => o.status !== "CANCELLED" && !isOrderSettled(o)).length;
+  const unpaidCount    = localOrders.filter(o => o.status !== "CANCELLED" && !isCourtesyOrder(o) && !isOrderSettled(o)).length;
   const webOrders = localOrders.filter(o => o.channel !== "POS" && o.status !== "CANCELLED");
   const webNoLabelCount = webOrders.filter(o => !hasShippingLabel(o)).length;
   const webReadyCount = webOrders.filter(o => hasShippingLabel(o) && !isOrderShipped(o)).length;
@@ -782,7 +783,7 @@ export function TabPedidos({
 
         // Canal
         if (channelFilter === "CANCELLED") return order.status === "CANCELLED";
-        if (channelFilter === "UNPAID") return order.status !== "CANCELLED" && !isOrderSettled(order);
+        if (channelFilter === "UNPAID") return order.status !== "CANCELLED" && !isCourtesyOrder(order) && !isOrderSettled(order);
         if (channelFilter === "POS") return order.channel === "POS" && order.status !== "CANCELLED";
         if (channelFilter === "WEB") return order.channel !== "POS" && order.status !== "CANCELLED";
         return true;

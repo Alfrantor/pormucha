@@ -25,6 +25,7 @@ function humanizeAdminPath(pathname: string) {
     "web-insights": "Insights Web",
     "web-design": "Diseño web",
     leads: "Leads",
+    crm: "CRM",
     pricing: "Precios",
   };
 
