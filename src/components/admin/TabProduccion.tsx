@@ -746,14 +746,6 @@ export default function TabProduccion({
     }
   }, [view, finalBlendProductionDate]);
 
-  const addIngredientRow = () => {
-    setIngredients((prev) => [...prev, { rawMaterialId: "", quantity: 0, locationId: safeLocations[0]?.id || "" }]);
-  };
-
-  const removeIngredientRow = (index: number) => {
-    setIngredients((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
   const addNewFlavorComponentRow = () => {
     setNewFlavorComponentRows((prev) => [...prev, { recipeType: "", sourceId: "", brixOverride: "" }]);
   };
@@ -2196,50 +2188,44 @@ export default function TabProduccion({
                 )}
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center justify-between">
+                  <div>
                     <p className="text-sm font-black text-slate-900">{isFlavorProductionFormula ? "Insumos del saborizante" : "Fórmula inicial"}</p>
-                    <button onClick={addIngredientRow} className="text-xs font-bold text-blue-700 hover:underline">Agregar insumo</button>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
                     {isFlavorProductionFormula
                       ? "Estos insumos salen de la fórmula de saborizante y se calculan con los litros a producir."
-                      : "Puedes capturar los insumos manualmente para este proceso."}
+                      : "Estos insumos salen de la fórmula seleccionada y se calculan con los litros a producir."}
                   </p>
                   <div className="mt-4 space-y-2">
-                    {ingredients.map((ing, index) => (
-                      <div key={index} className="flex gap-2">
-                        <select
-                          value={ing.rawMaterialId}
-                          onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, rawMaterialId: e.target.value } : row))}
-                          className="flex-1 rounded-lg border p-2 text-xs"
-                        >
-                          <option value="">Insumo</option>
-                          {safeRM.filter((rm: any) => !rm.isArchived).map((rm: any) => (
-                            <option key={rm.id} value={rm.id}>{rm.name} ({rm.unit})</option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={ing.quantity || ""}
-                          onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, quantity: Number(e.target.value) } : row))}
-                          className="w-24 rounded-lg border p-2 text-xs text-center"
-                          placeholder="Cant."
-                        />
+                    {ingredients.map((ing, index) => {
+                      const material = safeRM.find((rm: any) => rm.id === ing.rawMaterialId);
+                      return (
+                      <div key={`${ing.rawMaterialId}-${index}`} className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[1fr_140px_190px]">
+                        <div>
+                          <p className="text-sm font-bold text-slate-950">{material?.name || "Insumo de fórmula"}</p>
+                          <p className="mt-1 text-xs text-slate-500">Calculado automáticamente desde la fórmula.</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-center">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Cantidad</p>
+                          <p className="mt-1 text-sm font-black text-slate-900">
+                            {Number(ing.quantity || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} {material?.unit || ""}
+                          </p>
+                        </div>
                         {safeLocations.length > 0 && (
-                          <select
-                            value={ing.locationId}
-                            onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, locationId: e.target.value } : row))}
-                            className="w-36 rounded-lg border p-2 text-xs"
-                          >
-                            {safeLocations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
-                          </select>
+                          <Field label="Almacén de salida">
+                            <select
+                              value={ing.locationId}
+                              onChange={(e) => setIngredients((prev) => prev.map((row, idx) => idx === index ? { ...row, locationId: e.target.value } : row))}
+                              className="w-full rounded-lg border p-2 text-xs"
+                            >
+                              {safeLocations.map((loc: any) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                            </select>
+                          </Field>
                         )}
-                        <button onClick={() => removeIngredientRow(index)} className="rounded-lg px-2 text-red-500 hover:bg-red-50">x</button>
                       </div>
-                    ))}
-                    {ingredients.length === 0 && <p className="text-xs italic text-slate-400">Sin insumos cargados aún</p>}
+                      );
+                    })}
+                    {ingredients.length === 0 && <p className="text-xs italic text-slate-400">Esta fórmula no tiene insumos configurados.</p>}
                   </div>
                 </div>
 
