@@ -42,8 +42,14 @@ const sections: SectionGroup[] = [
       { href: "/admin/subscriptions", title: "Suscriptores", desc: "Club, ciclos y envíos", icon: <Repeat size={20} />, accent: "bg-emerald-50 text-emerald-700" },
       { href: "/admin/web-insights", title: "Insights Web", desc: "Estados, suscripciones y ventas online", icon: <BarChart3 size={20} />, accent: "bg-sky-50 text-sky-700" },
       { href: "/admin/email", title: "Correo", desc: "Promociones para leads y clientes", icon: <Mail size={20} />, accent: "bg-orange-50 text-orange-700" },
-      { href: "/admin/crm", title: "CRM", desc: "Leads, prospectos y seguimiento", icon: <Users size={20} />, accent: "bg-amber-50 text-amber-700" },
       { href: "/admin/web-design", title: "Diseño web", desc: "CMS y contenido editable", icon: <PenTool size={20} />, accent: "bg-rose-50 text-rose-700" },
+    ],
+  },
+  {
+    title: "Herramientas de venta",
+    description: "Seguimiento comercial, leads, prospectos y conversiones a clientes.",
+    items: [
+      { href: "/admin/crm", title: "Leads / CRM", desc: "Prospectos, seguimiento y conversión", icon: <Users size={20} />, accent: "bg-amber-50 text-amber-700" },
     ],
   },
   {
@@ -63,7 +69,6 @@ const sections: SectionGroup[] = [
       { href: "/admin/production", title: "Producción", desc: "Fermentados, lotes y parámetros", icon: <FlaskConical size={20} />, accent: "bg-lime-50 text-lime-700" },
       { href: "/admin/production?tab=etiquetado", title: "Etiquetado", desc: "Botellas, etiquetas y salida", icon: <Tag size={20} />, accent: "bg-orange-50 text-orange-700" },
       { href: "/admin/catalog/formulas", title: "Recetas", desc: "Fórmulas y preparación", icon: <FlaskConical size={20} />, accent: "bg-teal-50 text-teal-700" },
-      { href: "/admin/inventory/transfers", title: "Traspasos", desc: "Movimientos entre almacenes", icon: <Truck size={20} />, accent: "bg-sky-50 text-sky-700" },
       { href: "/admin/inventory", title: "Inventarios", desc: "Stock, materia prima y resguardos", icon: <Boxes size={20} />, accent: "bg-purple-50 text-purple-700" },
     ],
   },
@@ -72,6 +77,7 @@ const sections: SectionGroup[] = [
     description: "Registros maestros, permisos y reglas base del sistema.",
     items: [
       { href: "/admin/catalog", title: "Catálogos", desc: "Productos, fórmulas, tanques y plantas", icon: <LayoutGrid size={20} />, accent: "bg-slate-100 text-slate-800" },
+      { href: "/admin/inventory/transfers", title: "Traspasos", desc: "Movimientos entre almacenes", icon: <Truck size={20} />, accent: "bg-sky-50 text-sky-700" },
       { href: "/admin/users", title: "Usuarios", desc: "Equipo interno, roles y PIN NFC", icon: <ShieldCheck size={20} />, accent: "bg-stone-100 text-stone-800" },
     ],
   },

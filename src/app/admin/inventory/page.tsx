@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Boxes, FlaskConical, Package2, Truck, ArrowRight } from "lucide-react";
+import { Boxes, FlaskConical, Package2, ArrowRight } from "lucide-react";
 
 const SECTIONS = [
   {
@@ -23,13 +23,6 @@ const SECTIONS = [
     icon: <Boxes size={20} />,
     accent: "bg-amber-50 text-amber-700",
   },
-  {
-    href: "/admin/inventory/transfers",
-    title: "Traspasos",
-    desc: "Movimientos entre almacenes y recepciones pendientes",
-    icon: <Truck size={20} />,
-    accent: "bg-sky-50 text-sky-700",
-  },
 ];
 
 export default async function InventoryPage() {
@@ -39,11 +32,11 @@ export default async function InventoryPage() {
         <p className="text-[10px] font-black uppercase tracking-[0.35em] text-slate-400">Operación</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Inventarios</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-          Entra al tipo de existencia que quieres revisar o mover: producto terminado, bebida base, materia prima o traspasos.
+          Entra al tipo de existencia que quieres revisar o mover: producto terminado, bebida base o materia prima.
         </p>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {SECTIONS.map((item) => (
           <Link
             key={item.href}

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Plus, X, Pencil, Archive, PackageOpen, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
+import { X, Pencil, Archive, PackageOpen, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   createRawMaterial,
@@ -51,12 +51,6 @@ export function TabMateriasPrimas({ rawMaterials: initial, locations }: { rawMat
       .filter(m => (showArchived ? m.isArchived : !m.isArchived))
       .filter(m => !q || m.name.toLowerCase().includes(q) || (m.category || "").toLowerCase().includes(q));
   }, [materials, search, showArchived]);
-
-  const openCreate = () => {
-    setEditing(null);
-    setForm({ ...EMPTY_FORM });
-    setModalOpen(true);
-  };
 
   const openEdit = (mat: any) => {
     setEditing(mat);
@@ -165,12 +159,6 @@ export function TabMateriasPrimas({ rawMaterials: initial, locations }: { rawMat
           >
             {showArchived ? "Ver activos" : "Ver archivados"}
           </button>
-          <button
-            onClick={openCreate}
-            className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-black uppercase rounded-xl hover:bg-gray-700 transition-all"
-          >
-            <Plus size={13} /> Nuevo material
-          </button>
         </div>
       </div>
 
@@ -194,7 +182,7 @@ export function TabMateriasPrimas({ rawMaterials: initial, locations }: { rawMat
           <div className="py-20 text-center text-gray-400">
             <PackageOpen size={40} className="mx-auto mb-3 opacity-30" />
             <p className="font-bold text-sm">{search ? "Sin resultados" : "No hay materiales aún"}</p>
-            {!search && <p className="text-xs mt-1">Crea el primero con "+ Nuevo material"</p>}
+            {!search && <p className="text-xs mt-1">Agrega materias primas desde el catálogo para controlar existencias aquí.</p>}
           </div>
         ) : (
           <table className="w-full text-sm">

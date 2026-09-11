@@ -221,6 +221,15 @@ export default function TabProduccion({
   const [newProdStart, setNewProdStart] = useState(() => new Date().toISOString().slice(0, 16));
   const [newProdStartedLiters, setNewProdStartedLiters] = useState("");
   const [newProdNotes, setNewProdNotes] = useState("");
+  const [newFlavorTargetBrix, setNewFlavorTargetBrix] = useState("");
+  const [newFlavorScoobyPercent, setNewFlavorScoobyPercent] = useState("");
+  const [newFlavorAcidifierPercent, setNewFlavorAcidifierPercent] = useState("");
+  const [newFlavorSweetTeaBaseLiters, setNewFlavorSweetTeaBaseLiters] = useState("3.6");
+  const [newFlavorSweetTeaReferenceLiters, setNewFlavorSweetTeaReferenceLiters] = useState("19");
+  const [newFlavorComponentRows, setNewFlavorComponentRows] = useState<Array<{ recipeType: "SCOOBY" | "ACIDIFIER" | ""; sourceId: string; brixOverride: string }>>([
+    { recipeType: "SCOOBY", sourceId: "", brixOverride: "" },
+    { recipeType: "ACIDIFIER", sourceId: "", brixOverride: "" },
+  ]);
   const [ingredients, setIngredients] = useState<IngredientInput[]>([]);
   const [prodSaving, setProdSaving] = useState(false);
   const [prodError, setProdError] = useState("");
@@ -550,6 +559,8 @@ export default function TabProduccion({
 
   const selectedFormula = (newProdType ? formulasByCode.get(newProdType) : null) || formulaOptions[0] || null;
   const profile = profileFromFormula(selectedFormula, newProdType);
+  const selectedFormulaRecipeType = selectedFormula?.recipeType || null;
+  const isFlavorProductionFormula = selectedFormulaRecipeType === "FLAVOR";
   const selectedTankForNewProd = availableTanks.find((tank: any) => tank.id === newProdTank) || null;
   const generatedProdName = newProdTank
     ? formatProductionName(newProdStart, selectedTankForNewProd?.name, selectedFormula?.name || "Formula")
@@ -568,6 +579,88 @@ export default function TabProduccion({
           calculatedQuantity: Number(item.gramsPerLiter || 0) * newProdBatchLiters,
         }))
     : [];
+  const newFlavorTargetBrixValue = Number(newFlavorTargetBrix || 0);
+  const newFlavorScoobyLiters = newProdBatchLiters * (Number(newFlavorScoobyPercent || 0) / 100);
+  const newFlavorAcidifierLiters = newProdBatchLiters * (Number(newFlavorAcidifierPercent || 0) / 100);
+  const newFlavorSweetTeaLiters =
+    Number(newFlavorSweetTeaReferenceLiters || 0) > 0
+      ? (Number(newFlavorSweetTeaBaseLiters || 0) * newProdBatchLiters) / Number(newFlavorSweetTeaReferenceLiters || 0)
+      : 0;
+  const newFlavorWaterLiters = Math.max(
+    newProdBatchLiters - newFlavorScoobyLiters - newFlavorAcidifierLiters - newFlavorSweetTeaLiters,
+    0
+  );
+  const newFlavorWaterPercent = newProdBatchLiters > 0 ? (newFlavorWaterLiters / newProdBatchLiters) * 100 : 0;
+  const newFlavorSweetTeaPercent = newProdBatchLiters > 0 ? (newFlavorSweetTeaLiters / newProdBatchLiters) * 100 : 0;
+  const newFlavorObjectiveSugarGrams =
+    newProdBatchLiters > 0 && newFlavorTargetBrixValue > 0 ? newProdBatchLiters * newFlavorTargetBrixValue * 10 : 0;
+  const newFlavorComponentOptions = baseLotOptions.filter((option: any) => option.recipeType === "SCOOBY" || option.recipeType === "ACIDIFIER");
+  const newFlavorResolvedRows = newFlavorComponentRows.reduce(
+    (acc: {
+      rows: Array<{
+        key: string;
+        sourceId: string;
+        label: string;
+        recipeType: string | null;
+        liters: number;
+        availableLiters: number | null;
+        brix: number | null;
+      }>;
+      used: Record<string, number>;
+    }, row, index) => {
+      const selected = newFlavorComponentOptions.find((option: any) => option.id === row.sourceId);
+      const recipeType = row.recipeType || selected?.recipeType || null;
+      const requiredLiters =
+        recipeType === "SCOOBY"
+          ? newFlavorScoobyLiters
+          : recipeType === "ACIDIFIER"
+            ? newFlavorAcidifierLiters
+            : 0;
+      const usedBefore = recipeType ? Number(acc.used[recipeType] || 0) : 0;
+      const remainingRequired = Math.max(requiredLiters - usedBefore, 0);
+      const availableLiters = selected?.litersRemaining != null ? Number(selected.litersRemaining) : null;
+      const allocatedLiters = recipeType ? (selected ? Math.min(remainingRequired, availableLiters ?? remainingRequired) : remainingRequired) : 0;
+      const manualBrix = row.brixOverride.trim() ? Number(row.brixOverride) : null;
+      const brix = manualBrix != null && Number.isFinite(manualBrix) ? manualBrix : selected?.brix ?? null;
+
+      if (recipeType) {
+        acc.used[recipeType] = usedBefore + allocatedLiters;
+      }
+
+      acc.rows.push({
+        key: `new-flavor-component-${index}`,
+        sourceId: row.sourceId,
+        label: selected?.label || "Lote en resguardo",
+        recipeType,
+        liters: allocatedLiters,
+        availableLiters,
+        brix,
+      });
+      return acc;
+    },
+    { rows: [], used: {} }
+  ).rows;
+  const getNewFlavorWeightedBrix = (recipeType: "SCOOBY" | "ACIDIFIER") => {
+    const rows = newFlavorResolvedRows.filter((row) => row.sourceId && row.recipeType === recipeType && row.liters > 0 && row.brix != null);
+    const liters = rows.reduce((sum, row) => sum + row.liters, 0);
+    return liters > 0 ? rows.reduce((sum, row) => sum + row.liters * Number(row.brix || 0), 0) / liters : 0;
+  };
+  const newFlavorScoobyAllocatedLiters = newFlavorResolvedRows
+    .filter((row) => row.sourceId && row.recipeType === "SCOOBY")
+    .reduce((sum, row) => sum + row.liters, 0);
+  const newFlavorAcidifierAllocatedLiters = newFlavorResolvedRows
+    .filter((row) => row.sourceId && row.recipeType === "ACIDIFIER")
+    .reduce((sum, row) => sum + row.liters, 0);
+  const newFlavorScoobyShortageLiters = Math.max(newFlavorScoobyLiters - newFlavorScoobyAllocatedLiters, 0);
+  const newFlavorAcidifierShortageLiters = Math.max(newFlavorAcidifierLiters - newFlavorAcidifierAllocatedLiters, 0);
+  const newFlavorScoobyBrixValue = getNewFlavorWeightedBrix("SCOOBY");
+  const newFlavorAcidifierBrixValue = getNewFlavorWeightedBrix("ACIDIFIER");
+  const newFlavorScoobySugarGrams = newFlavorScoobyBrixValue > 0 ? newFlavorScoobyBrixValue * 0.8 * 10 : 0;
+  const newFlavorAcidifierSugarGrams = newFlavorAcidifierBrixValue > 0 ? newFlavorAcidifierBrixValue * 0.8 * 10 : 0;
+  const newFlavorSweetTeaSugarGrams = Math.max(
+    newFlavorObjectiveSugarGrams - newFlavorScoobySugarGrams - newFlavorAcidifierSugarGrams,
+    0
+  );
   const currentParamCheck = evaluateProductionParametersWithFormula(selectedProd?.formula, selectedProd?.productType || "A", {
     ph: parseNum(paramPh),
     brix: parseNum(paramBrix),
@@ -631,6 +724,13 @@ export default function TabProduccion({
   }, [newProdType, formulaOptions]);
 
   useEffect(() => {
+    if (selectedFormula?.recipeType === "FLAVOR") {
+      const targetBrix = selectedFormula.brixMax != null ? Number(selectedFormula.brixMax) : Number(selectedFormula.brixMin || 0);
+      setNewFlavorTargetBrix(targetBrix > 0 ? String(targetBrix) : "");
+    }
+  }, [selectedFormula?.id, selectedFormula?.recipeType, selectedFormula?.brixMax, selectedFormula?.brixMin]);
+
+  useEffect(() => {
     if (newProdTank && !availableTanks.some((tank: any) => tank.id === newProdTank)) {
       setNewProdTank("");
     }
@@ -652,6 +752,16 @@ export default function TabProduccion({
 
   const removeIngredientRow = (index: number) => {
     setIngredients((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const addNewFlavorComponentRow = () => {
+    setNewFlavorComponentRows((prev) => [...prev, { recipeType: "", sourceId: "", brixOverride: "" }]);
+  };
+
+  const removeNewFlavorComponentRow = (index: number) => {
+    setNewFlavorComponentRows((prev) =>
+      prev.length > 1 ? prev.filter((_, rowIndex) => rowIndex !== index) : [{ recipeType: "", sourceId: "", brixOverride: "" }]
+    );
   };
 
   const handleCreateProd = async () => {
@@ -704,6 +814,15 @@ export default function TabProduccion({
     setNewProdStart(new Date().toISOString().slice(0, 16));
     setNewProdStartedLiters("");
     setNewProdNotes("");
+    setNewFlavorTargetBrix("");
+    setNewFlavorScoobyPercent("");
+    setNewFlavorAcidifierPercent("");
+    setNewFlavorSweetTeaBaseLiters("3.6");
+    setNewFlavorSweetTeaReferenceLiters("19");
+    setNewFlavorComponentRows([
+      { recipeType: "SCOOBY", sourceId: "", brixOverride: "" },
+      { recipeType: "ACIDIFIER", sourceId: "", brixOverride: "" },
+    ]);
     setIngredients([]);
     toast.success("Proceso iniciado.");
     router.refresh();
@@ -1814,7 +1933,7 @@ export default function TabProduccion({
 
       {showCreateProd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
             <div className="space-y-5 p-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-black text-slate-950">Nueva producción</h3>
@@ -1852,7 +1971,7 @@ export default function TabProduccion({
                   <Field label="Inicio">
                     <input type="datetime-local" value={newProdStart} onChange={(e) => setNewProdStart(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
                   </Field>
-                  <Field label="Litros iniciales (L)">
+                  <Field label={isFlavorProductionFormula ? "Litros objetivos (L)" : "Litros iniciales (L)"}>
                     <input type="number" min="0" step="0.1" value={newProdStartedLiters} onChange={(e) => setNewProdStartedLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
                   </Field>
                 </div>
@@ -1863,13 +1982,228 @@ export default function TabProduccion({
                   Los litros iniciales sirven para calcular insumos y comparar la merma o ganancia al cierre.
                 </p>
 
+                {!isFlavorProductionFormula && selectedFormula && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-emerald-950">Parámetros de la fórmula</p>
+                        <p className="mt-1 text-xs text-emerald-800">
+                          Estos valores salen del catálogo de fórmulas y se usan como referencia para iniciar el lote.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-emerald-700">
+                        {selectedFormula.recipeType === "SCOOBY" ? "Scooby" : "Acidificante"}
+                      </span>
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <CalcChip label="Tipo de té" value={selectedFormula.teaType || "-"} />
+                      <CalcChip label="Té total" value={formatBatchQuantity(projectedTeaTotal, "g")} />
+                      <CalcChip label="Azúcar total" value={formatBatchQuantity(projectedSugarTotal, "g")} />
+                      <CalcChip label="Cultivo inicial" value={`${Number(selectedFormula.yeastPitchRatePercent || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}% · ${formatBatchQuantity(projectedStarterLiters, "L")}`} />
+                      <CalcChip label="Agua cocción" value={`${Number(selectedFormula.brewWaterPercent || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}% · ${formatBatchQuantity(projectedHotWater, "L")}`} />
+                      <CalcChip label="Agua fría estimada" value={formatBatchQuantity(projectedColdWater, "L")} />
+                      <CalcChip label="pH objetivo" value={`${Number(selectedFormula.phMin || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} - ${Number(selectedFormula.phMax || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}`} />
+                      <CalcChip label="Brix objetivo" value={`${Number(selectedFormula.brixMin || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} - ${Number(selectedFormula.brixMax || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}`} />
+                      <CalcChip label="TTA objetivo" value={`${Number(selectedFormula.acidityMin || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} - ${Number(selectedFormula.acidityMax || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}`} />
+                      <CalcChip label="Temperatura" value={`${Number(selectedFormula.temperatureMin || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} - ${Number(selectedFormula.temperatureMax || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} °C`} />
+                    </div>
+                  </div>
+                )}
+
+                {isFlavorProductionFormula && (
+                  <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-amber-950">Calculadora de saborizante</p>
+                        <p className="mt-1 text-xs text-amber-800">
+                          Calcula scoby, acidificante, té azucarado, agua y azúcar antes de iniciar esta producción.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">
+                        Objetivo {newFlavorObjectiveSugarGrams.toLocaleString("es-MX", { maximumFractionDigits: 1 })} g
+                      </span>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                      <Field label="Brix objetivo final">
+                        <input type="number" step="0.01" value={newFlavorTargetBrix} onChange={(e) => setNewFlavorTargetBrix(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
+                      </Field>
+                      <Field label="Azúcar objetivo (g)">
+                        <input readOnly value={newFlavorObjectiveSugarGrams.toLocaleString("es-MX", { maximumFractionDigits: 2 })} className="w-full rounded-lg border bg-slate-50 p-2 text-sm text-center font-bold text-slate-700" />
+                      </Field>
+                      <Field label="Té azucarado base (L)">
+                        <input type="number" min="0" step="0.01" value={newFlavorSweetTeaBaseLiters} onChange={(e) => setNewFlavorSweetTeaBaseLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
+                      </Field>
+                      <Field label="Scoby %">
+                        <input type="number" min="0" step="0.01" value={newFlavorScoobyPercent} onChange={(e) => setNewFlavorScoobyPercent(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
+                      </Field>
+                      <Field label="Acidificante %">
+                        <input type="number" min="0" step="0.01" value={newFlavorAcidifierPercent} onChange={(e) => setNewFlavorAcidifierPercent(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
+                      </Field>
+                      <Field label="Referencia té (L)">
+                        <input type="number" min="0" step="0.01" value={newFlavorSweetTeaReferenceLiters} onChange={(e) => setNewFlavorSweetTeaReferenceLiters(e.target.value)} className="w-full rounded-lg border p-2 text-sm text-center" />
+                      </Field>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-black text-slate-950">Componentes del saborizante</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Agrega lotes o tanques en resguardo. Los litros se reparten automáticamente hasta cubrir Scoby y Acidificante.
+                          </p>
+                        </div>
+                        <button type="button" onClick={addNewFlavorComponentRow} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">
+                          Agregar componente
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-4">
+                        <CalcChip label="Scoby requerido" value={formatBatchQuantity(newFlavorScoobyLiters, "L")} />
+                        <CalcChip label="Acidificante requerido" value={formatBatchQuantity(newFlavorAcidifierLiters, "L")} />
+                        <CalcChip label="Té azucarado" value={formatBatchQuantity(newFlavorSweetTeaLiters, "L")} />
+                        <CalcChip label="Agua" value={formatBatchQuantity(newFlavorWaterLiters, "L")} />
+                      </div>
+
+                      <div className="mt-4 space-y-3">
+                        {newFlavorComponentRows.map((row, index) => {
+                          const resolved = newFlavorResolvedRows[index];
+                          const filteredComponentOptions = row.recipeType
+                            ? newFlavorComponentOptions.filter((option: any) => option.recipeType === row.recipeType)
+                            : newFlavorComponentOptions;
+                          return (
+                            <div key={`new-flavor-row-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                              <div className="grid gap-3 md:grid-cols-[150px_1fr_120px_120px_auto]">
+                                <Field label="Tipo">
+                                  <select
+                                    value={row.recipeType}
+                                    onChange={(e) =>
+                                      setNewFlavorComponentRows((prev) =>
+                                        prev.map((entry, rowIndex) =>
+                                          rowIndex === index
+                                            ? { recipeType: e.target.value as "SCOOBY" | "ACIDIFIER" | "", sourceId: "", brixOverride: "" }
+                                            : entry,
+                                        ),
+                                      )
+                                    }
+                                    className="w-full rounded-lg border p-2 text-sm"
+                                  >
+                                    <option value="">Selecciona</option>
+                                    <option value="SCOOBY">Scoby</option>
+                                    <option value="ACIDIFIER">Acidificante</option>
+                                  </select>
+                                </Field>
+                                <Field label="Fuente base">
+                                  <select
+                                    value={row.sourceId}
+                                    onChange={(e) =>
+                                      setNewFlavorComponentRows((prev) =>
+                                        prev.map((entry, rowIndex) =>
+                                          rowIndex === index ? { ...entry, sourceId: e.target.value, brixOverride: "" } : entry,
+                                        ),
+                                      )
+                                    }
+                                    className="w-full rounded-lg border p-2 text-sm"
+                                  >
+                                    <option value="">Selecciona</option>
+                                    {filteredComponentOptions.map((option: any) => (
+                                      <option key={option.id} value={option.id}>
+                                        {option.label} · {Number(option.litersRemaining || 0).toLocaleString("es-MX")} Lt{option.brix == null ? " · falta Brix" : ""}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </Field>
+                                <Field label="Litros">
+                                  <input
+                                    value={Number(resolved?.liters || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}
+                                    readOnly
+                                    className="w-full rounded-lg border bg-white p-2 text-sm text-center font-semibold text-slate-700"
+                                  />
+                                </Field>
+                                <Field label="Brix">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={row.brixOverride}
+                                    placeholder={resolved?.brix != null ? Number(resolved.brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "Brix"}
+                                    onChange={(e) =>
+                                      setNewFlavorComponentRows((prev) =>
+                                        prev.map((entry, rowIndex) => (rowIndex === index ? { ...entry, brixOverride: e.target.value } : entry)),
+                                      )
+                                    }
+                                    className="w-full rounded-lg border p-2 text-sm text-center"
+                                  />
+                                </Field>
+                                <div className="flex items-end">
+                                  <button type="button" onClick={() => removeNewFlavorComponentRow(index)} className="rounded-lg bg-rose-100 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-200">
+                                    Quitar
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+                                <span>Fuente: {resolved?.label || "-"}</span>
+                                {resolved?.recipeType && <span>Tipo: {resolved.recipeType === "SCOOBY" ? "Scoby" : "Acidificante"}</span>}
+                                {resolved?.availableLiters != null && <span>Disponible: {Number(resolved.availableLiters).toLocaleString("es-MX")} Lt</span>}
+                                <span>Litros asignados: {Number(resolved?.liters || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} Lt</span>
+                                <span>Aporte de brix: {resolved?.brix != null ? Number(resolved.brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "falta lectura"}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {(newFlavorScoobyShortageLiters > 0 || newFlavorAcidifierShortageLiters > 0) && (
+                        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">
+                          {newFlavorScoobyShortageLiters > 0 && (
+                            <p>Faltan {newFlavorScoobyShortageLiters.toLocaleString("es-MX", { maximumFractionDigits: 2 })} Lt de Scoby por asignar.</p>
+                          )}
+                          {newFlavorAcidifierShortageLiters > 0 && (
+                            <p>Faltan {newFlavorAcidifierShortageLiters.toLocaleString("es-MX", { maximumFractionDigits: 2 })} Lt de Acidificante por asignar.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[720px] text-left text-sm">
+                        <thead className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">
+                          <tr>
+                            <th className="px-3 py-2">Componente</th>
+                            <th className="px-3 py-2">%</th>
+                            <th className="px-3 py-2">Litros</th>
+                            <th className="px-3 py-2">Brix</th>
+                            <th className="px-3 py-2">Azúcar</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-amber-200">
+                          <BlendCalcRow label="Scoby" percent={Number(newFlavorScoobyPercent || 0)} liters={newFlavorScoobyLiters} brix={newFlavorScoobyBrixValue > 0 ? newFlavorScoobyBrixValue : null} sugarGrams={newFlavorScoobySugarGrams} />
+                          <BlendCalcRow label="Acidificante" percent={Number(newFlavorAcidifierPercent || 0)} liters={newFlavorAcidifierLiters} brix={newFlavorAcidifierBrixValue > 0 ? newFlavorAcidifierBrixValue : null} sugarGrams={newFlavorAcidifierSugarGrams} />
+                          <BlendCalcRow label="Té azucarado" percent={newFlavorSweetTeaPercent} liters={newFlavorSweetTeaLiters} brix={null} sugarGrams={newFlavorSweetTeaSugarGrams} />
+                          <BlendCalcRow label="Agua" percent={newFlavorWaterPercent} liters={newFlavorWaterLiters} brix={null} sugarGrams={0} />
+                        </tbody>
+                        <tfoot className="border-t border-amber-300 font-black text-amber-950">
+                          <tr>
+                            <td className="px-3 py-3">Total</td>
+                            <td className="px-3 py-3">100%</td>
+                            <td className="px-3 py-3">{newProdBatchLiters.toLocaleString("es-MX", { maximumFractionDigits: 2 })} L</td>
+                            <td className="px-3 py-3">Objetivo {newFlavorTargetBrixValue.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-3 py-3">{newFlavorObjectiveSugarGrams.toLocaleString("es-MX", { maximumFractionDigits: 2 })} g</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-black text-slate-900">Fórmula inicial</p>
+                    <p className="text-sm font-black text-slate-900">{isFlavorProductionFormula ? "Insumos del saborizante" : "Fórmula inicial"}</p>
                     <button onClick={addIngredientRow} className="text-xs font-bold text-blue-700 hover:underline">Agregar insumo</button>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    Puedes capturar los insumos manualmente para este proceso.
+                    {isFlavorProductionFormula
+                      ? "Estos insumos salen de la fórmula de saborizante y se calculan con los litros a producir."
+                      : "Puedes capturar los insumos manualmente para este proceso."}
                   </p>
                   <div className="mt-4 space-y-2">
                     {ingredients.map((ing, index) => (
