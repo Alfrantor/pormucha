@@ -1547,7 +1547,9 @@ export default function TabProduccion({
                         <span className="text-sm text-slate-600">{fmtDate(production.startedAt)}</span>
                         <span className="text-sm text-slate-600">{metrics.readyAt ? fmtDate(metrics.readyAt) : "-"}</span>
                         <span className={`text-sm font-bold ${remainingColorClass}`}>
-                          {remainingHours != null
+                          {production.status === "COMPLETED"
+                            ? "Listo"
+                            : remainingHours != null
                             ? remainingHours > 0
                               ? formatDayCounter(remainingHours / 24, "remaining")
                               : "Listo"
