@@ -47,6 +47,21 @@ function parseNum(value: string) {
   return Number.isNaN(n) ? undefined : n;
 }
 
+function mexicoCityDateTimeInput(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Mexico_City",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    hour12: false,
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+}
+
 function findRawMaterialByKeywords(rawMaterials: any[], keywords: string[]) {
   return rawMaterials.find((item: any) => {
     const haystack = `${item?.name || ""} ${item?.category || ""}`.toLowerCase();
@@ -218,7 +233,7 @@ export default function TabProduccion({
 
   const [newProdType, setNewProdType] = useState<string>("");
   const [newProdTank, setNewProdTank] = useState("");
-  const [newProdStart, setNewProdStart] = useState(() => new Date().toISOString().slice(0, 16));
+  const [newProdStart, setNewProdStart] = useState(() => mexicoCityDateTimeInput());
   const [newProdStartedLiters, setNewProdStartedLiters] = useState("");
   const [newProdNotes, setNewProdNotes] = useState("");
   const [newFlavorTargetBrix, setNewFlavorTargetBrix] = useState("");
@@ -239,7 +254,7 @@ export default function TabProduccion({
   const [paramTemp, setParamTemp] = useState("");
   const [paramAcid, setParamAcid] = useState("");
   const [paramNotes, setParamNotes] = useState("");
-  const [paramDate, setParamDate] = useState(() => new Date().toISOString().slice(0, 16));
+  const [paramDate, setParamDate] = useState(() => mexicoCityDateTimeInput());
   const [paramSaving, setParamSaving] = useState(false);
   const [paramError, setParamError] = useState("");
 
@@ -260,7 +275,7 @@ export default function TabProduccion({
   const [phase2ReceivedBy, setPhase2ReceivedBy] = useState("");
   const [phase2MeasuredBy, setPhase2MeasuredBy] = useState("");
   const [phase2StartedBy, setPhase2StartedBy] = useState(userEmail || "");
-  const [phase2Date, setPhase2Date] = useState(() => new Date().toISOString().slice(0, 16));
+  const [phase2Date, setPhase2Date] = useState(() => mexicoCityDateTimeInput());
   const [phase2ReceivedLiters, setPhase2ReceivedLiters] = useState("");
   const [phase2Ph, setPhase2Ph] = useState("");
   const [phase2Brix, setPhase2Brix] = useState("");
@@ -270,7 +285,7 @@ export default function TabProduccion({
   const [phase2Saving, setPhase2Saving] = useState(false);
   const [phase2Error, setPhase2Error] = useState("");
   const [phase2Additions, setPhase2Additions] = useState<IngredientInput[]>([]);
-  const [phase3Date, setPhase3Date] = useState(() => new Date().toISOString().slice(0, 16));
+  const [phase3Date, setPhase3Date] = useState(() => mexicoCityDateTimeInput());
   const [phase3RemainingLiters, setPhase3RemainingLiters] = useState("");
   const [phase3Ph, setPhase3Ph] = useState("");
   const [phase3Brix, setPhase3Brix] = useState("");
@@ -572,7 +587,7 @@ export default function TabProduccion({
   const projectedSugarTotal = Number(selectedFormula?.sugarGramsPerLiter || 0) * newProdBatchLiters;
   const projectedStarterLiters = newProdBatchLiters * (Number(selectedFormula?.yeastPitchRatePercent || 0) / 100);
   const projectedHotWater = newProdBatchLiters * (Number(selectedFormula?.brewWaterPercent || 0) / 100);
-  const projectedColdWater = Math.max(0, newProdBatchLiters - projectedHotWater);
+  const projectedColdWater = Math.max(0, newProdBatchLiters - projectedStarterLiters - projectedHotWater);
   const projectedBlendItems = Array.isArray(selectedFormula?.blendItems)
     ? selectedFormula.blendItems
         .filter((item: any) => item?.rawMaterialId || item?.freeTextName)
@@ -729,8 +744,21 @@ export default function TabProduccion({
     if (selectedFormula?.recipeType === "FLAVOR") {
       const targetBrix = selectedFormula.brixMax != null ? Number(selectedFormula.brixMax) : Number(selectedFormula.brixMin || 0);
       setNewFlavorTargetBrix(targetBrix > 0 ? String(targetBrix) : "");
+      setNewFlavorScoobyPercent(selectedFormula.finalScoobyPercent != null ? String(selectedFormula.finalScoobyPercent) : "");
+      setNewFlavorAcidifierPercent(selectedFormula.finalAcidifierPercent != null ? String(selectedFormula.finalAcidifierPercent) : "");
+      setNewFlavorSweetTeaBaseLiters(selectedFormula.finalSweetTeaBaseLiters != null ? String(selectedFormula.finalSweetTeaBaseLiters) : "3.6");
+      setNewFlavorSweetTeaReferenceLiters(selectedFormula.finalSweetTeaReferenceLiters != null ? String(selectedFormula.finalSweetTeaReferenceLiters) : "19");
     }
-  }, [selectedFormula?.id, selectedFormula?.recipeType, selectedFormula?.brixMax, selectedFormula?.brixMin]);
+  }, [
+    selectedFormula?.id,
+    selectedFormula?.recipeType,
+    selectedFormula?.brixMax,
+    selectedFormula?.brixMin,
+    selectedFormula?.finalScoobyPercent,
+    selectedFormula?.finalAcidifierPercent,
+    selectedFormula?.finalSweetTeaBaseLiters,
+    selectedFormula?.finalSweetTeaReferenceLiters,
+  ]);
 
   useEffect(() => {
     if (newProdTank && !availableTanks.some((tank: any) => tank.id === newProdTank)) {
@@ -744,7 +772,7 @@ export default function TabProduccion({
 
   useEffect(() => {
     if (view === "final" && !finalBlendProductionDate) {
-      setFinalBlendProductionDate(new Date().toISOString().slice(0, 16));
+      setFinalBlendProductionDate(mexicoCityDateTimeInput());
     }
   }, [view, finalBlendProductionDate]);
 
@@ -815,7 +843,7 @@ export default function TabProduccion({
     setShowCreateProd(false);
     setNewProdType(formulaOptions[0]?.code || "");
     setNewProdTank("");
-    setNewProdStart(new Date().toISOString().slice(0, 16));
+    setNewProdStart(mexicoCityDateTimeInput());
     setNewProdStartedLiters("");
     setNewProdNotes("");
     setNewFlavorTargetBrix("");
@@ -901,7 +929,7 @@ export default function TabProduccion({
     setProdView("complete");
     setCompleteError("");
     setCompletionDestination("BUCKET");
-    setPhase3Date(new Date().toISOString().slice(0, 16));
+    setPhase3Date(mexicoCityDateTimeInput());
     setPhase3RemainingLiters("");
     setPhase3Ph("");
     setPhase3Brix("");
@@ -1039,7 +1067,7 @@ export default function TabProduccion({
     setPhase2ReceivedBy("");
     setPhase2MeasuredBy("");
     setPhase2StartedBy(userEmail || "");
-    setPhase2Date(new Date().toISOString().slice(0, 16));
+    setPhase2Date(mexicoCityDateTimeInput());
     setPhase2ReceivedLiters("");
     setPhase2Ph("");
     setPhase2Brix("");
@@ -1117,7 +1145,7 @@ export default function TabProduccion({
       : null;
 
     setThirdPhaseTarget(prod);
-    setPhase3Date(new Date().toISOString().slice(0, 16));
+    setPhase3Date(mexicoCityDateTimeInput());
     setPhase3RemainingLiters(phase3?.remainingLiters != null ? String(Number(phase3.remainingLiters)) : "");
     setPhase3Ph(phase3?.ph != null ? String(Number(phase3.ph)) : "");
     setPhase3Brix(phase3?.brix != null ? String(Number(phase3.brix)) : "");
@@ -1253,7 +1281,7 @@ export default function TabProduccion({
   };
 
   const resetFinalBlendForm = () => {
-    setFinalBlendProductionDate(new Date().toISOString().slice(0, 16));
+    setFinalBlendProductionDate(mexicoCityDateTimeInput());
     setFinalBlendFlavorFormulaId("");
     setFinalBlendTargetLiters("");
     setFinalBlendTargetBrix("");
@@ -1735,20 +1763,18 @@ export default function TabProduccion({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-amber-200">
-                      <BlendCalcRow label="Scoby" percent={Number(finalBlendScoobyPercent || 0)} liters={finalBlendScoobyLiters} brix={finalBlendScoobyBrix} sugarGrams={finalBlendScoobySugarGrams} />
-                      <BlendCalcRow label="Acidificante" percent={Number(finalBlendAcidifierPercent || 0)} liters={finalBlendAcidifierLiters} brix={finalBlendAcidifierBrix} sugarGrams={finalBlendAcidifierSugarGrams} />
-                      <BlendCalcRow label="Té azucarado" percent={finalBlendTargetLitersValue > 0 ? (finalBlendSweetTeaLiters / finalBlendTargetLitersValue) * 100 : 0} liters={finalBlendSweetTeaLiters} brix={null} sugarGrams={finalBlendSweetTeaSugarGrams} />
-                      <BlendCalcRow label="Agua" percent={finalBlendCalculatedWaterPercent} liters={finalBlendCalculatedWaterLiters} brix={null} sugarGrams={0} />
-                    </tbody>
-                    <tfoot className="border-t border-amber-300 font-black text-amber-950">
-                      <tr>
+                      <tr className="border-b border-amber-300 bg-amber-100/50 font-black text-amber-950">
                         <td className="px-3 py-3">Total</td>
                         <td className="px-3 py-3">100%</td>
                         <td className="px-3 py-3">{finalBlendTargetLitersValue.toLocaleString("es-MX", { maximumFractionDigits: 2 })} L</td>
                         <td className="px-3 py-3">Objetivo {finalBlendTargetBrixValue.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</td>
                         <td className="px-3 py-3">{finalBlendObjectiveSugarGrams.toLocaleString("es-MX", { maximumFractionDigits: 2 })} g</td>
                       </tr>
-                    </tfoot>
+                      <BlendCalcRow label="Scoby" percent={Number(finalBlendScoobyPercent || 0)} liters={finalBlendScoobyLiters} brix={finalBlendScoobyBrix} sugarGrams={finalBlendScoobySugarGrams} />
+                      <BlendCalcRow label="Acidificante" percent={Number(finalBlendAcidifierPercent || 0)} liters={finalBlendAcidifierLiters} brix={finalBlendAcidifierBrix} sugarGrams={finalBlendAcidifierSugarGrams} />
+                      <BlendCalcRow label="Té azucarado" percent={finalBlendTargetLitersValue > 0 ? (finalBlendSweetTeaLiters / finalBlendTargetLitersValue) * 100 : 0} liters={finalBlendSweetTeaLiters} brix={null} sugarGrams={finalBlendSweetTeaSugarGrams} />
+                      <BlendCalcRow label="Agua" percent={finalBlendCalculatedWaterPercent} liters={finalBlendCalculatedWaterLiters} brix={null} sugarGrams={0} />
+                    </tbody>
                   </table>
                 </div>
               </div>
@@ -2193,20 +2219,18 @@ export default function TabProduccion({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-amber-200">
-                          <BlendCalcRow label="Scoby" percent={Number(newFlavorScoobyPercent || 0)} liters={newFlavorScoobyLiters} brix={newFlavorScoobyBrixValue > 0 ? newFlavorScoobyBrixValue : null} sugarGrams={newFlavorScoobySugarGrams} />
-                          <BlendCalcRow label="Acidificante" percent={Number(newFlavorAcidifierPercent || 0)} liters={newFlavorAcidifierLiters} brix={newFlavorAcidifierBrixValue > 0 ? newFlavorAcidifierBrixValue : null} sugarGrams={newFlavorAcidifierSugarGrams} />
-                          <BlendCalcRow label="Té azucarado" percent={newFlavorSweetTeaPercent} liters={newFlavorSweetTeaLiters} brix={null} sugarGrams={newFlavorSweetTeaSugarGrams} />
-                          <BlendCalcRow label="Agua" percent={newFlavorWaterPercent} liters={newFlavorWaterLiters} brix={null} sugarGrams={0} />
-                        </tbody>
-                        <tfoot className="border-t border-amber-300 font-black text-amber-950">
-                          <tr>
+                          <tr className="border-b border-amber-300 bg-amber-100/50 font-black text-amber-950">
                             <td className="px-3 py-3">Total</td>
                             <td className="px-3 py-3">100%</td>
                             <td className="px-3 py-3">{newProdBatchLiters.toLocaleString("es-MX", { maximumFractionDigits: 2 })} L</td>
                             <td className="px-3 py-3">Objetivo {newFlavorTargetBrixValue.toLocaleString("es-MX", { maximumFractionDigits: 2 })}</td>
                             <td className="px-3 py-3">{newFlavorObjectiveSugarGrams.toLocaleString("es-MX", { maximumFractionDigits: 2 })} g</td>
                           </tr>
-                        </tfoot>
+                          <BlendCalcRow label="Scoby" percent={Number(newFlavorScoobyPercent || 0)} liters={newFlavorScoobyLiters} brix={newFlavorScoobyBrixValue > 0 ? newFlavorScoobyBrixValue : null} sugarGrams={newFlavorScoobySugarGrams} />
+                          <BlendCalcRow label="Acidificante" percent={Number(newFlavorAcidifierPercent || 0)} liters={newFlavorAcidifierLiters} brix={newFlavorAcidifierBrixValue > 0 ? newFlavorAcidifierBrixValue : null} sugarGrams={newFlavorAcidifierSugarGrams} />
+                          <BlendCalcRow label="Té azucarado" percent={newFlavorSweetTeaPercent} liters={newFlavorSweetTeaLiters} brix={null} sugarGrams={newFlavorSweetTeaSugarGrams} />
+                          <BlendCalcRow label="Agua" percent={newFlavorWaterPercent} liters={newFlavorWaterLiters} brix={null} sugarGrams={0} />
+                        </tbody>
                       </table>
                     </div>
                   </div>

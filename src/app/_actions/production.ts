@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { createClerkClient } from "@clerk/backend";
 import { db } from "@/lib/db";
+import { parseMexicoCityDateTime } from "@/lib/mexico-time";
 import { formatProductionName } from "@/lib/production-naming";
 import { revalidatePath } from "next/cache";
 
@@ -538,7 +539,7 @@ export async function createProduction(
           name: productionName,
           productType,
           tankId,
-          startedAt: new Date(startedAt),
+          startedAt: parseMexicoCityDateTime(startedAt),
           notes: notes?.trim() || null,
           createdBy: createdBy || null,
           ingredients: {
@@ -716,7 +717,7 @@ export async function recordProductionParameter(
         acidity: acidity != null ? acidity : null,
         notes: notes?.trim() || null,
         recordedBy: derivedRecordedBy,
-        measuredAt: measuredAt ? new Date(measuredAt) : new Date(),
+        measuredAt: measuredAt ? parseMexicoCityDateTime(measuredAt) : new Date(),
       },
     });
 

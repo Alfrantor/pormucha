@@ -620,7 +620,7 @@ export function TabPedidos({
   const openCancel = (order: any) => {
     setCancelTarget(order);
     setCancelStep("confirm");
-    setReturnStock(true);
+    setReturnStock(null);
     setDoReplacement(null);
     setCancelNote("");
   };
@@ -631,7 +631,7 @@ export function TabPedidos({
     setCancelLoading(true);
     const res = await cancelOrder(
       cancelTarget.id,
-      true,
+      returnStock === true,
       doReplacement ?? false,
       cancelNote || undefined
     );
@@ -1951,11 +1951,35 @@ export function TabPedidos({
                   <p className="font-black text-gray-900">${Number(cancelTarget.total).toLocaleString("es-MX")}</p>
                 </div>
                 <div className="space-y-2">
-                  <button onClick={() => setCancelStep("replacement")} className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-2xl font-black uppercase transition-all active:scale-95">
+                  <button onClick={() => setCancelStep("stock")} className="w-full bg-red-500 hover:bg-red-600 text-white py-3 rounded-2xl font-black uppercase transition-all active:scale-95">
                     Sí, cancelar orden
                   </button>
                   <button onClick={closeCancel} className="w-full py-3 text-sm text-gray-400 font-bold hover:text-gray-700">
                     Volver
+                  </button>
+                </div>
+              </>
+            )}
+
+            {cancelStep === "stock" && (
+              <>
+                <div className="text-center space-y-2">
+                  <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 flex items-center justify-center text-2xl">📦</div>
+                  <h3 className="text-xl font-black text-gray-800">¿Regresar bebidas al inventario?</h3>
+                  <p className="text-sm text-gray-500">Elige si las bebidas de esta orden deben volver a la existencia de la ubicación de venta.</p>
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => { setReturnStock(true); setCancelStep("replacement"); }}
+                    className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-2xl font-black transition-all active:scale-95"
+                  >
+                    ✅ Sí, regresar al inventario
+                  </button>
+                  <button
+                    onClick={() => { setReturnStock(false); setCancelStep("replacement"); }}
+                    className="w-full border-2 border-gray-200 py-3 rounded-2xl font-black text-gray-600 hover:bg-gray-50 transition-all"
+                  >
+                    ❌ No, no regresar
                   </button>
                 </div>
               </>

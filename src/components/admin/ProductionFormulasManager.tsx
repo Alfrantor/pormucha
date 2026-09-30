@@ -405,8 +405,8 @@ export default function ProductionFormulasManager({
   const totalTea = Number(currentFormula?.teaGramsPerLiter || 0) * litersToCalculate;
   const totalSugar = Number(currentFormula?.sugarGramsPerLiter || 0) * litersToCalculate;
   const hotWater = litersToCalculate * (Number(currentFormula?.brewWaterPercent || 0) / 100);
-  const coldWater = Math.max(0, litersToCalculate - hotWater);
   const starterLiters = litersToCalculate * (Number(currentFormula?.yeastPitchRatePercent || 0) / 100);
+  const coldWater = Math.max(0, litersToCalculate - starterLiters - hotWater);
   const totalShare = (currentFormula?.blendItems || []).reduce((sum, item) => sum + Number(item.sharePercent || 0), 0);
   const blendIngredientRows = (currentFormula?.blendItems || [])
     .map((item, index) => ({ item, index }))

@@ -25,6 +25,7 @@ export async function cancelOrder(
 ): Promise<{ success: boolean; replacementOrderId?: string; error?: string }> {
   const { sessionClaims } = await auth();
   const role = (sessionClaims?.metadata as any)?.role;
+  const actorEmail = (sessionClaims as { email?: string } | null)?.email || "admin";
   if (role !== "admin" && role !== "vendedor") {
     return { success: false, error: "Sin permisos" };
   }
@@ -59,9 +60,16 @@ export async function cancelOrder(
       }
 
       // 2. Regresar stock automáticamente al cancelar
-      if (order.locationId) {
+      if (returnStock && order.locationId) {
         for (const item of order.orderItems) {
-          for (const comp of item.composition) {
+          const components = item.composition.length > 0
+            ? item.composition
+            : item.flavorId
+              ? [{ flavorId: item.flavorId, quantity: 1 }]
+              : [];
+
+          for (const comp of components) {
+            const quantity = comp.quantity * item.quantity;
             await tx.stock.upsert({
               where: {
                 flavorId_locationId: {
@@ -69,11 +77,22 @@ export async function cancelOrder(
                   locationId: order.locationId!,
                 },
               },
-              update: { quantity: { increment: comp.quantity * item.quantity } },
+              update: { quantity: { increment: quantity } },
               create: {
                 flavorId: comp.flavorId,
                 locationId: order.locationId!,
-                quantity: comp.quantity * item.quantity,
+                quantity,
+              },
+            });
+
+            await tx.inventoryMovement.create({
+              data: {
+                flavorId: comp.flavorId,
+                locationId: order.locationId!,
+                type: "IN",
+                quantity,
+                reason: `Cancelación de orden #${orderId.slice(-6).toUpperCase()} | Devolución de venta`,
+                userId: actorEmail,
               },
             });
           }

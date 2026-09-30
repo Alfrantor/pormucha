@@ -2,6 +2,7 @@
 
 import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
+import { parseMexicoCityDateTime } from "@/lib/mexico-time";
 import { revalidatePath } from "next/cache";
 
 async function ensureProductionPhaseTable(client: typeof db) {
@@ -85,7 +86,7 @@ export async function createProductionSecondPhase(data: {
         INSERT INTO "ProductionPhaseRecord"
         ("id","productionId","phase","receivedCondition","receivedBy","measuredBy","startedBy","measuredAt","ph","brix","temperature","acidity","notes","createdAt","receivedLiters")
         VALUES
-        (${randomUUID()}, ${data.productionId}, 2, ${data.receivedCondition || null}, ${data.receivedBy || null}, ${data.measuredBy || null}, ${data.startedBy || null}, ${data.measuredAt ? new Date(data.measuredAt) : new Date()}, ${data.ph ?? null}, ${data.brix ?? null}, ${data.temperature ?? null}, ${data.acidity ?? null}, ${data.notes || null}, NOW(), ${data.receivedLiters ?? null})
+        (${randomUUID()}, ${data.productionId}, 2, ${data.receivedCondition || null}, ${data.receivedBy || null}, ${data.measuredBy || null}, ${data.startedBy || null}, ${data.measuredAt ? parseMexicoCityDateTime(data.measuredAt) : new Date()}, ${data.ph ?? null}, ${data.brix ?? null}, ${data.temperature ?? null}, ${data.acidity ?? null}, ${data.notes || null}, NOW(), ${data.receivedLiters ?? null})
       `;
 
       for (const addition of validAdditions) {
@@ -207,7 +208,7 @@ export async function createProductionThirdPhase(data: {
       INSERT INTO "ProductionPhaseRecord"
       ("id","productionId","phase","startedBy","measuredAt","ph","brix","temperature","acidity","remainingLiters","notes","createdAt")
       VALUES
-      (${randomUUID()}, ${data.productionId}, 3, ${data.startedBy || null}, ${data.measuredAt ? new Date(data.measuredAt) : new Date()}, ${data.ph}, ${data.brix}, ${data.temperature}, ${data.acidity}, ${data.remainingLiters}, ${data.notes || null}, NOW())
+        (${randomUUID()}, ${data.productionId}, 3, ${data.startedBy || null}, ${data.measuredAt ? parseMexicoCityDateTime(data.measuredAt) : new Date()}, ${data.ph}, ${data.brix}, ${data.temperature}, ${data.acidity}, ${data.remainingLiters}, ${data.notes || null}, NOW())
     `;
 
     revalidatePath("/admin/production");
