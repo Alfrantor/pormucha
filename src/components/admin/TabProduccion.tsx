@@ -233,6 +233,7 @@ export default function TabProduccion({
 
   const [newProdType, setNewProdType] = useState<string>("");
   const [newProdTank, setNewProdTank] = useState("");
+  const [newProdTankSearch, setNewProdTankSearch] = useState("");
   const [newProdStart, setNewProdStart] = useState(() => mexicoCityDateTimeInput());
   const [newProdStartedLiters, setNewProdStartedLiters] = useState("");
   const [newProdNotes, setNewProdNotes] = useState("");
@@ -843,6 +844,7 @@ export default function TabProduccion({
     setShowCreateProd(false);
     setNewProdType(formulaOptions[0]?.code || "");
     setNewProdTank("");
+    setNewProdTankSearch("");
     setNewProdStart(mexicoCityDateTimeInput());
     setNewProdStartedLiters("");
     setNewProdNotes("");
@@ -2008,12 +2010,23 @@ export default function TabProduccion({
                     </select>
                   </Field>
                   <Field label="Cubeta">
-                    <select value={newProdTank} onChange={(e) => setNewProdTank(e.target.value)} className="w-full rounded-lg border p-2 text-sm">
-                      <option value="">Selecciona</option>
+                    <input
+                      list="production-tank-options"
+                      value={newProdTankSearch}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const selectedTank = availableTanks.find((tank: any) => tank.name === value);
+                        setNewProdTankSearch(value);
+                        setNewProdTank(selectedTank?.id || "");
+                      }}
+                      placeholder="Escribe para buscar una cubeta"
+                      className="w-full rounded-lg border p-2 text-sm"
+                    />
+                    <datalist id="production-tank-options">
                       {availableTanks.map((tank: any) => (
-                        <option key={tank.id} value={tank.id}>{tank.name}</option>
+                        <option key={tank.id} value={tank.name} />
                       ))}
-                    </select>
+                    </datalist>
                   </Field>
                   <Field label="Inicio">
                     <input type="datetime-local" value={newProdStart} onChange={(e) => setNewProdStart(e.target.value)} className="w-full rounded-lg border p-2 text-sm" />
@@ -3132,7 +3145,7 @@ function BlendCalcRow({
     <tr className="text-slate-700">
       <td className="px-3 py-2 font-bold text-slate-950">{label}</td>
       <td className="px-3 py-2">{Number(percent || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}%</td>
-      <td className="px-3 py-2">{Number(liters || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} L</td>
+      <td className="px-3 py-2">{Number(liters || 0).toLocaleString("es-MX", { maximumFractionDigits: 4 })} L</td>
       <td className="px-3 py-2">{brix != null ? Number(brix).toLocaleString("es-MX", { maximumFractionDigits: 2 }) : "-"}</td>
       <td className="px-3 py-2">{Number(sugarGrams || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} g</td>
     </tr>
