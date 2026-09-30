@@ -1,14 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { Roboto } from "next/font/google";
 import { AdminShell } from "@/components/admin/AdminShell";
-
-const roboto = Roboto({
-  subsets: ["latin"],
-  variable: "--font-admin",
-  weight: ["400", "500", "700", "900"],
-  display: "swap",
-});
 
 export default async function AdminLayout({
   children,
@@ -24,7 +16,7 @@ export default async function AdminLayout({
   }
 
   return (
-    <div className={`${roboto.variable} admin-roboto`}>
+    <div className="admin-roboto">
       <AdminShell>{children}</AdminShell>
     </div>
   );

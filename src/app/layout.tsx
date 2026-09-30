@@ -1,25 +1,10 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
-import { Playfair_Display, Inter } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from '@clerk/nextjs'
 import { CartProvider } from "@/context/CartContext";
 import { Toaster } from "sonner";
 import FloatingCart from "@/components/FloatingCart";
-
-// Configuración de la fuente Serif (Títulos elegantes)
-const playfair = Playfair_Display({
-  subsets: ["latin"],
-  variable: "--font-serif",
-  display: "swap",
-});
-
-// Configuración de la fuente Sans (Cuerpo de texto limpio)
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-});
 
 // --- METADATA SEO Y OPEN GRAPH ACTUALIZADOS ---
 export const metadata: Metadata = {
@@ -75,7 +60,7 @@ export default function RootLayout({
       signUpUrl="/sign-up"
       signInFallbackRedirectUrl="/perfil"
     >
-      <html lang="es" className={`${playfair.variable} ${inter.variable}`}>
+        <html lang="es">
         <body className="antialiased font-sans bg-[#F5F2EB] text-[#1A1A1A]">
           {/* Mueve el CartProvider ADENTRO del body */}
           <CartProvider>

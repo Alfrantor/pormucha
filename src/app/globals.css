@@ -4,6 +4,8 @@
   --background: #F5F2EB; /* Color beige claro para el fondo */
   --foreground: #1A1A1A; /* Negro suave para texto */
   --accent: #8B3A28; /* Color teja/ladrillo para botones */
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-sans: Arial, Helvetica, sans-serif;
 }
 
 @theme inline {
@@ -11,14 +13,13 @@
   --color-foreground: var(--foreground);
   --color-accent: var(--accent);
   
-  /* Definimos las fuentes personalizadas */
-  --font-serif: var(--font-serif); 
-  --font-sans: var(--font-sans);
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-sans: Arial, Helvetica, sans-serif;
 }
 
 .admin-roboto {
-  --font-serif: var(--font-admin);
-  --font-sans: var(--font-admin);
+  --font-serif: Arial, Helvetica, sans-serif;
+  --font-sans: Arial, Helvetica, sans-serif;
 }
 
 /* Estilos base para una tipografía consistente */
