@@ -672,8 +672,8 @@ export default function TabProduccion({
   const newFlavorAcidifierShortageLiters = Math.max(newFlavorAcidifierLiters - newFlavorAcidifierAllocatedLiters, 0);
   const newFlavorScoobyBrixValue = getNewFlavorWeightedBrix("SCOOBY");
   const newFlavorAcidifierBrixValue = getNewFlavorWeightedBrix("ACIDIFIER");
-  const newFlavorScoobySugarGrams = newFlavorScoobyBrixValue > 0 ? newFlavorScoobyBrixValue * 0.8 * 10 : 0;
-  const newFlavorAcidifierSugarGrams = newFlavorAcidifierBrixValue > 0 ? newFlavorAcidifierBrixValue * 0.8 * 10 : 0;
+  const newFlavorScoobySugarGrams = newFlavorScoobyBrixValue > 0 ? newFlavorScoobyBrixValue * 0.8 * 10 * newFlavorScoobyAllocatedLiters : 0;
+  const newFlavorAcidifierSugarGrams = newFlavorAcidifierBrixValue > 0 ? newFlavorAcidifierBrixValue * 0.8 * 10 * newFlavorAcidifierAllocatedLiters : 0;
   const newFlavorSweetTeaSugarGrams = Math.max(
     newFlavorObjectiveSugarGrams - newFlavorScoobySugarGrams - newFlavorAcidifierSugarGrams,
     0
@@ -1263,9 +1263,9 @@ export default function TabProduccion({
   const finalBlendScoobyBrix = finalBlendResolvedRows.find((row) => row.recipeType === "SCOOBY")?.brix ?? null;
   const finalBlendAcidifierBrix = finalBlendResolvedRows.find((row) => row.recipeType === "ACIDIFIER")?.brix ?? null;
   const finalBlendScoobySugarGrams =
-    finalBlendScoobyBrix != null && Number.isFinite(Number(finalBlendScoobyBrix)) ? Number(finalBlendScoobyBrix) * 0.8 * 10 : 0;
+    finalBlendScoobyBrix != null && Number.isFinite(Number(finalBlendScoobyBrix)) ? Number(finalBlendScoobyBrix) * 0.8 * 10 * finalBlendScoobyLiters : 0;
   const finalBlendAcidifierSugarGrams =
-    finalBlendAcidifierBrix != null && Number.isFinite(Number(finalBlendAcidifierBrix)) ? Number(finalBlendAcidifierBrix) * 0.8 * 10 : 0;
+    finalBlendAcidifierBrix != null && Number.isFinite(Number(finalBlendAcidifierBrix)) ? Number(finalBlendAcidifierBrix) * 0.8 * 10 * finalBlendAcidifierLiters : 0;
   const finalBlendSweetTeaSugarGrams = Math.max(
     finalBlendObjectiveSugarGrams - finalBlendScoobySugarGrams - finalBlendAcidifierSugarGrams,
     0,
@@ -1515,7 +1515,9 @@ export default function TabProduccion({
                     const remainingHours = estimatedReadyAt ? (estimatedReadyAt.getTime() - Date.now()) / (1000 * 60 * 60) : null;
                     const remainingDays = remainingHours != null ? remainingHours / 24 : null;
                     const remainingColorClass =
-                      metrics.phase3 || remainingDays == null
+                      production.status === "COMPLETED"
+                        ? "text-emerald-600"
+                        : metrics.phase3 || remainingDays == null
                         ? "text-slate-600"
                         : remainingDays > 20
                           ? "text-slate-500"
@@ -1746,7 +1748,7 @@ export default function TabProduccion({
                   <div>
                     <p className="text-sm font-black text-amber-950">Cálculo de azúcar</p>
                     <p className="mt-1 text-xs text-amber-800">
-                      El objetivo usa litros por brix. Scoby y acidificante usan brix x 0.8 x 10. El té azucarado completa el azúcar faltante.
+                      El objetivo usa litros por brix. Scoby y acidificante usan brix x 0.8 x 10 x litros. El té azucarado completa el azúcar faltante.
                     </p>
                   </div>
                   <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">
