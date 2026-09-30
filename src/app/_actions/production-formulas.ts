@@ -32,6 +32,13 @@ async function ensureProductionFormulaColumns() {
     `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "brewWaterPercent" DECIMAL(65,30)`,
     `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "flavorJuicePercent" DECIMAL(65,30)`,
     `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "flavorItemName" TEXT`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "flavorId" TEXT`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalTargetBrix" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalScoobyPercent" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalAcidifierPercent" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalFlavorPercent" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalSweetTeaBaseLiters" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalSweetTeaReferenceLiters" DECIMAL(65,30)`,
     `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "co2GramsPerLiter" DECIMAL(65,30)`,
     `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "carbonationMethod" TEXT`,
     `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "f2ConditionDays" INTEGER`,
@@ -80,6 +87,13 @@ export async function saveProductionFormula(data: {
   blendItems?: BlendItemInput[];
   flavorJuicePercent?: number;
   flavorItemName?: string;
+  flavorId?: string;
+  finalTargetBrix?: number;
+  finalScoobyPercent?: number;
+  finalAcidifierPercent?: number;
+  finalFlavorPercent?: number;
+  finalSweetTeaBaseLiters?: number;
+  finalSweetTeaReferenceLiters?: number;
   co2GramsPerLiter?: number;
   carbonationMethod?: string;
   f2ConditionDays?: number;
@@ -110,6 +124,13 @@ export async function saveProductionFormula(data: {
     const brewWaterPercent = data.brewWaterPercent ?? null;
     const flavorJuicePercent = data.flavorJuicePercent ?? null;
     const flavorItemName = data.flavorItemName?.trim() || null;
+    const flavorId = data.flavorId?.trim() || null;
+    const finalTargetBrix = data.finalTargetBrix ?? null;
+    const finalScoobyPercent = data.finalScoobyPercent ?? null;
+    const finalAcidifierPercent = data.finalAcidifierPercent ?? null;
+    const finalFlavorPercent = data.finalFlavorPercent ?? null;
+    const finalSweetTeaBaseLiters = data.finalSweetTeaBaseLiters ?? null;
+    const finalSweetTeaReferenceLiters = data.finalSweetTeaReferenceLiters ?? null;
     const co2GramsPerLiter = data.co2GramsPerLiter ?? null;
     const carbonationMethod = data.carbonationMethod?.trim() || null;
     const f2ConditionDays = data.f2ConditionDays ?? null;
@@ -314,9 +335,9 @@ export async function saveProductionFormula(data: {
 
       await tx.$executeRaw`
         INSERT INTO "ProductionFormula"
-        ("id","code","name","recipeType","description","formulaSummary","teaType","teaGramsPerLiter","sugarGramsPerLiter","yeastPitchRatePercent","brewWaterPercent","flavorJuicePercent","flavorItemName","co2GramsPerLiter","carbonationMethod","f2ConditionDays","durationDays","durationHours","phMin","phMax","brixMin","brixMax","temperatureMin","temperatureMax","acidityMin","acidityMax","isActive","updatedByEmail","createdAt","updatedAt")
+        ("id","code","name","recipeType","description","formulaSummary","teaType","teaGramsPerLiter","sugarGramsPerLiter","yeastPitchRatePercent","brewWaterPercent","flavorJuicePercent","flavorItemName","flavorId","finalTargetBrix","finalScoobyPercent","finalAcidifierPercent","finalFlavorPercent","finalSweetTeaBaseLiters","finalSweetTeaReferenceLiters","co2GramsPerLiter","carbonationMethod","f2ConditionDays","durationDays","durationHours","phMin","phMax","brixMin","brixMax","temperatureMin","temperatureMax","acidityMin","acidityMax","isActive","updatedByEmail","createdAt","updatedAt")
         VALUES
-        (${formulaId}, ${data.code}, ${data.name.trim()}, ${recipeType}, NULL, ${formulaSummary || null}, ${teaType}, ${teaGramsPerLiter}, ${sugarGramsPerLiter}, ${yeastPitchRatePercent}, ${brewWaterPercent}, ${flavorJuicePercent}, ${flavorItemName}, ${co2GramsPerLiter}, ${carbonationMethod}, ${f2ConditionDays}, ${durationDays}, 0, ${phMin}, ${phMax}, ${brixTarget}, ${brixTarget}, ${temperatureMin}, ${temperatureMax}, ${ttaTarget}, ${ttaTarget}, true, ${updatedByEmail}, NOW(), NOW())
+        (${formulaId}, ${data.code}, ${data.name.trim()}, ${recipeType}, NULL, ${formulaSummary || null}, ${teaType}, ${teaGramsPerLiter}, ${sugarGramsPerLiter}, ${yeastPitchRatePercent}, ${brewWaterPercent}, ${flavorJuicePercent}, ${flavorItemName}, ${flavorId}, ${finalTargetBrix}, ${finalScoobyPercent}, ${finalAcidifierPercent}, ${finalFlavorPercent}, ${finalSweetTeaBaseLiters}, ${finalSweetTeaReferenceLiters}, ${co2GramsPerLiter}, ${carbonationMethod}, ${f2ConditionDays}, ${durationDays}, 0, ${phMin}, ${phMax}, ${brixTarget}, ${brixTarget}, ${temperatureMin}, ${temperatureMax}, ${ttaTarget}, ${ttaTarget}, true, ${updatedByEmail}, NOW(), NOW())
         ON CONFLICT ("code")
         DO UPDATE SET
           "name" = EXCLUDED."name",
@@ -330,6 +351,13 @@ export async function saveProductionFormula(data: {
           "brewWaterPercent" = EXCLUDED."brewWaterPercent",
           "flavorJuicePercent" = EXCLUDED."flavorJuicePercent",
           "flavorItemName" = EXCLUDED."flavorItemName",
+          "flavorId" = EXCLUDED."flavorId",
+          "finalTargetBrix" = EXCLUDED."finalTargetBrix",
+          "finalScoobyPercent" = EXCLUDED."finalScoobyPercent",
+          "finalAcidifierPercent" = EXCLUDED."finalAcidifierPercent",
+          "finalFlavorPercent" = EXCLUDED."finalFlavorPercent",
+          "finalSweetTeaBaseLiters" = EXCLUDED."finalSweetTeaBaseLiters",
+          "finalSweetTeaReferenceLiters" = EXCLUDED."finalSweetTeaReferenceLiters",
           "co2GramsPerLiter" = EXCLUDED."co2GramsPerLiter",
           "carbonationMethod" = EXCLUDED."carbonationMethod",
           "f2ConditionDays" = EXCLUDED."f2ConditionDays",

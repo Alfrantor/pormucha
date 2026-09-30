@@ -12,9 +12,11 @@ type RecipeType = "ACIDIFIER" | "SCOOBY" | "FLAVOR";
 export default function ProductionFormulasCatalog({
   formulas,
   rawMaterials,
+  flavors,
 }: {
   formulas: ProductionFormulaView[];
   rawMaterials: { id: string; name: string; unit?: string | null }[];
+  flavors: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -291,7 +293,6 @@ export default function ProductionFormulasCatalog({
               {selectedFormula.recipeType === "FLAVOR" ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   <DetailChip label="Jugo / sabor %" value={`${Number(selectedFormula.flavorJuicePercent || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}%`} />
-                  <DetailChip label="CO₂" value={`${Number(selectedFormula.co2GramsPerLiter || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} g/L`} />
                   <DetailChip label="Carbonatación" value={selectedFormula.carbonationMethod || "-"} />
                   <DetailChip label="Objetivo F2" value={`${Number(selectedFormula.f2ConditionDays || 0).toLocaleString("es-MX", { maximumFractionDigits: 0 })} días`} />
                   <DetailChip label="pH" value={`${Number(selectedFormula.phMin || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })} - ${Number(selectedFormula.phMax || 0).toLocaleString("es-MX", { maximumFractionDigits: 2 })}`} />
@@ -424,6 +425,7 @@ export default function ProductionFormulasCatalog({
                 key={`${modalKey}-${modalMode}-${modalMode === "edit" ? selectedCode : "new"}`}
                 formulas={safeFormulas}
                 rawMaterials={rawMaterials}
+                flavors={flavors}
                 initialSelectedCode={modalMode === "edit" ? selectedCode : null}
                 initialRecipeType={modalMode === "create" ? createRecipeType : "ACIDIFIER"}
                 hideTopAction

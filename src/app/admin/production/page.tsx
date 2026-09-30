@@ -76,6 +76,7 @@ async function ensureFinalBeverageBlendTables() {
       "name" TEXT NOT NULL,
       "status" TEXT NOT NULL DEFAULT 'ACTIVE',
       "flavorId" TEXT,
+      "flavorFormulaId" TEXT,
       "flavorName" TEXT,
       "targetBrix" DECIMAL(65,30) NOT NULL,
       "weightedBrix" DECIMAL(65,30) NOT NULL,
@@ -97,6 +98,10 @@ async function ensureFinalBeverageBlendTables() {
   await db.$executeRawUnsafe(`
     ALTER TABLE "FinalBeverageBlend"
     ADD COLUMN IF NOT EXISTS "flavorId" TEXT
+  `).catch(() => null);
+  await db.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlend"
+    ADD COLUMN IF NOT EXISTS "flavorFormulaId" TEXT
   `).catch(() => null);
   await db.$executeRawUnsafe(`
     ALTER TABLE "FinalBeverageBlend"

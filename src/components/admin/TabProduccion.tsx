@@ -280,7 +280,7 @@ export default function TabProduccion({
   const [phase3Saving, setPhase3Saving] = useState(false);
   const [phase3Error, setPhase3Error] = useState("");
   const [finalBlendProductionDate, setFinalBlendProductionDate] = useState("");
-  const [finalBlendFlavorId, setFinalBlendFlavorId] = useState("");
+  const [finalBlendFlavorFormulaId, setFinalBlendFlavorFormulaId] = useState("");
   const [finalBlendTargetLiters, setFinalBlendTargetLiters] = useState("");
   const [finalBlendTargetBrix, setFinalBlendTargetBrix] = useState("");
   const [finalBlendSugarGramsPerLiter, setFinalBlendSugarGramsPerLiter] = useState("");
@@ -443,6 +443,8 @@ export default function TabProduccion({
       .sort((a: any, b: any) => String(a?.name || "").localeCompare(String(b?.name || ""), "es-MX", { sensitivity: "base" }));
   }, [safeFormulas, formulaStorageAvailability]);
 
+  const selectedFinalBlendFormula = flavorFormulaOptions.find((formula: any) => formula.id === finalBlendFlavorFormulaId) || null;
+
   const productionById = useMemo(() => {
     const map = new Map<string, any>();
     safeProductions.forEach((production: any) => {
@@ -508,7 +510,7 @@ export default function TabProduccion({
     return map;
   }, [safeStorageTanks]);
 
-  const selectedFinalBlendFlavor = safeFlavors.find((flavor: any) => flavor.id === finalBlendFlavorId) || null;
+  const selectedFinalBlendFlavor = safeFlavors.find((flavor: any) => flavor.id === selectedFinalBlendFormula?.flavorId) || null;
   const finalBlendProductionName = formatFinalBlendProductionName(finalBlendProductionDate, selectedFinalBlendFlavor?.name);
   const selectedProdFormulaCode = String(selectedProd?.formula?.code || selectedProd?.formulaCode || selectedProd?.productType || "").trim();
 
@@ -745,6 +747,16 @@ export default function TabProduccion({
       setFinalBlendProductionDate(new Date().toISOString().slice(0, 16));
     }
   }, [view, finalBlendProductionDate]);
+
+  useEffect(() => {
+    if (!selectedFinalBlendFormula) return;
+    setFinalBlendTargetBrix(selectedFinalBlendFormula.finalTargetBrix != null ? String(selectedFinalBlendFormula.finalTargetBrix) : "");
+    setFinalBlendScoobyPercent(selectedFinalBlendFormula.finalScoobyPercent != null ? String(selectedFinalBlendFormula.finalScoobyPercent) : "");
+    setFinalBlendAcidifierPercent(selectedFinalBlendFormula.finalAcidifierPercent != null ? String(selectedFinalBlendFormula.finalAcidifierPercent) : "");
+    setFinalBlendFlavorPercent(selectedFinalBlendFormula.finalFlavorPercent != null ? String(selectedFinalBlendFormula.finalFlavorPercent) : "");
+    setFinalBlendSweetTeaBaseLiters(selectedFinalBlendFormula.finalSweetTeaBaseLiters != null ? String(selectedFinalBlendFormula.finalSweetTeaBaseLiters) : "3.6");
+    setFinalBlendSweetTeaReferenceLiters(selectedFinalBlendFormula.finalSweetTeaReferenceLiters != null ? String(selectedFinalBlendFormula.finalSweetTeaReferenceLiters) : "19");
+  }, [selectedFinalBlendFormula]);
 
   const addNewFlavorComponentRow = () => {
     setNewFlavorComponentRows((prev) => [...prev, { recipeType: "", sourceId: "", brixOverride: "" }]);
@@ -1159,10 +1171,13 @@ export default function TabProduccion({
   const finalBlendTargetBrixValue = Number(finalBlendTargetBrix || 0);
   const finalBlendScoobyLiters = finalBlendTargetLitersValue * (Number(finalBlendScoobyPercent || 0) / 100);
   const finalBlendAcidifierLiters = finalBlendTargetLitersValue * (Number(finalBlendAcidifierPercent || 0) / 100);
-  const finalBlendSweetTeaLiters =
+  const finalBlendLegacySweetTeaLiters =
     Number(finalBlendSweetTeaReferenceLiters || 0) > 0
       ? (Number(finalBlendSweetTeaBaseLiters || 0) * finalBlendTargetLitersValue) / Number(finalBlendSweetTeaReferenceLiters || 0)
       : 0;
+  const finalBlendSweetTeaLiters = finalBlendFlavorPercent.trim()
+    ? finalBlendTargetLitersValue * (Number(finalBlendFlavorPercent || 0) / 100)
+    : finalBlendLegacySweetTeaLiters;
   const resolveFinalBlendLiters = (recipeType: string | null | undefined, fallbackLiters: string) => {
     if (recipeType === "SCOOBY") return finalBlendScoobyLiters;
     if (recipeType === "ACIDIFIER") return finalBlendAcidifierLiters;
@@ -1239,7 +1254,7 @@ export default function TabProduccion({
 
   const resetFinalBlendForm = () => {
     setFinalBlendProductionDate(new Date().toISOString().slice(0, 16));
-    setFinalBlendFlavorId("");
+    setFinalBlendFlavorFormulaId("");
     setFinalBlendTargetLiters("");
     setFinalBlendTargetBrix("");
     setFinalBlendSugarGramsPerLiter("");
@@ -1260,8 +1275,8 @@ export default function TabProduccion({
       setFinalBlendError("Indica la fecha de producción");
       return;
     }
-    if (!selectedFinalBlendFlavor) {
-      setFinalBlendError("Selecciona el sabor de la bebida");
+    if (!selectedFinalBlendFormula) {
+      setFinalBlendError("Selecciona una fórmula de saborizante");
       return;
     }
     if (!Number.isFinite(finalBlendTargetBrixValue) || finalBlendTargetBrixValue < 0) {
@@ -1294,8 +1309,7 @@ export default function TabProduccion({
     setFinalBlendSaving(true);
     const result = await createFinalBeverageBlend({
       name: finalBlendProductionName,
-      flavorId: finalBlendFlavorId || undefined,
-      flavorName: selectedFinalBlendFlavor?.name || undefined,
+      flavorFormulaId: finalBlendFlavorFormulaId || undefined,
       targetBrix: finalBlendTargetBrixValue,
       sugarGramsPerLiter: finalBlendObjectiveSugarGrams,
       waterPercent: finalBlendCalculatedWaterPercent,
@@ -1601,16 +1615,16 @@ export default function TabProduccion({
                     className="w-full rounded-lg border p-2 text-sm"
                   />
                 </Field>
-                <Field label="Sabor vinculado">
+                <Field label="Fórmula de saborizante">
                   <select
-                    value={finalBlendFlavorId}
-                    onChange={(e) => setFinalBlendFlavorId(e.target.value)}
+                    value={finalBlendFlavorFormulaId}
+                    onChange={(e) => setFinalBlendFlavorFormulaId(e.target.value)}
                     className="w-full rounded-lg border p-2 text-sm"
                   >
-                    <option value="">Selecciona</option>
-                    {safeFlavors.map((flavor: any) => (
-                      <option key={flavor.id} value={flavor.id}>
-                        {flavor.name}
+                    <option value="">Selecciona una fórmula</option>
+                    {flavorFormulaOptions.map((formula: any) => (
+                      <option key={formula.id} value={formula.id}>
+                        {formula.name}{formula.flavorName ? ` · ${formula.flavorName}` : ""}
                       </option>
                     ))}
                   </select>
@@ -1660,6 +1674,16 @@ export default function TabProduccion({
                     className="w-full rounded-lg border p-2 text-sm text-center"
                   />
                 </Field>
+                <Field label="Saborizante %">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={finalBlendFlavorPercent}
+                    onChange={(e) => setFinalBlendFlavorPercent(e.target.value)}
+                    className="w-full rounded-lg border p-2 text-sm text-center"
+                  />
+                </Field>
                 <Field label="Té azucarado base (L)">
                   <input
                     type="number"
@@ -1680,9 +1704,10 @@ export default function TabProduccion({
                 </Field>
               </div>
 
-              {selectedFinalBlendFlavor && (
+              {selectedFinalBlendFormula && (
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                  Bebida ligada a <strong className="text-slate-950">{selectedFinalBlendFlavor.name}</strong>.
+                  Fórmula <strong className="text-slate-950">{selectedFinalBlendFormula.name}</strong>
+                  {selectedFinalBlendFlavor ? <> ligada al sabor <strong className="text-slate-950">{selectedFinalBlendFlavor.name}</strong></> : " sin sabor de catálogo vinculado"}.
                 </div>
               )}
 

@@ -15,6 +15,14 @@ type FormulaRow = {
   brewWaterPercent: number | string | null;
   flavorJuicePercent: number | string | null;
   flavorItemName: string | null;
+  flavor_id: string | null;
+  flavor_name: string | null;
+  finalTargetBrix: number | string | null;
+  finalScoobyPercent: number | string | null;
+  finalAcidifierPercent: number | string | null;
+  finalFlavorPercent: number | string | null;
+  finalSweetTeaBaseLiters: number | string | null;
+  finalSweetTeaReferenceLiters: number | string | null;
   co2GramsPerLiter: number | string | null;
   carbonationMethod: string | null;
   f2ConditionDays: number | null;
@@ -93,6 +101,17 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
     ALTER TABLE "ProductionFormula"
     ADD COLUMN IF NOT EXISTS "flavorItemName" TEXT
   `).catch(() => null);
+  for (const statement of [
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "flavorId" TEXT`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalTargetBrix" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalScoobyPercent" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalAcidifierPercent" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalFlavorPercent" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalSweetTeaBaseLiters" DECIMAL(65,30)`,
+    `ALTER TABLE "ProductionFormula" ADD COLUMN IF NOT EXISTS "finalSweetTeaReferenceLiters" DECIMAL(65,30)`,
+  ]) {
+    await db.$executeRawUnsafe(statement).catch(() => null);
+  }
   await db.$executeRawUnsafe(`
     ALTER TABLE "ProductionFormula"
     ADD COLUMN IF NOT EXISTS "co2GramsPerLiter" DECIMAL(65,30)
@@ -166,6 +185,14 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
       pf."brewWaterPercent",
       pf."flavorJuicePercent",
       pf."flavorItemName",
+      pf."flavorId" AS flavor_id,
+      flavor."name" AS flavor_name,
+      pf."finalTargetBrix",
+      pf."finalScoobyPercent",
+      pf."finalAcidifierPercent",
+      pf."finalFlavorPercent",
+      pf."finalSweetTeaBaseLiters",
+      pf."finalSweetTeaReferenceLiters",
       pf."co2GramsPerLiter",
       pf."carbonationMethod",
       pf."f2ConditionDays",
@@ -207,6 +234,7 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
     )
     LEFT JOIN "RawMaterial" rm ON rm."id" = pfi."rawMaterialId"
     LEFT JOIN "Location" loc ON loc."id" = pfi."defaultLocationId"
+    LEFT JOIN "Flavor" flavor ON flavor."id" = pf."flavorId"
     ORDER BY pf."code" ASC, COALESCE(pfs."stepNumber", 1) ASC, rm."name" ASC
   `);
 
@@ -228,6 +256,14 @@ export async function loadProductionFormulas(): Promise<ProductionFormulaView[]>
         brewWaterPercent: row.brewWaterPercent != null ? toNumber(row.brewWaterPercent) : null,
         flavorJuicePercent: row.flavorJuicePercent != null ? toNumber(row.flavorJuicePercent) : null,
         flavorItemName: row.flavorItemName,
+        flavorId: row.flavor_id,
+        flavorName: row.flavor_name,
+        finalTargetBrix: row.finalTargetBrix != null ? toNumber(row.finalTargetBrix) : null,
+        finalScoobyPercent: row.finalScoobyPercent != null ? toNumber(row.finalScoobyPercent) : null,
+        finalAcidifierPercent: row.finalAcidifierPercent != null ? toNumber(row.finalAcidifierPercent) : null,
+        finalFlavorPercent: row.finalFlavorPercent != null ? toNumber(row.finalFlavorPercent) : null,
+        finalSweetTeaBaseLiters: row.finalSweetTeaBaseLiters != null ? toNumber(row.finalSweetTeaBaseLiters) : null,
+        finalSweetTeaReferenceLiters: row.finalSweetTeaReferenceLiters != null ? toNumber(row.finalSweetTeaReferenceLiters) : null,
         co2GramsPerLiter: row.co2GramsPerLiter != null ? toNumber(row.co2GramsPerLiter) : null,
         carbonationMethod: row.carbonationMethod,
         f2ConditionDays: row.f2ConditionDays != null ? Number(row.f2ConditionDays) : null,

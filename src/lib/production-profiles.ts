@@ -70,6 +70,14 @@ export type ProductionFormulaView = {
   brewWaterPercent?: number | null;
   flavorJuicePercent?: number | null;
   flavorItemName?: string | null;
+  flavorId?: string | null;
+  flavorName?: string | null;
+  finalTargetBrix?: number | null;
+  finalScoobyPercent?: number | null;
+  finalAcidifierPercent?: number | null;
+  finalFlavorPercent?: number | null;
+  finalSweetTeaBaseLiters?: number | null;
+  finalSweetTeaReferenceLiters?: number | null;
   co2GramsPerLiter?: number | null;
   carbonationMethod?: string | null;
   f2ConditionDays?: number | null;

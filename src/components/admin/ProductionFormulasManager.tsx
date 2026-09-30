@@ -46,6 +46,13 @@ type FormulaState = {
   blendItems: AcidifierBlendRow[];
   flavorJuicePercent: string;
   flavorItemName: string;
+  flavorId: string;
+  finalTargetBrix: string;
+  finalScoobyPercent: string;
+  finalAcidifierPercent: string;
+  finalFlavorPercent: string;
+  finalSweetTeaBaseLiters: string;
+  finalSweetTeaReferenceLiters: string;
   co2GramsPerLiter: string;
   carbonationMethod: string;
   f2ConditionDays: string;
@@ -117,6 +124,13 @@ function createDefaultFormula(code: string, recipeType: FormulaState["recipeType
     blendItems: defaultBlendItems,
     flavorJuicePercent: "",
     flavorItemName: "",
+    flavorId: "",
+    finalTargetBrix: "",
+    finalScoobyPercent: "",
+    finalAcidifierPercent: "",
+    finalFlavorPercent: "",
+    finalSweetTeaBaseLiters: "3.6",
+    finalSweetTeaReferenceLiters: "19",
     co2GramsPerLiter: "",
     carbonationMethod: "Forced (in tank)",
     f2ConditionDays: "",
@@ -190,6 +204,13 @@ function mapFormulaToState(formula: ProductionFormulaView): FormulaState {
         : [createEmptyBlendRow(), createEmptyBlendRow(), createEmptyBlendRow()],
     flavorJuicePercent: formula.flavorJuicePercent != null ? String(formula.flavorJuicePercent) : "",
     flavorItemName: formula.flavorItemName || "",
+    flavorId: formula.flavorId || "",
+    finalTargetBrix: formula.finalTargetBrix != null ? String(formula.finalTargetBrix) : "",
+    finalScoobyPercent: formula.finalScoobyPercent != null ? String(formula.finalScoobyPercent) : "",
+    finalAcidifierPercent: formula.finalAcidifierPercent != null ? String(formula.finalAcidifierPercent) : "",
+    finalFlavorPercent: formula.finalFlavorPercent != null ? String(formula.finalFlavorPercent) : "",
+    finalSweetTeaBaseLiters: formula.finalSweetTeaBaseLiters != null ? String(formula.finalSweetTeaBaseLiters) : "3.6",
+    finalSweetTeaReferenceLiters: formula.finalSweetTeaReferenceLiters != null ? String(formula.finalSweetTeaReferenceLiters) : "19",
     co2GramsPerLiter: formula.co2GramsPerLiter != null ? String(formula.co2GramsPerLiter) : "",
     carbonationMethod: formula.carbonationMethod || "Forced (in tank)",
     f2ConditionDays: formula.f2ConditionDays != null ? String(formula.f2ConditionDays) : "",
@@ -239,6 +260,7 @@ function Field({ label, helper, children }: { label: string; helper?: string; ch
 export default function ProductionFormulasManager({
   formulas,
   rawMaterials,
+  flavors,
   initialSelectedCode,
   initialRecipeType = "ACIDIFIER",
   hideTopAction = false,
@@ -248,6 +270,7 @@ export default function ProductionFormulasManager({
 }: {
   formulas: ProductionFormulaView[];
   rawMaterials: CatalogItem[];
+  flavors: { id: string; name: string }[];
   initialSelectedCode?: string | null;
   initialRecipeType?: "ACIDIFIER" | "SCOOBY" | "FLAVOR" | "BLEND";
   hideTopAction?: boolean;
@@ -346,6 +369,13 @@ export default function ProductionFormulasManager({
       })),
       flavorJuicePercent: Number(currentFormula.flavorJuicePercent || 0),
       flavorItemName: currentFormula.flavorItemName.trim(),
+      flavorId: currentFormula.flavorId || undefined,
+      finalTargetBrix: Number(currentFormula.finalTargetBrix || 0),
+      finalScoobyPercent: Number(currentFormula.finalScoobyPercent || 0),
+      finalAcidifierPercent: Number(currentFormula.finalAcidifierPercent || 0),
+      finalFlavorPercent: Number(currentFormula.finalFlavorPercent || 0),
+      finalSweetTeaBaseLiters: Number(currentFormula.finalSweetTeaBaseLiters || 0),
+      finalSweetTeaReferenceLiters: Number(currentFormula.finalSweetTeaReferenceLiters || 0),
       co2GramsPerLiter: Number(currentFormula.co2GramsPerLiter || 0),
       carbonationMethod: currentFormula.carbonationMethod,
       f2ConditionDays: Number(currentFormula.f2ConditionDays || 0),
@@ -474,7 +504,6 @@ export default function ProductionFormulasManager({
                 <>
                   <div className="grid gap-4 md:grid-cols-3">
                     <InfoCard label="Jugo / sabor %" value={`${formatNumber(Number(currentFormula.flavorJuicePercent || 0))}%`} />
-                    <InfoCard label="CO₂ (g/L)" value={`${formatNumber(Number(currentFormula.co2GramsPerLiter || 0))} g/L`} />
                     <InfoCard label="Carbonatación" value={currentFormula.carbonationMethod || "-"} />
                     <InfoCard label="Objetivo F2" value={`${formatNumber(Number(currentFormula.f2ConditionDays || 0), 0)} días`} />
                     <InfoCard label="Ingredientes F2" value={`${currentFormula.flavorIngredients.filter((item) => item.rawMaterialId || item.freeTextName).length}`} />
@@ -812,8 +841,11 @@ export default function ProductionFormulasManager({
                       <Field label="Fruta o jugo base">
                         <input value={currentFormula.flavorItemName} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, flavorItemName: event.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" />
                       </Field>
-                      <Field label="CO₂ (g/L)">
-                        <input type="number" step="0.01" value={currentFormula.co2GramsPerLiter} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, co2GramsPerLiter: event.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" />
+                      <Field label="Sabor del catálogo">
+                        <select value={currentFormula.flavorId} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, flavorId: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                          <option value="">Sin sabor vinculado</option>
+                          {flavors.map((flavor) => <option key={flavor.id} value={flavor.id}>{flavor.name}</option>)}
+                        </select>
                       </Field>
                       <Field label="Carbonatación">
                         <select value={currentFormula.carbonationMethod} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, carbonationMethod: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm">
@@ -843,6 +875,31 @@ export default function ProductionFormulasManager({
                       <Field label="Target temp max °C">
                         <input type="number" step="0.01" value={currentFormula.temperatureMax} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, temperatureMax: event.target.value }))} className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm" />
                       </Field>
+                    </div>
+
+                    <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5">
+                      <p className="text-sm font-black text-slate-950">Configuración para bebida final</p>
+                      <p className="mt-1 text-sm text-slate-600">Estos valores se precargarán al seleccionar esta fórmula en Bebida final.</p>
+                      <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <Field label="Brix objetivo final">
+                          <input type="number" min="0" step="0.01" value={currentFormula.finalTargetBrix} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, finalTargetBrix: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" />
+                        </Field>
+                        <Field label="Scooby %">
+                          <input type="number" min="0" step="0.01" value={currentFormula.finalScoobyPercent} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, finalScoobyPercent: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" />
+                        </Field>
+                        <Field label="Acidificante %">
+                          <input type="number" min="0" step="0.01" value={currentFormula.finalAcidifierPercent} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, finalAcidifierPercent: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" />
+                        </Field>
+                        <Field label="Saborizante %">
+                          <input type="number" min="0" step="0.01" value={currentFormula.finalFlavorPercent} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, finalFlavorPercent: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" />
+                        </Field>
+                        <Field label="Té azucarado base (L)">
+                          <input type="number" min="0" step="0.01" value={currentFormula.finalSweetTeaBaseLiters} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, finalSweetTeaBaseLiters: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" />
+                        </Field>
+                        <Field label="Referencia té (L)">
+                          <input type="number" min="0" step="0.01" value={currentFormula.finalSweetTeaReferenceLiters} onChange={(event) => updateFormula(selectedCode, (current) => ({ ...current, finalSweetTeaReferenceLiters: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm" />
+                        </Field>
+                      </div>
                     </div>
 
                     <div className="border-t border-slate-200 pt-5">

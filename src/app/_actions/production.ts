@@ -120,6 +120,7 @@ async function ensureFinalBeverageBlendTables(client: RawDbClient) {
       "name" TEXT NOT NULL,
       "status" TEXT NOT NULL DEFAULT 'ACTIVE',
       "flavorId" TEXT,
+      "flavorFormulaId" TEXT,
       "flavorName" TEXT,
       "targetBrix" DECIMAL(65,30) NOT NULL,
       "weightedBrix" DECIMAL(65,30) NOT NULL,
@@ -141,6 +142,10 @@ async function ensureFinalBeverageBlendTables(client: RawDbClient) {
   await client.$executeRawUnsafe(`
     ALTER TABLE "FinalBeverageBlend"
     ADD COLUMN IF NOT EXISTS "flavorId" TEXT
+  `).catch(() => null);
+  await client.$executeRawUnsafe(`
+    ALTER TABLE "FinalBeverageBlend"
+    ADD COLUMN IF NOT EXISTS "flavorFormulaId" TEXT
   `).catch(() => null);
   await client.$executeRawUnsafe(`
     ALTER TABLE "FinalBeverageBlend"
@@ -1330,6 +1335,7 @@ export async function updateBaseBeverageInventoryDisposition(
 
 export async function createFinalBeverageBlend(data: {
   name: string;
+  flavorFormulaId?: string;
   flavorId?: string;
   flavorName?: string;
   targetBrix: number;
@@ -1389,8 +1395,24 @@ export async function createFinalBeverageBlend(data: {
       await ensureProductionPhaseTable(tx as typeof db);
 
       let linkedFlavorId: string | null = null;
+      let linkedFlavorFormulaId: string | null = null;
       let linkedFlavorName: string | null = null;
-      if (data.flavorId) {
+      if (data.flavorFormulaId) {
+        const formulaRows = await tx.$queryRaw<{ id: string; flavorId: string | null; flavorName: string | null; recipeType: string }[]>`
+          SELECT pf."id", pf."flavorId", f."name" AS "flavorName", pf."recipeType"
+          FROM "ProductionFormula" pf
+          LEFT JOIN "Flavor" f ON f."id" = pf."flavorId"
+          WHERE pf."id" = ${data.flavorFormulaId}
+          LIMIT 1
+        `;
+        const formula = formulaRows[0];
+        if (!formula || formula.recipeType !== "FLAVOR") {
+          throw new Error("La fórmula de sabor seleccionada ya no existe o no es válida");
+        }
+        linkedFlavorFormulaId = formula.id;
+        linkedFlavorId = formula.flavorId;
+        linkedFlavorName = formula.flavorName;
+      } else if (data.flavorId) {
         const flavorRows = await tx.$queryRaw<{ id: string; name: string }[]>`
           SELECT "id","name"
           FROM "Flavor"
@@ -1628,9 +1650,9 @@ export async function createFinalBeverageBlend(data: {
       const blendId = randomUUID();
       await tx.$executeRaw`
         INSERT INTO "FinalBeverageBlend"
-        ("id","name","status","flavorId","flavorName","targetBrix","weightedBrix","sugarToAddKg","totalLiters","sugarGramsPerLiter","waterPercent","acidifierPercent","scoobyPercent","flavorPercent","notes","createdBy","createdAt","updatedAt")
+        ("id","name","status","flavorId","flavorFormulaId","flavorName","targetBrix","weightedBrix","sugarToAddKg","totalLiters","sugarGramsPerLiter","waterPercent","acidifierPercent","scoobyPercent","flavorPercent","notes","createdBy","createdAt","updatedAt")
         VALUES
-        (${blendId}, ${data.name.trim()}, ${"ACTIVE"}, ${linkedFlavorId}, ${linkedFlavorName}, ${Number(data.targetBrix)}, ${weightedBrix}, ${sugarToAddKg}, ${totalLiters}, ${data.sugarGramsPerLiter ?? null}, ${data.waterPercent ?? null}, ${data.acidifierPercent ?? null}, ${data.scoobyPercent ?? null}, ${data.flavorPercent ?? null}, ${data.notes?.trim() || null}, ${data.createdBy || null}, NOW(), NOW())
+        (${blendId}, ${data.name.trim()}, ${"ACTIVE"}, ${linkedFlavorId}, ${linkedFlavorFormulaId}, ${linkedFlavorName}, ${Number(data.targetBrix)}, ${weightedBrix}, ${sugarToAddKg}, ${totalLiters}, ${data.sugarGramsPerLiter ?? null}, ${data.waterPercent ?? null}, ${data.acidifierPercent ?? null}, ${data.scoobyPercent ?? null}, ${data.flavorPercent ?? null}, ${data.notes?.trim() || null}, ${data.createdBy || null}, NOW(), NOW())
       `;
 
       for (const component of preparedComponents) {

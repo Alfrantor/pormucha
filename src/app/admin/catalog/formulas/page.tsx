@@ -26,13 +26,18 @@ function serialize(value: unknown): unknown {
 }
 
 export default async function CatalogFormulasPage() {
-  const [formulas, rawMaterials] = await Promise.all([
+  const [formulas, rawMaterials, flavors] = await Promise.all([
     loadProductionFormulas(),
     db.rawMaterial.findMany({
       where: { isArchived: false },
       orderBy: { name: "asc" },
     }),
+    db.flavor.findMany({
+      where: { isArchived: false },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
-  return <ProductionFormulasCatalog formulas={serialize(formulas) as ProductionFormulaView[]} rawMaterials={serialize(rawMaterials) as { id: string; name: string; unit?: string | null }[]} />;
+  return <ProductionFormulasCatalog formulas={serialize(formulas) as ProductionFormulaView[]} rawMaterials={serialize(rawMaterials) as { id: string; name: string; unit?: string | null }[]} flavors={serialize(flavors) as { id: string; name: string }[]} />;
 }

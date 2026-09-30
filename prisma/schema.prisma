@@ -232,6 +232,7 @@ model Flavor {
   adjustmentRequests    AdjustmentRequest[]
   gasificationBatches   GasificationBatch[]
   labelingBatches       LabelingBatch[]
+  productionFormulas    ProductionFormula[]
 }
 
 model FlavorPriceScale {
@@ -585,6 +586,14 @@ model ProductionFormula {
   brewWaterPercent Decimal?
   flavorJuicePercent Decimal?
   flavorItemName  String?
+  flavorId        String?
+  flavor          Flavor?                 @relation(fields: [flavorId], references: [id], onDelete: SetNull)
+  finalTargetBrix Decimal?
+  finalScoobyPercent Decimal?
+  finalAcidifierPercent Decimal?
+  finalFlavorPercent Decimal?
+  finalSweetTeaBaseLiters Decimal?
+  finalSweetTeaReferenceLiters Decimal?
   co2GramsPerLiter Decimal?
   carbonationMethod String?
   f2ConditionDays Int?
@@ -606,6 +615,8 @@ model ProductionFormula {
   steps          ProductionFormulaStep[]
   items          ProductionFormulaItem[]
   productions    Production[]
+
+  @@index([flavorId])
 }
 
 model ProductionFormulaStep {
